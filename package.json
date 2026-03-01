@@ -1,0 +1,22 @@
+{
+  "name": "project-overviewer",
+  "version": "1.0.0",
+  "description": "Professional project and task management app with SQLite database",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "keywords": [
+    "project-management",
+    "task-manager",
+    "sqlite"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2",
+    "sqlite3": "^5.1.7",
+    "cors": "^2.8.5"
+  }
+}

@@ -1,0 +1,39 @@
+# Node modules
+node_modules/
+
+# Database files
+projects.db
+projects.db-journal
+*.db
+*.db-journal
+
+# Backup files
+*.backup
+
+# Environment files
+.env
+.env.local
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Temporary files
+tmp/
+temp/
+
+# Virtual environment
+venv
+.venv
