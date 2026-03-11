@@ -4,12 +4,12 @@ const crypto = require('crypto');
 const logger = require('./logger');
 const db = require('./database');
 
-// Lazy-load bcrypt (installed as dependency)
+// Load bcryptjs (pure-JS implementation, works in serverless environments)
 let bcrypt;
 try {
-  bcrypt = require('bcrypt');
+  bcrypt = require('bcryptjs');
 } catch {
-  logger.error('bcrypt not installed. Run: npm install bcrypt');
+  logger.error('bcryptjs not installed. Run: npm install bcryptjs');
   process.exit(1);
 }
 
@@ -269,6 +269,26 @@ app.use((req, res, next) => {
     });
   }
   next();
+});
+
+// ========== COLD-START INITIALIZATION (for serverless / Vercel) ==========
+// Kick off DB init + admin seeding as soon as the module is imported.
+// This resolves before any request handler runs (see middleware below).
+const initPromise = (async () => {
+  await db.waitForDb();
+  await seedAdminUser();
+})();
+
+// Block all API requests until initialization is complete.
+// Static files (served above) bypass this intentionally.
+app.use(async (req, res, next) => {
+  try {
+    await initPromise;
+    next();
+  } catch (err) {
+    logger.error({ err }, 'Initialization failed');
+    res.status(503).json({ error: 'Service unavailable — initialization failed' });
+  }
 });
 
 // ========== AUTH ENDPOINTS ==========
@@ -1040,10 +1060,8 @@ async function seedAdminUser() {
 
 async function startServer() {
   logger.info('Waiting for database to initialize...');
-  await db.waitForDb();
+  await initPromise;
   logger.info('Database ready');
-
-  await seedAdminUser();
 
   const server = app.listen(PORT, () => {
     logger.info({ port: PORT, database: 'projects.db', auth: 'session-based' }, 'Project Overviewer server running');
@@ -1069,7 +1087,12 @@ async function startServer() {
   process.on('SIGTERM', () => shutdown('SIGTERM'));
 }
 
-startServer().catch(err => {
-  logger.error({ err }, 'Failed to start server');
-  process.exit(1);
-});
+// Export app for Vercel (module import) while still supporting `node server.js` locally.
+module.exports = app;
+
+if (require.main === module) {
+  startServer().catch(err => {
+    logger.error({ err }, 'Failed to start server');
+    process.exit(1);
+  });
+}

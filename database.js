@@ -1,5 +1,4 @@
-const sqlite3 = require('sqlite3').verbose();
-const path = require('path');
+const { createClient } = require('@libsql/client');
 const crypto = require('crypto');
 const logger = require('./logger');
 
@@ -17,28 +16,30 @@ const ALLOWED_DOC_MIME_TYPES = [
 
 // ========== DATABASE CONNECTION ==========
 
-const dbPath = path.join(__dirname, 'projects.db');
-
-// Proper promise-based initialization (fixes race condition)
-let db;
-const dbReadyPromise = new Promise((resolve, reject) => {
-  db = new sqlite3.Database(dbPath, (err) => {
-    if (err) {
-      logger.error({ err }, 'Error opening database');
-      return reject(err);
-    }
-    logger.info('Connected to SQLite database');
-    initDatabase()
-      .then(() => {
-        logger.info('Database ready for queries');
-        resolve();
-      })
-      .catch((initErr) => {
-        logger.error({ err: initErr }, 'Database initialization failed');
-        reject(initErr);
-      });
-  });
+const client = createClient({
+  url: process.env.TURSO_DATABASE_URL || 'file:projects.db',
+  authToken: process.env.TURSO_AUTH_TOKEN || undefined
 });
+
+// Promise-based initialization guard — ensures schema is ready before any
+// caller proceeds. The client itself is created synchronously above.
+let dbReadyResolve;
+let dbReadyReject;
+const dbReadyPromise = new Promise((resolve, reject) => {
+  dbReadyResolve = resolve;
+  dbReadyReject = reject;
+});
+
+// Kick off initialization immediately
+initDatabase()
+  .then(() => {
+    logger.info('Database ready for queries');
+    dbReadyResolve();
+  })
+  .catch((err) => {
+    logger.error({ err }, 'Database initialization failed');
+    dbReadyReject(err);
+  });
 
 async function waitForDb() {
   await dbReadyPromise;
@@ -46,31 +47,19 @@ async function waitForDb() {
 
 // ========== QUERY HELPERS ==========
 
-function run(sql, params = []) {
-  return new Promise((resolve, reject) => {
-    db.run(sql, params, function (err) {
-      if (err) reject(err);
-      else resolve(this);
-    });
-  });
+async function run(sql, params = []) {
+  const result = await client.execute({ sql, args: params });
+  return { changes: Number(result.rowsAffected) };
 }
 
-function get(sql, params = []) {
-  return new Promise((resolve, reject) => {
-    db.get(sql, params, (err, row) => {
-      if (err) reject(err);
-      else resolve(row);
-    });
-  });
+async function get(sql, params = []) {
+  const result = await client.execute({ sql, args: params });
+  return result.rows[0] || undefined;
 }
 
-function all(sql, params = []) {
-  return new Promise((resolve, reject) => {
-    db.all(sql, params, (err, rows) => {
-      if (err) reject(err);
-      else resolve(rows);
-    });
-  });
+async function all(sql, params = []) {
+  const result = await client.execute({ sql, args: params });
+  return result.rows;
 }
 
 function generateId() {
@@ -89,172 +78,173 @@ function safeJsonParse(str, fallback = null) {
 // ========== SCHEMA INITIALIZATION ==========
 
 async function initDatabase() {
-  // Performance PRAGMAs
-  await run('PRAGMA journal_mode = WAL');
-  await run('PRAGMA synchronous = NORMAL');
-  await run('PRAGMA cache_size = -8000');
-  await run('PRAGMA busy_timeout = 5000');
-  await run('PRAGMA foreign_keys = ON');
+  logger.info('Connected to LibSQL/Turso database');
 
-  // Users table
-  await run(`
-    CREATE TABLE IF NOT EXISTS users (
-      id TEXT PRIMARY KEY,
-      username TEXT UNIQUE NOT NULL,
-      email TEXT UNIQUE NOT NULL,
-      password_hash TEXT NOT NULL,
-      role TEXT NOT NULL DEFAULT 'user',
-      approved INTEGER NOT NULL DEFAULT 0,
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
+  // foreign_keys must be set outside a batch (PRAGMA not allowed in batches)
+  await client.execute({ sql: 'PRAGMA foreign_keys = ON', args: [] });
 
-  // Sessions table
-  await run(`
-    CREATE TABLE IF NOT EXISTS sessions (
-      id TEXT PRIMARY KEY,
-      user_id TEXT NOT NULL,
-      token TEXT UNIQUE NOT NULL,
-      expires_at TEXT NOT NULL,
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-    )
-  `);
-
-  // Projects table (user-scoped)
-  await run(`
-    CREATE TABLE IF NOT EXISTS projects (
-      id TEXT PRIMARY KEY,
-      user_id TEXT NOT NULL,
-      title TEXT NOT NULL,
-      stakeholder TEXT DEFAULT '',
-      description TEXT DEFAULT '',
-      status TEXT DEFAULT 'not-started',
-      priority TEXT DEFAULT 'medium',
-      due_date TEXT,
-      tags TEXT DEFAULT '[]',
-      project_order INTEGER DEFAULT 0,
-      archived INTEGER DEFAULT 0,
-      archived_at TEXT,
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-    )
-  `);
-
-  // Tasks table
-  await run(`
-    CREATE TABLE IF NOT EXISTS tasks (
-      id TEXT PRIMARY KEY,
-      project_id TEXT NOT NULL,
-      title TEXT NOT NULL,
-      completed INTEGER DEFAULT 0,
-      due_date TEXT,
-      notes TEXT DEFAULT '',
-      priority TEXT DEFAULT 'none',
-      recurring TEXT,
-      blocked_by TEXT,
-      task_order INTEGER DEFAULT 0,
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
-    )
-  `);
-
-  // Documents table
-  await run(`
-    CREATE TABLE IF NOT EXISTS documents (
-      id TEXT PRIMARY KEY,
-      project_id TEXT NOT NULL,
-      doc_type TEXT NOT NULL,
-      title TEXT DEFAULT '',
-      payload TEXT,
-      file_name TEXT,
-      mime_type TEXT,
-      content_base64 TEXT,
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
-    )
-  `);
-
-  // Global settings (admin-controlled)
-  await run(`
-    CREATE TABLE IF NOT EXISTS global_settings (
-      key TEXT PRIMARY KEY,
-      value TEXT
-    )
-  `);
-
-  // User settings (per-user)
-  await run(`
-    CREATE TABLE IF NOT EXISTS user_settings (
-      user_id TEXT NOT NULL,
-      key TEXT NOT NULL,
-      value TEXT,
-      PRIMARY KEY (user_id, key),
-      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-    )
-  `);
-
-  // Quick notes (user-scoped)
-  await run(`
-    CREATE TABLE IF NOT EXISTS quick_notes (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id TEXT NOT NULL,
-      content TEXT DEFAULT '',
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-    )
-  `);
-
-  // Templates table (shared)
-  await run(`
-    CREATE TABLE IF NOT EXISTS templates (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      tasks TEXT NOT NULL
-    )
-  `);
-
-  // Teams table
-  await run(`
-    CREATE TABLE IF NOT EXISTS teams (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      created_by TEXT NOT NULL,
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE CASCADE
-    )
-  `);
-
-  // Team members table
-  await run(`
-    CREATE TABLE IF NOT EXISTS team_members (
-      team_id TEXT NOT NULL,
-      user_id TEXT NOT NULL,
-      role TEXT NOT NULL DEFAULT 'member',
-      joined_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      PRIMARY KEY (team_id, user_id),
-      FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE,
-      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-    )
-  `);
-
-  // ========== INDEXES ==========
-  await run('CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token)');
-  await run('CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id)');
-  await run('CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at)');
-  await run('CREATE INDEX IF NOT EXISTS idx_projects_user_id ON projects(user_id)');
-  await run('CREATE INDEX IF NOT EXISTS idx_projects_status ON projects(status)');
-  await run('CREATE INDEX IF NOT EXISTS idx_projects_archived ON projects(archived)');
-  await run('CREATE INDEX IF NOT EXISTS idx_tasks_project_id ON tasks(project_id)');
-  await run('CREATE INDEX IF NOT EXISTS idx_documents_project_id ON documents(project_id)');
-  await run('CREATE INDEX IF NOT EXISTS idx_quick_notes_user_id ON quick_notes(user_id)');
-  await run('CREATE INDEX IF NOT EXISTS idx_user_settings_user_id ON user_settings(user_id)');
-  await run('CREATE INDEX IF NOT EXISTS idx_user_settings_user_key ON user_settings(user_id, key)');
-  await run('CREATE INDEX IF NOT EXISTS idx_team_members_user_id ON team_members(user_id)');
-  await run('CREATE UNIQUE INDEX IF NOT EXISTS idx_quick_notes_user_id_unique ON quick_notes(user_id)');
+  // All CREATE TABLE and CREATE INDEX statements in a single atomic batch
+  await client.batch([
+    // Users table
+    {
+      sql: `CREATE TABLE IF NOT EXISTS users (
+        id TEXT PRIMARY KEY,
+        username TEXT UNIQUE NOT NULL,
+        email TEXT UNIQUE NOT NULL,
+        password_hash TEXT NOT NULL,
+        role TEXT NOT NULL DEFAULT 'user',
+        approved INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+      )`,
+      args: []
+    },
+    // Sessions table
+    {
+      sql: `CREATE TABLE IF NOT EXISTS sessions (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        token TEXT UNIQUE NOT NULL,
+        expires_at TEXT NOT NULL,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      )`,
+      args: []
+    },
+    // Projects table (user-scoped)
+    {
+      sql: `CREATE TABLE IF NOT EXISTS projects (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        stakeholder TEXT DEFAULT '',
+        description TEXT DEFAULT '',
+        status TEXT DEFAULT 'not-started',
+        priority TEXT DEFAULT 'medium',
+        due_date TEXT,
+        tags TEXT DEFAULT '[]',
+        project_order INTEGER DEFAULT 0,
+        archived INTEGER DEFAULT 0,
+        archived_at TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      )`,
+      args: []
+    },
+    // Tasks table
+    {
+      sql: `CREATE TABLE IF NOT EXISTS tasks (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        completed INTEGER DEFAULT 0,
+        due_date TEXT,
+        notes TEXT DEFAULT '',
+        priority TEXT DEFAULT 'none',
+        recurring TEXT,
+        blocked_by TEXT,
+        task_order INTEGER DEFAULT 0,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+      )`,
+      args: []
+    },
+    // Documents table
+    {
+      sql: `CREATE TABLE IF NOT EXISTS documents (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        doc_type TEXT NOT NULL,
+        title TEXT DEFAULT '',
+        payload TEXT,
+        file_name TEXT,
+        mime_type TEXT,
+        content_base64 TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+      )`,
+      args: []
+    },
+    // Global settings (admin-controlled)
+    {
+      sql: `CREATE TABLE IF NOT EXISTS global_settings (
+        key TEXT PRIMARY KEY,
+        value TEXT
+      )`,
+      args: []
+    },
+    // User settings (per-user)
+    {
+      sql: `CREATE TABLE IF NOT EXISTS user_settings (
+        user_id TEXT NOT NULL,
+        key TEXT NOT NULL,
+        value TEXT,
+        PRIMARY KEY (user_id, key),
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      )`,
+      args: []
+    },
+    // Quick notes (user-scoped)
+    {
+      sql: `CREATE TABLE IF NOT EXISTS quick_notes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id TEXT NOT NULL,
+        content TEXT DEFAULT '',
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      )`,
+      args: []
+    },
+    // Templates table (shared)
+    {
+      sql: `CREATE TABLE IF NOT EXISTS templates (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        tasks TEXT NOT NULL
+      )`,
+      args: []
+    },
+    // Teams table
+    {
+      sql: `CREATE TABLE IF NOT EXISTS teams (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        created_by TEXT NOT NULL,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE CASCADE
+      )`,
+      args: []
+    },
+    // Team members table
+    {
+      sql: `CREATE TABLE IF NOT EXISTS team_members (
+        team_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        role TEXT NOT NULL DEFAULT 'member',
+        joined_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (team_id, user_id),
+        FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      )`,
+      args: []
+    },
+    // Indexes
+    { sql: 'CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token)', args: [] },
+    { sql: 'CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id)', args: [] },
+    { sql: 'CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at)', args: [] },
+    { sql: 'CREATE INDEX IF NOT EXISTS idx_projects_user_id ON projects(user_id)', args: [] },
+    { sql: 'CREATE INDEX IF NOT EXISTS idx_projects_status ON projects(status)', args: [] },
+    { sql: 'CREATE INDEX IF NOT EXISTS idx_projects_archived ON projects(archived)', args: [] },
+    { sql: 'CREATE INDEX IF NOT EXISTS idx_tasks_project_id ON tasks(project_id)', args: [] },
+    { sql: 'CREATE INDEX IF NOT EXISTS idx_documents_project_id ON documents(project_id)', args: [] },
+    { sql: 'CREATE INDEX IF NOT EXISTS idx_quick_notes_user_id ON quick_notes(user_id)', args: [] },
+    { sql: 'CREATE INDEX IF NOT EXISTS idx_user_settings_user_id ON user_settings(user_id)', args: [] },
+    { sql: 'CREATE INDEX IF NOT EXISTS idx_user_settings_user_key ON user_settings(user_id, key)', args: [] },
+    { sql: 'CREATE INDEX IF NOT EXISTS idx_team_members_user_id ON team_members(user_id)', args: [] },
+    { sql: 'CREATE UNIQUE INDEX IF NOT EXISTS idx_quick_notes_user_id_unique ON quick_notes(user_id)', args: [] }
+  ], 'write');
 
   // ========== SEED DEFAULTS ==========
 
@@ -659,20 +649,20 @@ async function reorderProjects(userId, projectOrders) {
   await waitForDb();
   if (!projectOrders || projectOrders.length === 0) return;
 
-  await run('BEGIN TRANSACTION');
+  const tx = await client.transaction('write');
   try {
     const cases = projectOrders.map(() => 'WHEN ? THEN ?').join(' ');
     const caseParams = projectOrders.flatMap(p => [p.id, p.order]);
     const ids = projectOrders.map(p => p.id);
     const placeholders = ids.map(() => '?').join(',');
 
-    await run(
-      `UPDATE projects SET project_order = CASE id ${cases} END WHERE id IN (${placeholders}) AND user_id = ?`,
-      [...caseParams, ...ids, userId]
-    );
-    await run('COMMIT');
+    await tx.execute({
+      sql: `UPDATE projects SET project_order = CASE id ${cases} END WHERE id IN (${placeholders}) AND user_id = ?`,
+      args: [...caseParams, ...ids, userId]
+    });
+    await tx.commit();
   } catch (error) {
-    await run('ROLLBACK');
+    await tx.rollback();
     throw error;
   }
 }
@@ -794,21 +784,21 @@ async function reorderTasks(projectId, userId, taskOrders) {
   if (!project) return false;
   if (!taskOrders || taskOrders.length === 0) return true;
 
-  await run('BEGIN TRANSACTION');
+  const tx = await client.transaction('write');
   try {
     const cases = taskOrders.map(() => 'WHEN ? THEN ?').join(' ');
     const caseParams = taskOrders.flatMap(t => [t.id, t.order]);
     const ids = taskOrders.map(t => t.id);
     const placeholders = ids.map(() => '?').join(',');
 
-    await run(
-      `UPDATE tasks SET task_order = CASE id ${cases} END WHERE id IN (${placeholders}) AND project_id = ?`,
-      [...caseParams, ...ids, projectId]
-    );
-    await run('COMMIT');
+    await tx.execute({
+      sql: `UPDATE tasks SET task_order = CASE id ${cases} END WHERE id IN (${placeholders}) AND project_id = ?`,
+      args: [...caseParams, ...ids, projectId]
+    });
+    await tx.commit();
     return true;
   } catch (error) {
-    await run('ROLLBACK');
+    await tx.rollback();
     throw error;
   }
 }
@@ -1083,25 +1073,38 @@ async function exportData(userId) {
 
 async function importData(userId, data) {
   await waitForDb();
-  await run('BEGIN TRANSACTION');
+
+  const tx = await client.transaction('write');
+
+  // Local helpers that route through the transaction instead of the shared client
+  async function txRun(sql, params = []) {
+    const result = await tx.execute({ sql, args: params });
+    return { changes: Number(result.rowsAffected) };
+  }
+
+  async function txGet(sql, params = []) {
+    const result = await tx.execute({ sql, args: params });
+    return result.rows[0] || undefined;
+  }
+
   try {
     // Delete only this user's data
-    const userProjects = await all('SELECT id FROM projects WHERE user_id = ?', [userId]);
-    const projectIds = userProjects.map(p => p.id);
+    const userProjectsResult = await tx.execute({ sql: 'SELECT id FROM projects WHERE user_id = ?', args: [userId] });
+    const projectIds = userProjectsResult.rows.map(p => p.id);
 
     if (projectIds.length > 0) {
       const placeholders = projectIds.map(() => '?').join(',');
-      await run(`DELETE FROM tasks WHERE project_id IN (${placeholders})`, projectIds);
-      await run(`DELETE FROM documents WHERE project_id IN (${placeholders})`, projectIds);
+      await txRun(`DELETE FROM tasks WHERE project_id IN (${placeholders})`, projectIds);
+      await txRun(`DELETE FROM documents WHERE project_id IN (${placeholders})`, projectIds);
     }
-    await run('DELETE FROM projects WHERE user_id = ?', [userId]);
-    await run('DELETE FROM user_settings WHERE user_id = ?', [userId]);
+    await txRun('DELETE FROM projects WHERE user_id = ?', [userId]);
+    await txRun('DELETE FROM user_settings WHERE user_id = ?', [userId]);
 
     // Import projects with direct inserts (no re-fetch)
     if (data.projects) {
       for (const project of data.projects) {
         const projectId = generateId();
-        await run(`
+        await txRun(`
           INSERT INTO projects (id, user_id, title, stakeholder, description, status, priority, due_date, tags, project_order, archived, archived_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `, [
@@ -1121,7 +1124,7 @@ async function importData(userId, data) {
         if (project.tasks) {
           for (let i = 0; i < project.tasks.length; i++) {
             const task = project.tasks[i];
-            await run(`
+            await txRun(`
               INSERT INTO tasks (id, project_id, title, completed, due_date, notes, priority, recurring, blocked_by, task_order)
               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             `, [
@@ -1163,7 +1166,7 @@ async function importData(userId, data) {
               contentBase64 = doc.contentBase64 || '';
             }
 
-            await run(`
+            await txRun(`
               INSERT INTO documents (id, project_id, doc_type, title, payload, file_name, mime_type, content_base64)
               VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             `, [generateId(), projectId, docType, doc.title || '', payload, fileName, mimeType, contentBase64]);
@@ -1176,7 +1179,7 @@ async function importData(userId, data) {
     if (data.settings) {
       for (const [key, value] of Object.entries(data.settings)) {
         if (!VALID_SETTINGS_KEYS.includes(key)) continue;
-        await run(
+        await txRun(
           'INSERT OR REPLACE INTO user_settings (user_id, key, value) VALUES (?, ?, ?)',
           [userId, key, JSON.stringify(value)]
         );
@@ -1185,17 +1188,17 @@ async function importData(userId, data) {
 
     // Import quick notes
     if (data.quickNotes !== undefined) {
-      const existing = await get('SELECT id FROM quick_notes WHERE user_id = ? ORDER BY id DESC LIMIT 1', [userId]);
+      const existing = await txGet('SELECT id FROM quick_notes WHERE user_id = ? ORDER BY id DESC LIMIT 1', [userId]);
       if (existing) {
-        await run('UPDATE quick_notes SET content = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [data.quickNotes, existing.id]);
+        await txRun('UPDATE quick_notes SET content = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [data.quickNotes, existing.id]);
       } else {
-        await run('INSERT INTO quick_notes (user_id, content) VALUES (?, ?)', [userId, data.quickNotes]);
+        await txRun('INSERT INTO quick_notes (user_id, content) VALUES (?, ?)', [userId, data.quickNotes]);
       }
     }
 
-    await run('COMMIT');
+    await tx.commit();
   } catch (error) {
-    await run('ROLLBACK');
+    await tx.rollback();
     throw error;
   }
 }
@@ -1216,16 +1219,12 @@ async function healthCheck() {
 // ========== GRACEFUL SHUTDOWN ==========
 
 function closeDatabase() {
-  return new Promise((resolve) => {
-    db.close((err) => {
-      if (err) {
-        logger.error({ err }, 'Error closing database');
-      } else {
-        logger.info('Database connection closed');
-      }
-      resolve();
-    });
-  });
+  try {
+    client.close();
+    logger.info('Database connection closed');
+  } catch (err) {
+    logger.error({ err }, 'Error closing database');
+  }
 }
 
 module.exports = {

@@ -28,6 +28,7 @@ pino.log*
 dist/
 build/
 .parcel-cache/
+.vercel/
 
 # ─── Testing ─────────────────────────────────────────────────────────────────
 test-results/
