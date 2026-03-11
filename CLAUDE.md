@@ -8,14 +8,15 @@ Project Overviewer is a multi-user project and task management application with 
 
 **Technology Stack:**
 - **Backend**: Node.js with Express.js
-- **Database**: SQLite3 with WAL mode and promise-based wrappers
+- **Database**: LibSQL (`@libsql/client`) — SQLite-compatible; connects to local file or remote Turso cloud DB
 - **Frontend**: Modular vanilla JavaScript (16 JS modules, no framework, no bundler)
-- **Auth**: Session-based with Bearer tokens and HttpOnly cookies (bcrypt for password hashing)
+- **Auth**: Session-based with Bearer tokens and HttpOnly cookies (bcryptjs for password hashing)
 - **Validation**: Zod schemas on all API inputs
 - **Security**: Helmet (security headers), express-rate-limit, compression
 - **Logging**: Pino (structured logging, pino-pretty in dev)
-- **Testing**: Playwright E2E tests
+- **Testing**: Playwright E2E tests (93 tests)
 - **API**: REST API with JSON responses
+- **Deployment**: Vercel-ready (`vercel.json`, serverless export in `server.js`)
 
 **Key Features:**
 - Multi-user authentication with admin approval workflow
@@ -26,10 +27,10 @@ Project Overviewer is a multi-user project and task management application with 
 - Document attachments (email and docx types) with download support
 - Project archiving
 - Stakeholder assignment and filtering
-- Priority levels (high, medium, low, none) with color-coded indicators
+- Priority levels (high, medium, low, none) with color-coded indicators: High (red), Medium (yellow), Low (green), None (gray)
 - Tag-based organization and filtering
 - Due date tracking with overdue/today/this week smart filters
-- Quick inline editing with undo functionality
+- Quick inline editing with undo functionality (change status, priority, or stakeholder without opening a modal)
 - Multiple sorting options (manual, due date, priority, title, stakeholder, recently updated)
 - Command palette for quick navigation (Cmd+K / Ctrl+K)
 - Theme system with CSS custom properties (Light, Dark, Ocean, Forest, Auto)
@@ -38,8 +39,85 @@ Project Overviewer is a multi-user project and task management application with 
 - Export/import functionality for data backup (user-scoped)
 - Project templates (Bug Report, Feature Request, Meeting Notes)
 - Admin panel for user management and global settings
+- Live full-text search across project titles and descriptions
+- Sidebar collapse for reclaiming screen space
+
+## User Guide
+
+### Views and Navigation
+
+| View | What It Shows |
+|------|--------------|
+| All Projects | Every project, sorted and filtered to your preferences |
+| Kanban | Four drag-and-drop lanes (`backlog → completed`) with configurable WIP limits |
+| Focus | Your highest-priority in-progress work |
+| Status filters | Jump directly to any status bucket |
+
+**Filters available:** status, priority, stakeholder, tag, smart filters (Overdue, Due Today, Due This Week)
+
+**Sort options:** manual order, due date, priority, title, stakeholder, recently updated
+
+### Keyboard Shortcuts
+
+| Shortcut | Action |
+|----------|--------|
+| `N` | New project |
+| `Cmd+K` / `Ctrl+K` | Command palette |
+| `/` | Focus search |
+| `Cmd+I` / `Ctrl+I` | Statistics |
+| `Cmd+,` / `Ctrl+,` | Settings |
+| `Esc` | Close modal |
+| `?` | Show all shortcuts |
+
+### Solo Use Workflow
+
+1. Log in at `http://localhost:3001` with admin credentials
+2. Press `N` or click **+ New Project** to create a project
+3. Fill in: status, priority, due date, description, tags
+4. Add tasks at the bottom of the project modal — press Enter after each one
+5. Use **Overdue** and **Due Today** sidebar filters each morning
+6. Archive projects when done to keep the active list clean
+7. Open Settings → **Export Data** for JSON backups
+
+### Team Use Workflow
+
+1. Have teammates register at `/register` — approve them from `/admin.html`
+2. Go to Settings → Team → **Create Team**, then **Add Member** with each teammate's username
+3. Each user toggles **Personal / Team** in the top nav bar independently
+4. **Team mode**: shows all team members' projects — for stand-ups and shared visibility
+5. **Personal mode**: shows only your own projects — for focused individual work
+6. Use tag + stakeholder filters to slice the team view (e.g., `backend` tag + specific owner)
+7. Admin configures global limits in Admin Panel (max projects per user, registration on/off)
 
 ## Architecture
+
+### Design Philosophy
+
+Project Overviewer is intentionally simple. The goal is a tool you can run, understand, and modify without fighting a complex build pipeline or abstraction layers. There is no framework on the frontend, no ORM on the backend, and no external services — just Node.js, SQLite, and plain JavaScript files.
+
+### System Overview
+
+```
+┌─────────────────────────────────────────────────┐
+│                   Browser                        │
+│   public/index.html + 16 JS modules + CSS       │
+└──────────────────────┬──────────────────────────┘
+                       │ HTTP REST (JSON)
+┌──────────────────────▼──────────────────────────┐
+│              server.js  (Express)                │
+│   Helmet → Rate Limit → requireAuth → Zod       │
+│   → Route Handler → database.js                 │
+└──────────────────────┬──────────────────────────┘
+                       │ async/await
+┌──────────────────────▼──────────────────────────┐
+│             database.js  (SQLite3)               │
+│   waitForDb() → Promise wrappers → CRUD         │
+└──────────────────────┬──────────────────────────┘
+                       │ WAL mode
+┌──────────────────────▼──────────────────────────┐
+│               projects.db  (SQLite file)         │
+└─────────────────────────────────────────────────┘
+```
 
 ### Four-Tier Structure
 
@@ -100,28 +178,38 @@ Project Overviewer is a multi-user project and task management application with 
 - No bundler — modules loaded via `<script>` tags in dependency order
 - State managed in `state.js` closure, accessed via `window.AppState`
 
+### Frontend Architecture
+
+The frontend is a **modular vanilla JavaScript SPA with no build step**. 16 modules are loaded as plain `<script>` tags in `public/index.html`, in dependency order. Each module attaches its public API to `window` (e.g., `window.API`, `window.AppState`). No `import`/`export` — globals make the dependency graph explicit.
+
+**State management**: `state.js` is a closure holding the application state (projects array, user settings, current user, active filters). Modules mutate state through explicit setters (`AppState.setProjects()`, `AppState.updateSettings()`) and then call render functions directly. No reactive system — data flow is explicit and debugger-traceable.
+
+**Event handling**: `events.js` uses **event delegation** — a single listener per major container (`#app`, `#projectModal`, etc.) handles all interactions via `event.target` matching. Two shared helpers inside `events.js` prevent duplication:
+- `handleDocAction(e, projectId)` — processes document-related clicks in both content area and modal
+- `wireTaskDrag(container)` — sets up task drag-and-drop in both card view and modal view
+
 ### Frontend Modules
 
 Located in `public/js/`, loaded in this order:
 
-| Module | Purpose |
-|--------|---------|
-| `api-client.js` | API wrapper (`window.API`), all fetch calls with auth headers |
-| `utils.js` | Shared utilities (date formatting, debounce, etc.) |
-| `state.js` | Application state management (`window.AppState`) |
+| Module | Responsibility |
+|--------|---------------|
+| `api-client.js` | All `fetch()` calls with auth headers and error handling (`window.API`) |
+| `utils.js` | Date formatting, debounce, DOM helpers |
+| `state.js` | Central app state: projects, settings, current user (`window.AppState`) |
 | `toast.js` | Toast notification system |
-| `theme.js` | Theme switching (Light, Dark, Ocean, Forest, Auto) |
-| `filters.js` | Search, filter, and sort logic |
-| `render.js` | DOM rendering for project cards, kanban, etc. |
-| `projects.js` | Project CRUD operations |
-| `tasks.js` | Task CRUD operations |
-| `modals.js` | Modal dialogs (project edit, settings, etc.) |
-| `commands.js` | Command palette (Cmd+K / Ctrl+K) |
-| `dragdrop.js` | Kanban drag-and-drop |
-| `keyboard.js` | Keyboard shortcuts |
-| `events.js` | Event listener setup and delegation |
+| `theme.js` | CSS custom property swapping for 5 themes |
+| `filters.js` | Search, filter, and sort logic (pure functions, no side effects) |
+| `render.js` | DOM construction: project cards, kanban lanes, task lists |
+| `projects.js` | Project CRUD: create, update, delete, reorder |
+| `tasks.js` | Task CRUD: create, toggle, update, delete, reorder |
+| `modals.js` | Modal lifecycle: open, populate, close, form submission |
+| `commands.js` | Command palette (`Cmd+K`) |
+| `dragdrop.js` | Kanban drag-and-drop (projects and tasks) |
+| `keyboard.js` | Keyboard shortcut registry |
+| `events.js` | Event delegation setup |
 | `team.js` | Team management UI and workspace toggle |
-| `app.js` | App initialization and bootstrap |
+| `app.js` | Bootstrap: load state, wire modules, initial render |
 
 ## Development Commands
 
@@ -166,8 +254,8 @@ npm install
 
 Required dependencies:
 - `express` — Web server framework
-- `sqlite3` — Database driver
-- `bcrypt` — Password hashing
+- `@libsql/client` — LibSQL/Turso database driver (SQLite-compatible, supports remote Turso or local file)
+- `bcryptjs` — Password hashing (pure JS, no native binaries)
 - `helmet` — Security headers
 - `compression` — Response compression
 - `express-rate-limit` — Rate limiting
@@ -228,39 +316,33 @@ sqlite> .quit
 
 ### Backend Files
 
-**`server.js`** — Express application, middleware, and route handlers
-- Security middleware: Helmet, rate limiting, compression, body size limits
-- Auth middleware: `requireAuth`, `requireAdmin`
-- Input validation with Zod schemas
-- Cookie parsing (built-in, no extra dependency)
-- Auth endpoints: register, login, logout, me, password change
-- Admin endpoints: user management, global settings
-- Team endpoints: create, get, add/remove members, leave, delete
-- Project CRUD endpoints (user-scoped)
-- Task CRUD endpoints (ownership-verified)
-- Document endpoints with file download
-- Settings endpoints (user and global)
-- Quick notes, templates, export/import
-- Admin user seeding from env vars
-- SPA fallback routing
-- Graceful shutdown with 10s timeout
+**`server.js`** — The entire Express application in one file, organized in clearly labeled sections. Every request passes through the same middleware stack:
+1. **Helmet** — security headers (CSP, X-Frame-Options, HSTS in production)
+2. **Rate limiting** — 200 req/15 min general, 20 req/15 min auth, 5/hr imports
+3. **Compression + body limits** — 2 MB general, 10 MB for uploads and imports
+4. **`requireAuth`** — validates session token from Bearer header or HttpOnly cookie
+5. **`requireAdmin`** — checks `admin` role (applied only to admin routes)
+6. **Zod validation** — every endpoint that accepts input has a schema; invalid input returns 400 before business logic runs
 
-**`database.js`** — Database abstraction layer
-- Connection management with `waitForDb()` pattern
-- WAL mode and performance PRAGMAs
-- Schema initialization for all 10+ tables with indexes
-- User and session management
-- User-scoped CRUD operations for projects, tasks, documents
-- Team management (create, members, lookup)
-- Dual settings system: global (admin) and per-user
-- Bulk-fetch optimization (3 queries instead of 2N+1 for projects)
-- User-scoped export/import
-- Health check endpoint support
-- Foreign key constraints with cascade deletion
+Two shared helpers reduce duplication:
+- `setSessionCookie(res, token)` — used by login, password-change, and logout
+- `resolveTeamScope(userId, workspaceMode)` — returns user IDs to query (personal: `[userId]`; team: all member IDs)
 
-**`logger.js`** — Pino structured logger configuration
-- Log level from `LOG_LEVEL` env var (default: `info`)
-- Pretty printing in non-production environments
+The SPA fallback at the bottom serves `public/index.html` for any non-API, non-static route, enabling client-side navigation on refresh.
+
+**`database.js`** — The data access layer. The key pattern is `waitForDb()`: every exported function starts with `await waitForDb()`, guaranteeing the schema exists before any query runs, even during the startup window.
+
+Schema initialization uses `CREATE TABLE IF NOT EXISTS` throughout — every startup is idempotent and safe against an existing database.
+
+The project list endpoint uses a **bulk-fetch pattern**: 3 queries (all projects, all tasks, all documents) joined in JavaScript — replaces a 2N+1 query pattern.
+
+SQLite performance configuration:
+- WAL mode — readers don't block writers
+- `synchronous = NORMAL` — durable without full `FULL` overhead
+- `cache_size = -8000` — 8 MB page cache
+- `busy_timeout = 5000` — wait up to 5 seconds on locked DB before failing
+
+**`logger.js`** — Thin Pino wrapper. JSON output in production; pretty-printed colored output in development via `pino-pretty`. Level controlled by `LOG_LEVEL` env var.
 
 ### Frontend Files
 
@@ -303,6 +385,22 @@ sqlite> .quit
 - Same functionality as `start.sh` for Windows
 
 ## Database Schema
+
+Ten tables in four logical groups:
+
+| Group | Tables | Purpose |
+|-------|--------|---------|
+| Auth | `users`, `sessions` | Accounts, session tokens |
+| Content | `projects`, `tasks`, `documents` | The actual work |
+| Collaboration | `teams`, `team_members` | Team and membership |
+| Configuration | `global_settings`, `user_settings`, `quick_notes`, `templates` | Per-user and global config |
+
+**Key schema decisions:**
+- **UUID primary keys** (`crypto.randomUUID()`) everywhere — avoids sequential ID enumeration attacks and simplifies data portability
+- **User-scoped queries** — every content table has a `user_id` column; every read query filters by it (or expands to team member list in team mode)
+- **JSON columns** for `tags`, template `tasks`, and email `payload` — avoids schema migrations for list/object-shaped fields
+- **Cascade deletes** — deleting a user removes sessions; deleting a project cascades to tasks and documents
+- **`project_order` / `task_order` integers** per record — manual ordering without a separate join table
 
 ### users table
 ```sql
@@ -609,14 +707,18 @@ curl http://localhost:3001/api/health
 - Export/import features are user-scoped (each user exports only their data)
 
 ### Security
-- Helmet sets security headers (CSP, X-Frame-Options, etc.)
-- Rate limiting: 200 req/15min general, 20 req/15min auth, 5 req/hr import
-- Rate limiting disabled in `NODE_ENV=test`
-- Body size limits: 2MB general, 10MB for import and document uploads
-- Zod validation on all API inputs with allowlisted settings keys
-- Passwords hashed with bcrypt (12 rounds)
-- MIME type allowlisting for document downloads
-- Filename sanitization for downloads
+
+| Layer | Control |
+|-------|---------|
+| Transport | HSTS header in production; `Secure` cookie flag requires HTTPS |
+| Headers | Helmet: CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy |
+| Rate limiting | 200 req/15 min general; 20 req/15 min auth; 5/hr import (disabled in `NODE_ENV=test`) |
+| Passwords | bcrypt with 12 salt rounds |
+| Sessions | 32-byte hex token; 24-hour expiry; invalidated on password change |
+| Authorization | Every data endpoint verifies `user_id` ownership or team membership before returning data |
+| Input | Zod schemas on all inputs; settings keys allowlisted server-side |
+| File downloads | MIME type allowlisting; filename sanitization |
+| Body limits | 2 MB general; 10 MB upload/import |
 
 ### Frontend Architecture
 - Modular vanilla JavaScript — 16 modules in `public/js/`, no build step required
