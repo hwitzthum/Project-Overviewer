@@ -1,0 +1,136 @@
+// Project Overviewer — Utility Functions
+
+function uuid() {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+    const r = Math.random() * 16 | 0;
+    return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+  });
+}
+
+function formatStatus(status) {
+  return status || 'not-started';
+}
+
+function escapeHtml(text) {
+  if (!text) return '';
+  const str = String(text);
+  return str.replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'
+  })[c]);
+}
+
+function formatDate(dateStr) {
+  if (!dateStr) return '';
+  const date = new Date(dateStr);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const diff = Math.ceil((date - today) / (1000 * 60 * 60 * 24));
+
+  if (date < today) return { text: `${Math.abs(diff)} days overdue`, overdue: true };
+  if (diff === 0) return { text: 'Today', overdue: false };
+  if (diff === 1) return { text: 'Tomorrow', overdue: false };
+  if (diff <= 7) return { text: `In ${diff} days`, overdue: false };
+  return { text: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }), overdue: false };
+}
+
+function isOverdue(dateStr) {
+  if (!dateStr) return false;
+  return new Date(dateStr) < new Date(new Date().toDateString());
+}
+
+function isToday(dateStr) {
+  if (!dateStr) return false;
+  return new Date(dateStr).toDateString() === new Date().toDateString();
+}
+
+function isThisWeek(dateStr) {
+  if (!dateStr) return false;
+  const date = new Date(dateStr);
+  const today = new Date();
+  const weekFromNow = new Date(today);
+  weekFromNow.setDate(weekFromNow.getDate() + 7);
+  return date >= today && date <= weekFromNow;
+}
+
+function isDueWithinDays(dateStr, days) {
+  if (!dateStr) return false;
+  const date = new Date(dateStr);
+  const today = new Date(new Date().toDateString());
+  const limit = new Date(today);
+  limit.setDate(limit.getDate() + days);
+  return date >= today && date <= limit;
+}
+
+function findTaskEntryById(taskId) {
+  if (!taskId) return null;
+  for (const project of state.projects) {
+    const task = (project.tasks || []).find(t => t.id === taskId);
+    if (task) return { task, project };
+  }
+  return null;
+}
+
+function formatDependencyLabel(entry) {
+  return `${entry.project.title} — ${entry.task.title}`;
+}
+
+function getDependencyCandidates(taskId) {
+  const entries = [];
+  for (const project of state.projects) {
+    if (project.archived) continue;
+    for (const task of project.tasks || []) {
+      if (task.id === taskId) continue;
+      entries.push({ task, project });
+    }
+  }
+  return entries;
+}
+
+function getUnblockedEntries(taskId) {
+  if (!taskId) return [];
+  const entries = [];
+  for (const project of state.projects) {
+    for (const task of project.tasks || []) {
+      if (task.blockedBy === taskId) {
+        entries.push({ task, project });
+      }
+    }
+  }
+  return entries;
+}
+
+function getAllTasksWithProjects() {
+  return state.projects
+    .filter(project => !project.archived)
+    .flatMap(project => (project.tasks || []).map(task => ({
+      task,
+      project
+    })));
+}
+
+function decodeStakeholderView(view) {
+  const stakeholderKey = view.replace('stakeholder-', '');
+  try {
+    return decodeURIComponent(stakeholderKey);
+  } catch (error) {
+    return stakeholderKey;
+  }
+}
+
+function parseWipLimit(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) return null;
+  return parsed;
+}
+
+function sanitizeWipLimits(limits = {}) {
+  return {
+    backlog: parseWipLimit(limits.backlog),
+    'not-started': parseWipLimit(limits['not-started']),
+    'in-progress': parseWipLimit(limits['in-progress']),
+    completed: parseWipLimit(limits.completed)
+  };
+}

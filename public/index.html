@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Project Overviewer</title>
+  <link rel="stylesheet" href="/css/app.css">
+  <script src="/js/api-client.js"></script>
+  <script>
+    // Auth guard — redirect to login if no session
+    if (!API.token) {
+      window.location.href = '/login.html';
+    } else {
+      API.getMe().catch(() => {
+        API.setToken(null);
+        window.location.href = '/login.html';
+      });
+    }
+  </script>
+</head>
+<body>
+  <div class="app" id="app">
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar" role="navigation" aria-label="Main navigation">
+      <div class="sidebar-header">
+        <div class="sidebar-search-wrapper">
+          <span class="search-icon">🔍</span>
+          <input type="text" class="sidebar-search" id="searchInput" placeholder="Search projects..." aria-label="Search projects">
+        </div>
+      </div>
+      <nav class="sidebar-nav">
+        <div class="nav-section">
+          <div class="nav-section-title">Views</div>
+          <div class="nav-item active" data-view="all" tabindex="0" role="button">
+            <span class="nav-item-icon">📁</span>
+            <span>All Projects</span>
+            <span class="nav-item-count" id="countAll">0</span>
+          </div>
+          <div class="nav-item" data-view="kanban" tabindex="0" role="button">
+            <span class="nav-item-icon">🧱</span>
+            <span>Kanban</span>
+            <span class="nav-item-count" id="countKanban">0</span>
+          </div>
+          <div class="nav-item" data-view="focus" tabindex="0" role="button">
+            <span class="nav-item-icon">🎯</span>
+            <span>Focus</span>
+            <span class="nav-item-count" id="countFocus">0</span>
+          </div>
+          <div class="nav-item" data-view="not-started" tabindex="0" role="button">
+            <span class="nav-item-icon">🟦</span>
+            <span>not-started</span>
+            <span class="nav-item-count" id="countNotStarted">0</span>
+          </div>
+          <div class="nav-item" data-view="in-progress" tabindex="0" role="button">
+            <span class="nav-item-icon">🚀</span>
+            <span>in-progress</span>
+            <span class="nav-item-count" id="countInProgress">0</span>
+          </div>
+          <div class="nav-item" data-view="backlog" tabindex="0" role="button">
+            <span class="nav-item-icon">📋</span>
+            <span>backlog</span>
+            <span class="nav-item-count" id="countBacklog">0</span>
+          </div>
+          <div class="nav-item" data-view="completed" tabindex="0" role="button">
+            <span class="nav-item-icon">✅</span>
+            <span>completed</span>
+            <span class="nav-item-count" id="countCompleted">0</span>
+          </div>
+          <div class="nav-item" data-view="archived" tabindex="0" role="button">
+            <span class="nav-item-icon">🗄️</span>
+            <span>Archived</span>
+            <span class="nav-item-count" id="countArchived">0</span>
+          </div>
+        </div>
+        <div class="nav-section">
+          <div class="nav-section-title">Filters</div>
+          <div class="nav-item" data-view="overdue" tabindex="0" role="button">
+            <span class="nav-item-icon">⚠️</span>
+            <span>Overdue</span>
+            <span class="nav-item-count" id="countOverdue">0</span>
+          </div>
+          <div class="nav-item" data-view="today" tabindex="0" role="button">
+            <span class="nav-item-icon">📅</span>
+            <span>Due Today</span>
+            <span class="nav-item-count" id="countToday">0</span>
+          </div>
+          <div class="nav-item" data-view="week" tabindex="0" role="button">
+            <span class="nav-item-icon">📆</span>
+            <span>This Week</span>
+            <span class="nav-item-count" id="countWeek">0</span>
+          </div>
+        </div>
+        <div class="nav-section">
+          <div class="nav-section-title">Smart Lists</div>
+          <div class="nav-item" data-view="smart-overdue" tabindex="0" role="button">
+            <span class="nav-item-icon">⏰</span>
+            <span>Overdue Tasks</span>
+            <span class="nav-item-count" id="countSmartOverdue">0</span>
+          </div>
+          <div class="nav-item" data-view="smart-due-soon" tabindex="0" role="button">
+            <span class="nav-item-icon">🔥</span>
+            <span>Due in 3 Days</span>
+            <span class="nav-item-count" id="countSmartDueSoon">0</span>
+          </div>
+          <div class="nav-item" data-view="smart-waiting" tabindex="0" role="button">
+            <span class="nav-item-icon">⏳</span>
+            <span>Waiting on Stakeholder</span>
+            <span class="nav-item-count" id="countSmartWaiting">0</span>
+          </div>
+        </div>
+        <div class="nav-section">
+          <div class="nav-section-title">Priority</div>
+          <div class="nav-item" data-view="priority-high" tabindex="0" role="button">
+            <span class="nav-item-icon">🔴</span>
+            <span>High Priority</span>
+            <span class="nav-item-count" id="countHigh">0</span>
+          </div>
+          <div class="nav-item" data-view="priority-medium" tabindex="0" role="button">
+            <span class="nav-item-icon">🟡</span>
+            <span>Medium Priority</span>
+            <span class="nav-item-count" id="countMedium">0</span>
+          </div>
+          <div class="nav-item" data-view="priority-low" tabindex="0" role="button">
+            <span class="nav-item-icon">🟢</span>
+            <span>Low Priority</span>
+            <span class="nav-item-count" id="countLow">0</span>
+          </div>
+        </div>
+        <div class="nav-section" id="stakeholdersSection" style="display:none;">
+          <div class="nav-section-title">Stakeholders</div>
+          <div id="stakeholdersList"></div>
+        </div>
+        <div class="nav-section" id="tagsSection" style="display:none;">
+          <div class="nav-section-title">Tags</div>
+          <div id="tagsList"></div>
+        </div>
+      </nav>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main">
+      <header class="header">
+        <button class="header-toggle" id="toggleSidebar" aria-label="Toggle sidebar">☰</button>
+        <h1 class="header-title" id="viewTitle">All Projects</h1>
+        <div class="header-actions">
+          <div class="workspace-toggle" id="workspaceToggle">
+            <button class="workspace-toggle-btn active" data-mode="team" title="Team workspace">Team</button>
+            <button class="workspace-toggle-btn" data-mode="personal" title="Personal workspace">Personal</button>
+          </div>
+          <button class="btn btn-icon" id="showStats" aria-label="Statistics" title="Statistics (⌘I)">📊</button>
+          <button class="btn btn-icon" id="toggleFocus" aria-label="Focus mode" title="Focus Mode">🎯</button>
+          <button class="btn btn-icon" id="openSettings" aria-label="Settings" title="Settings (⌘,)">⚙️</button>
+          <select id="sortProjects" class="sort-select" aria-label="Sort projects">
+            <option value="manual">Sort: Manual</option>
+            <option value="due-date">Sort: Due Date</option>
+            <option value="priority">Sort: Priority</option>
+            <option value="title">Sort: Title</option>
+            <option value="stakeholder">Sort: Stakeholder</option>
+            <option value="updated">Sort: Recently Updated</option>
+          </select>
+          <button class="btn btn-primary" id="newProject">
+            <span>+</span>
+            <span>New Project</span>
+          </button>
+          <div class="user-menu" id="userMenu">
+            <button class="user-menu-trigger" id="userMenuTrigger" aria-label="User menu">
+              <span class="user-avatar" id="userAvatar">?</span>
+              <span class="user-name" id="userName"></span>
+              <span class="user-caret">▾</span>
+            </button>
+            <div class="user-menu-dropdown" id="userMenuDropdown" style="display:none;">
+              <div class="user-menu-item" id="menuTeam">👥 Team</div>
+              <div class="user-menu-item" id="menuSettings">⚙️ Settings</div>
+              <div class="user-menu-item" id="menuAdmin" style="display:none;">👑 Admin Panel</div>
+              <div class="user-menu-divider"></div>
+              <div class="user-menu-item user-menu-danger" id="menuLogout">↩ Sign Out</div>
+            </div>
+          </div>
+        </div>
+      </header>
+      <div class="content" id="content">
+        <!-- Content rendered by JavaScript -->
+      </div>
+    </main>
+  </div>
+
+  <!-- Command Palette -->
+  <div class="command-palette" id="commandPalette" role="dialog" aria-label="Command palette">
+    <input type="text" class="command-input" id="commandInput" placeholder="Type a command or search...">
+    <div class="command-results" id="commandResults"></div>
+  </div>
+
+  <!-- Quick Actions -->
+  <div class="quick-actions" id="quickActions" aria-live="polite">
+    <div class="quick-actions-title">Quick Actions</div>
+    <div class="quick-actions-title" id="quickActionsProject">No project selected</div>
+    <div class="quick-actions-buttons">
+      <button class="btn btn-secondary btn-sm" id="qaOpenProject">Open</button>
+      <button class="btn btn-secondary btn-sm" id="qaQuickEdit">Quick Edit</button>
+      <button class="btn btn-secondary btn-sm" id="qaAddTask">+ Task</button>
+      <button class="btn btn-secondary btn-sm" id="qaAddEmail">+ Email</button>
+      <button class="btn btn-secondary btn-sm" id="qaAddDocx">+ Docx</button>
+      <button class="btn btn-secondary btn-sm" id="qaMarkDone">Mark Done</button>
+    </div>
+    <input type="file" id="quickActionDocxInput" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden>
+  </div>
+
+  <!-- Settings Modal -->
+  <div class="modal-overlay" id="settingsModal">
+    <div class="modal" role="dialog" aria-labelledby="settingsTitle">
+      <div class="modal-header">
+        <h2 class="modal-title" id="settingsTitle">Settings</h2>
+        <button class="modal-close" aria-label="Close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="settings-group">
+          <div class="settings-label">Theme</div>
+          <div class="settings-options">
+            <div class="settings-option" data-theme="light">☀️ Light</div>
+            <div class="settings-option" data-theme="dark">🌙 Dark</div>
+            <div class="settings-option" data-theme="ocean">🌊 Ocean</div>
+            <div class="settings-option" data-theme="forest">🌲 Forest</div>
+            <div class="settings-option" data-theme="auto">🌓 Auto</div>
+          </div>
+        </div>
+        <div class="settings-group">
+          <div class="settings-label">Data</div>
+          <div class="settings-options" style="flex-direction: column;">
+            <button class="btn btn-secondary" id="exportData" style="width:100%;">📤 Export Data</button>
+            <button class="btn btn-secondary" id="importData" style="width:100%;">📥 Import Data</button>
+          </div>
+        </div>
+        <div class="settings-group team-section" id="teamSection">
+          <div class="settings-label">Team</div>
+          <div id="teamContent">
+            <!-- Populated by JavaScript -->
+            <p style="color: var(--text-tertiary); font-size: 13px;">Loading team info...</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Create Project Modal -->
+  <div class="modal-overlay" id="createProjectModal">
+    <div class="modal" style="max-width: 640px;" role="dialog" aria-labelledby="createProjectTitle">
+      <div class="modal-header">
+        <h2 class="modal-title" id="createProjectTitle">Create Project</h2>
+        <button class="modal-close" aria-label="Close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div style="display: flex; flex-direction: column; gap: 16px;">
+          <div>
+            <label class="settings-label">Title</label>
+            <input type="text" id="createTitle" placeholder="Project title" style="width:100%;">
+          </div>
+          <div>
+            <label class="settings-label">Stakeholder</label>
+            <input type="text" id="createStakeholder" placeholder="Who requested this project?" style="width:100%;">
+          </div>
+          <div>
+            <label class="settings-label">Description</label>
+            <textarea id="createDescription" rows="3" placeholder="Optional description" style="width:100%;"></textarea>
+          </div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+            <div>
+              <label class="settings-label">Status</label>
+              <select id="createStatus" style="width:100%; padding: 8px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-primary);">
+                <option value="not-started">not-started</option>
+                <option value="in-progress">in-progress</option>
+                <option value="completed">completed</option>
+                <option value="backlog">backlog</option>
+              </select>
+            </div>
+            <div id="createPriorityGroup">
+              <label class="settings-label">Priority</label>
+              <select id="createPriority" style="width:100%; padding: 8px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-primary);">
+                <option value="none">None</option>
+                <option value="high">High</option>
+                <option value="medium" selected>Medium</option>
+                <option value="low">Low</option>
+              </select>
+            </div>
+          </div>
+          <div>
+            <label class="settings-label">Due Date (optional)</label>
+            <input type="date" id="createDueDate" style="width:100%;">
+          </div>
+          <div>
+            <label class="settings-label">Tags (comma-separated)</label>
+            <input type="text" id="createTags" placeholder="design, frontend, urgent" style="width:100%;">
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary modal-close">Cancel</button>
+        <button class="btn btn-primary" id="createProjectSubmit">Create Project</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Project Detail Modal -->
+  <div class="modal-overlay" id="projectModal">
+    <div class="modal" style="max-width: 600px;" role="dialog" aria-labelledby="projectModalTitle">
+      <div class="modal-header">
+        <h2 class="modal-title" id="projectModalTitle">Project Details</h2>
+        <button class="modal-close" aria-label="Close">&times;</button>
+      </div>
+      <div class="modal-body" id="projectModalBody">
+        <!-- Rendered by JavaScript -->
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="deleteProject">🗑️ Delete</button>
+        <button class="btn btn-primary modal-close">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Confirm Delete Modal -->
+  <div class="modal-overlay" id="confirmModal">
+    <div class="modal" style="max-width: 400px;" role="alertdialog" aria-labelledby="confirmTitle">
+      <div class="modal-header">
+        <h2 class="modal-title" id="confirmTitle">Confirm Delete</h2>
+        <button class="modal-close" aria-label="Close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p id="confirmMessage">Are you sure you want to delete this project? This cannot be undone.</p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary modal-close">Cancel</button>
+        <button class="btn btn-primary" id="confirmAction" style="background: var(--danger);">Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Statistics Modal -->
+  <div class="modal-overlay" id="statsModal">
+    <div class="modal" style="max-width: 700px;" role="dialog" aria-labelledby="statsTitle">
+      <div class="modal-header">
+        <h2 class="modal-title" id="statsTitle">Statistics Dashboard</h2>
+        <button class="modal-close" aria-label="Close">&times;</button>
+      </div>
+      <div class="modal-body" id="statsBody">
+        <!-- Rendered by JavaScript -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Quick Notes Panel -->
+  <div class="quick-notes" id="quickNotes">
+    <div class="quick-notes-header">
+      <strong>Quick Notes</strong>
+      <button class="modal-close" id="closeNotes" aria-label="Close notes">&times;</button>
+    </div>
+    <textarea class="quick-notes-textarea" id="notesTextarea" placeholder="Jot down quick thoughts..."></textarea>
+    <div class="quick-notes-footer">
+      <button class="btn btn-secondary" id="convertToTask">Convert to Task</button>
+    </div>
+  </div>
+
+  <!-- Toast Container -->
+  <div class="toast-container" id="toastContainer" aria-live="polite"></div>
+
+  <!-- Hidden file input for import -->
+  <input type="file" id="fileInput" accept=".json" style="display: none;">
+
+  <!-- JavaScript modules (loaded in dependency order) -->
+  <script src="/js/utils.js"></script>
+  <script src="/js/state.js"></script>
+  <script src="/js/toast.js"></script>
+  <script src="/js/theme.js"></script>
+  <script src="/js/filters.js"></script>
+  <script src="/js/render.js"></script>
+  <script src="/js/projects.js"></script>
+  <script src="/js/tasks.js"></script>
+  <script src="/js/modals.js"></script>
+  <script src="/js/commands.js"></script>
+  <script src="/js/dragdrop.js"></script>
+  <script src="/js/keyboard.js"></script>
+  <script src="/js/events.js"></script>
+  <script src="/js/team.js"></script>
+  <script src="/js/app.js"></script>
+</body>
+</html>

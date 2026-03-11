@@ -47,7 +47,7 @@ In the terminal, type:
 ```bash
 cd /Users/hwitzthum/Project-Overviewer
 ```
-(Replace the path with wherever you saved the Project-Overviewer folder)
+(Replace the path wi/enth wherever you saved the Project-Overviewer folder)
 
 ### Step 3: Start the App
 

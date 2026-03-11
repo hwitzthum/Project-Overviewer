@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin — Project Overviewer</title>
+  <link rel="stylesheet" href="/css/auth.css">
+  <style>
+    body {
+      display: block;
+      overflow: auto;
+      padding: 0;
+    }
+
+    .admin-shell {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 32px 24px;
+      min-height: 100vh;
+    }
+
+    .admin-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 32px;
+    }
+
+    .admin-header h1 {
+      font-family: 'DM Sans', sans-serif;
+      font-size: 24px;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    .admin-back {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--accent);
+      text-decoration: none;
+      font-size: 14px;
+      font-weight: 500;
+      padding: 8px 14px;
+      border-radius: var(--radius-sm);
+      transition: background 150ms ease;
+    }
+
+    .admin-back:hover {
+      background: rgba(var(--accent-rgb), 0.08);
+    }
+
+    .admin-stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 16px;
+      margin-bottom: 32px;
+    }
+
+    .admin-stat {
+      background: var(--bg-primary);
+      border: 1px solid var(--border-light);
+      border-radius: var(--radius-md);
+      padding: 20px;
+      text-align: center;
+    }
+
+    .admin-stat-value {
+      font-size: 32px;
+      font-weight: 600;
+      color: var(--text-primary);
+      font-family: 'DM Mono', monospace;
+    }
+
+    .admin-stat-label {
+      font-size: 12px;
+      color: var(--text-tertiary);
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      margin-top: 4px;
+      font-family: 'DM Mono', monospace;
+    }
+
+    .admin-section {
+      background: var(--bg-primary);
+      border: 1px solid var(--border-light);
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+      margin-bottom: 24px;
+    }
+
+    .admin-section-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border-light);
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    .admin-user-row {
+      display: flex;
+      align-items: center;
+      padding: 14px 20px;
+      border-bottom: 1px solid var(--border-light);
+      gap: 16px;
+    }
+
+    .admin-user-row:last-child {
+      border-bottom: none;
+    }
+
+    .admin-user-avatar {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: var(--accent);
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      font-weight: 600;
+      flex-shrink: 0;
+    }
+
+    .admin-user-info {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .admin-user-name {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text-primary);
+    }
+
+    .admin-user-email {
+      font-size: 12px;
+      color: var(--text-tertiary);
+      margin-top: 2px;
+    }
+
+    .admin-badge {
+      display: inline-flex;
+      padding: 3px 10px;
+      border-radius: 12px;
+      font-size: 11px;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      font-family: 'DM Mono', monospace;
+    }
+
+    .admin-badge.admin { background: rgba(var(--accent-rgb), 0.12); color: var(--accent); }
+    .admin-badge.user { background: var(--bg-tertiary); color: var(--text-secondary); }
+    .admin-badge.pending { background: rgba(255, 149, 0, 0.12); color: var(--warning); }
+    .admin-badge.approved { background: rgba(52, 199, 89, 0.12); color: var(--success); }
+
+    .admin-actions {
+      display: flex;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+
+    .admin-btn {
+      padding: 6px 12px;
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-sm);
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      font-size: 12px;
+      font-family: 'DM Sans', sans-serif;
+      cursor: pointer;
+      transition: background 150ms ease, border-color 150ms ease;
+    }
+
+    .admin-btn:hover {
+      background: var(--bg-hover);
+    }
+
+    .admin-btn.approve {
+      background: var(--success);
+      border-color: var(--success);
+      color: #fff;
+    }
+
+    .admin-btn.approve:hover {
+      opacity: 0.9;
+    }
+
+    .admin-btn.danger {
+      color: var(--danger);
+      border-color: rgba(255, 59, 48, 0.3);
+    }
+
+    .admin-btn.danger:hover {
+      background: rgba(255, 59, 48, 0.08);
+    }
+
+    .admin-empty {
+      padding: 40px 20px;
+      text-align: center;
+      color: var(--text-tertiary);
+      font-size: 14px;
+    }
+
+    .admin-loading {
+      padding: 60px 20px;
+      text-align: center;
+      color: var(--text-tertiary);
+    }
+
+    @media (max-width: 640px) {
+      .admin-user-row {
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+      .admin-actions {
+        width: 100%;
+        justify-content: flex-end;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="auth-bg">
+    <div class="auth-bg-node"></div>
+    <div class="auth-bg-node"></div>
+    <div class="auth-bg-node"></div>
+  </div>
+
+  <div class="admin-shell">
+    <div class="admin-header">
+      <h1>Admin Panel</h1>
+      <a href="/" class="admin-back">← Back to App</a>
+    </div>
+
+    <div class="admin-stats" id="adminStats">
+      <div class="admin-stat">
+        <div class="admin-stat-value" id="statTotal">-</div>
+        <div class="admin-stat-label">Total Users</div>
+      </div>
+      <div class="admin-stat">
+        <div class="admin-stat-value" id="statPending">-</div>
+        <div class="admin-stat-label">Pending</div>
+      </div>
+      <div class="admin-stat">
+        <div class="admin-stat-value" id="statActive">-</div>
+        <div class="admin-stat-label">Active</div>
+      </div>
+    </div>
+
+    <!-- Pending Users -->
+    <div class="admin-section" id="pendingSection" style="display:none;">
+      <div class="admin-section-header">Pending Approval</div>
+      <div id="pendingList"></div>
+    </div>
+
+    <!-- All Users -->
+    <div class="admin-section">
+      <div class="admin-section-header">All Users</div>
+      <div id="userList">
+        <div class="admin-loading">Loading users...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Theme Picker -->
+  <div class="theme-picker">
+    <button class="theme-dot active" data-theme="light" title="Light"></button>
+    <button class="theme-dot" data-theme="dark" title="Dark"></button>
+    <button class="theme-dot" data-theme="ocean" title="Ocean"></button>
+    <button class="theme-dot" data-theme="forest" title="Forest"></button>
+  </div>
+
+  <script src="/js/api-client.js"></script>
+  <script>
+    // Auth + admin guard
+    if (!API.token) {
+      window.location.href = '/login.html';
+    }
+
+    // Theme
+    const savedTheme = localStorage.getItem('theme') || 'light';
+    document.documentElement.setAttribute('data-theme', savedTheme);
+    document.querySelectorAll('.theme-dot').forEach(dot => {
+      if (dot.dataset.theme === savedTheme) dot.classList.add('active');
+      else dot.classList.remove('active');
+      dot.addEventListener('click', () => {
+        const theme = dot.dataset.theme;
+        document.documentElement.setAttribute('data-theme', theme);
+        localStorage.setItem('theme', theme);
+        document.querySelectorAll('.theme-dot').forEach(d => d.classList.remove('active'));
+        dot.classList.add('active');
+      });
+    });
+
+    function escapeHtml(text) {
+      if (!text) return '';
+      return String(text).replace(/[&<>"']/g, c => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'
+      })[c]);
+    }
+
+    let allUsers = [];
+
+    async function loadUsers() {
+      try {
+        // Verify admin access
+        const me = await API.getMe();
+        if (me.role !== 'admin') {
+          window.location.href = '/';
+          return;
+        }
+
+        allUsers = await API.getUsers();
+        renderStats();
+        renderPending();
+        renderAllUsers();
+      } catch (err) {
+        if (err.message.includes('Admin') || err.message.includes('403')) {
+          window.location.href = '/';
+        } else {
+          document.getElementById('userList').textContent = 'Failed to load users.';
+        }
+      }
+    }
+
+    function renderStats() {
+      const total = allUsers.length;
+      const pending = allUsers.filter(u => !u.approved).length;
+      const active = allUsers.filter(u => u.approved).length;
+      document.getElementById('statTotal').textContent = total;
+      document.getElementById('statPending').textContent = pending;
+      document.getElementById('statActive').textContent = active;
+    }
+
+    function renderUserRow(user) {
+      const initial = (user.username || '?')[0].toUpperCase();
+      const roleBadge = user.role === 'admin' ? 'admin' : 'user';
+      const statusBadge = user.approved ? 'approved' : 'pending';
+
+      const row = document.createElement('div');
+      row.className = 'admin-user-row';
+
+      const avatar = document.createElement('div');
+      avatar.className = 'admin-user-avatar';
+      avatar.textContent = initial;
+
+      const info = document.createElement('div');
+      info.className = 'admin-user-info';
+      const nameEl = document.createElement('div');
+      nameEl.className = 'admin-user-name';
+      nameEl.textContent = user.username;
+      const emailEl = document.createElement('div');
+      emailEl.className = 'admin-user-email';
+      emailEl.textContent = user.email;
+      info.appendChild(nameEl);
+      info.appendChild(emailEl);
+
+      const badge1 = document.createElement('span');
+      badge1.className = 'admin-badge ' + roleBadge;
+      badge1.textContent = user.role;
+
+      const badge2 = document.createElement('span');
+      badge2.className = 'admin-badge ' + statusBadge;
+      badge2.textContent = user.approved ? 'active' : 'pending';
+
+      const actions = document.createElement('div');
+      actions.className = 'admin-actions';
+
+      if (!user.approved) {
+        const approveBtn = document.createElement('button');
+        approveBtn.className = 'admin-btn approve';
+        approveBtn.textContent = 'Approve';
+        approveBtn.addEventListener('click', () => approveUser(user.id));
+        actions.appendChild(approveBtn);
+      }
+
+      if (user.role !== 'admin') {
+        const roleBtn = document.createElement('button');
+        roleBtn.className = 'admin-btn';
+        roleBtn.textContent = 'Make Admin';
+        roleBtn.addEventListener('click', () => changeRole(user.id, 'admin'));
+        actions.appendChild(roleBtn);
+      } else {
+        const roleBtn = document.createElement('button');
+        roleBtn.className = 'admin-btn';
+        roleBtn.textContent = 'Make User';
+        roleBtn.addEventListener('click', () => changeRole(user.id, 'user'));
+        actions.appendChild(roleBtn);
+      }
+
+      const deleteBtn = document.createElement('button');
+      deleteBtn.className = 'admin-btn danger';
+      deleteBtn.textContent = 'Delete';
+      deleteBtn.addEventListener('click', () => deleteUser(user.id, user.username));
+      actions.appendChild(deleteBtn);
+
+      row.appendChild(avatar);
+      row.appendChild(info);
+      row.appendChild(badge1);
+      row.appendChild(badge2);
+      row.appendChild(actions);
+
+      return row;
+    }
+
+    function renderPending() {
+      const pending = allUsers.filter(u => !u.approved);
+      const section = document.getElementById('pendingSection');
+      const list = document.getElementById('pendingList');
+      list.textContent = '';
+
+      if (pending.length === 0) {
+        section.style.display = 'none';
+        return;
+      }
+
+      section.style.display = '';
+      pending.forEach(u => list.appendChild(renderUserRow(u)));
+    }
+
+    function renderAllUsers() {
+      const list = document.getElementById('userList');
+      list.textContent = '';
+
+      if (allUsers.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'admin-empty';
+        empty.textContent = 'No users found.';
+        list.appendChild(empty);
+        return;
+      }
+
+      allUsers.forEach(u => list.appendChild(renderUserRow(u)));
+    }
+
+    async function approveUser(id) {
+      try {
+        await API.approveUser(id);
+        await loadUsers();
+      } catch (err) {
+        alert('Failed to approve user: ' + err.message);
+      }
+    }
+
+    async function changeRole(id, role) {
+      try {
+        await API.changeUserRole(id, role);
+        await loadUsers();
+      } catch (err) {
+        alert('Failed to change role: ' + err.message);
+      }
+    }
+
+    async function deleteUser(id, username) {
+      if (!confirm('Delete user "' + username + '"? This will delete all their data.')) return;
+      try {
+        await API.deleteUser(id);
+        await loadUsers();
+      } catch (err) {
+        alert('Failed to delete user: ' + err.message);
+      }
+    }
+
+    loadUsers();
+  </script>
+</body>
+</html>

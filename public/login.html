@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sign In — Project Overviewer</title>
+  <link rel="stylesheet" href="/css/auth.css">
+</head>
+<body>
+
+  <!-- Animated background -->
+  <div class="auth-bg">
+    <div class="auth-bg-node"></div>
+    <div class="auth-bg-node"></div>
+    <div class="auth-bg-node"></div>
+    <div class="auth-bg-node"></div>
+    <div class="auth-bg-node"></div>
+  </div>
+
+  <div class="auth-wrapper">
+    <!-- Brand -->
+    <div class="auth-brand">
+      <div class="auth-brand-icon">
+        <svg viewBox="0 0 24 24">
+          <rect x="3" y="3" width="7" height="7" rx="1.5"/>
+          <rect x="14" y="3" width="7" height="7" rx="1.5"/>
+          <rect x="3" y="14" width="7" height="7" rx="1.5"/>
+          <rect x="14" y="14" width="7" height="7" rx="1.5"/>
+        </svg>
+      </div>
+      <h1>Project Overviewer</h1>
+      <p>Sign in to your workspace</p>
+    </div>
+
+    <!-- Card -->
+    <div class="auth-card">
+      <!-- Message area -->
+      <div id="message" class="auth-message" role="alert">
+        <svg id="msg-icon" viewBox="0 0 16 16"></svg>
+        <span id="msg-text"></span>
+      </div>
+
+      <form id="loginForm" autocomplete="on">
+        <div class="auth-field">
+          <label for="username">Username</label>
+          <div class="input-wrapper">
+            <input
+              type="text"
+              id="username"
+              name="username"
+              placeholder="Enter your username"
+              autocomplete="username"
+              required
+              autofocus
+            >
+            <svg class="input-icon" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="9" cy="6" r="3.5"/>
+              <path d="M2.5 16.5c0-3.5 2.9-5.5 6.5-5.5s6.5 2 6.5 5.5"/>
+            </svg>
+          </div>
+        </div>
+
+        <div class="auth-field">
+          <label for="password">Password</label>
+          <div class="input-wrapper">
+            <input
+              type="password"
+              id="password"
+              name="password"
+              placeholder="Enter your password"
+              autocomplete="current-password"
+              required
+            >
+            <svg class="input-icon" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="8" width="12" height="8" rx="2"/>
+              <path d="M6 8V5.5a3 3 0 0 1 6 0V8"/>
+            </svg>
+            <button type="button" class="toggle-password" id="togglePwd" aria-label="Toggle password visibility" tabindex="-1">
+              <svg class="eye-open" width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M1.5 9s3-5.5 7.5-5.5S16.5 9 16.5 9s-3 5.5-7.5 5.5S1.5 9 1.5 9z"/>
+                <circle cx="9" cy="9" r="2.5"/>
+              </svg>
+              <svg class="eye-closed" width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="display:none">
+                <path d="M2 2l14 14"/><path d="M7.6 7.6a2.5 2.5 0 0 0 3.3 3.3"/>
+                <path d="M5.1 5.1C3.3 6.4 1.5 9 1.5 9s3 5.5 7.5 5.5c1.4 0 2.7-.5 3.8-1.2"/>
+                <path d="M14.4 11.4c.9-1 1.6-2 2.1-2.4-1.3-2.2-4-5.5-7.5-5.5-.5 0-.9.1-1.4.2"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <button type="submit" class="auth-submit" id="submitBtn">
+          <span class="btn-text">Sign In</span>
+          <span class="spinner"></span>
+        </button>
+      </form>
+    </div>
+
+    <div class="auth-footer">
+      Don't have an account? <a href="/register.html">Create one</a>
+    </div>
+  </div>
+
+  <!-- Theme Picker -->
+  <div class="theme-picker">
+    <button class="theme-dot active" data-theme="light" title="Light"></button>
+    <button class="theme-dot" data-theme="dark" title="Dark"></button>
+    <button class="theme-dot" data-theme="ocean" title="Ocean"></button>
+    <button class="theme-dot" data-theme="forest" title="Forest"></button>
+  </div>
+
+  <script src="/js/api-client.js"></script>
+  <script>
+    // If already logged in, redirect
+    if (API.token) {
+      API.getMe().then(() => {
+        window.location.href = '/';
+      }).catch(() => {
+        API.setToken(null);
+      });
+    }
+
+    // Theme handling
+    const savedTheme = localStorage.getItem('theme') || 'light';
+    document.documentElement.setAttribute('data-theme', savedTheme);
+    document.querySelectorAll('.theme-dot').forEach(dot => {
+      if (dot.dataset.theme === savedTheme) dot.classList.add('active');
+      else dot.classList.remove('active');
+
+      dot.addEventListener('click', () => {
+        const theme = dot.dataset.theme;
+        document.documentElement.setAttribute('data-theme', theme);
+        localStorage.setItem('theme', theme);
+        document.querySelectorAll('.theme-dot').forEach(d => d.classList.remove('active'));
+        dot.classList.add('active');
+      });
+    });
+
+    // Toggle password visibility (safe DOM manipulation — no innerHTML)
+    document.getElementById('togglePwd').addEventListener('click', function() {
+      const input = document.getElementById('password');
+      const eyeOpen = this.querySelector('.eye-open');
+      const eyeClosed = this.querySelector('.eye-closed');
+      const isPassword = input.type === 'password';
+      input.type = isPassword ? 'text' : 'password';
+      eyeOpen.style.display = isPassword ? 'none' : '';
+      eyeClosed.style.display = isPassword ? '' : 'none';
+    });
+
+    // Show message (safe: uses textContent, no innerHTML)
+    const ERROR_ICON = '<circle cx="8" cy="8" r="7" fill="none" stroke="currentColor" stroke-width="1.5"/><line x1="8" y1="5" x2="8" y2="9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="8" cy="11.5" r="0.5" fill="currentColor"/>';
+    const SUCCESS_ICON = '<circle cx="8" cy="8" r="7" fill="none" stroke="currentColor" stroke-width="1.5"/><polyline points="5.5 8.5 7.5 10.5 11 6.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>';
+
+    function showMessage(type, text) {
+      const el = document.getElementById('message');
+      const icon = document.getElementById('msg-icon');
+      const msgText = document.getElementById('msg-text');
+
+      el.className = 'auth-message visible ' + type;
+      msgText.textContent = text;
+
+      // Static trusted SVG icons only — not user-derived data
+      if (type === 'error') icon.innerHTML = ERROR_ICON;
+      else if (type === 'success') icon.innerHTML = SUCCESS_ICON;
+    }
+
+    function hideMessage() {
+      document.getElementById('message').className = 'auth-message';
+    }
+
+    // Form submission
+    document.getElementById('loginForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      hideMessage();
+
+      const btn = document.getElementById('submitBtn');
+      const username = document.getElementById('username').value.trim();
+      const password = document.getElementById('password').value;
+
+      if (!username || !password) {
+        showMessage('error', 'Please enter your username and password.');
+        return;
+      }
+
+      btn.classList.add('loading');
+      btn.disabled = true;
+
+      try {
+        await API.login(username, password);
+        showMessage('success', 'Signed in successfully. Redirecting...');
+        setTimeout(() => { window.location.href = '/'; }, 500);
+      } catch (err) {
+        showMessage('error', err.message || 'Sign in failed. Please try again.');
+        btn.classList.remove('loading');
+        btn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>
