@@ -19,10 +19,11 @@ async function initUserMenu() {
       dd.style.display = dd.style.display === 'none' ? '' : 'none';
     });
 
-    // Close on outside click
-    document.addEventListener('click', () => {
+    // Close on outside click (use capture to ensure it fires, and named function for cleanup)
+    function closeUserMenu() {
       document.getElementById('userMenuDropdown').style.display = 'none';
-    });
+    }
+    document.addEventListener('click', closeUserMenu);
 
     // Menu actions
     document.getElementById('menuSettings').addEventListener('click', () => {

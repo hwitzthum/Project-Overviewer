@@ -189,17 +189,22 @@ async function init() {
   });
   document.getElementById('convertToTask').addEventListener('click', () => {
     const notes = document.getElementById('notesTextarea').value.trim();
-    if (notes && state.projects.length > 0) {
-      addTask(state.projects[0].id, notes);
-      document.getElementById('notesTextarea').value = '';
-      setState({ quickNotes: '' });
-      document.getElementById('quickNotes').classList.remove('active');
-      showToast('Note converted to task', 'success');
-    } else if (!notes) {
+    if (!notes) {
       showToast('No notes to convert', 'error');
-    } else {
-      showToast('Create a project first', 'error');
+      return;
     }
+    // Prefer the currently open project, then the first non-archived personal project
+    const targetProject = (currentProjectId && state.projects.find(p => p.id === currentProjectId && !p.archived))
+      || state.projects.find(p => !p.archived && (!currentWorkspaceMode || currentWorkspaceMode === 'personal' || p.user_id === currentUserId));
+    if (!targetProject) {
+      showToast('Create a project first', 'error');
+      return;
+    }
+    addTask(targetProject.id, notes);
+    document.getElementById('notesTextarea').value = '';
+    setState({ quickNotes: '' });
+    document.getElementById('quickNotes').classList.remove('active');
+    showToast(`Note added to "${targetProject.title}"`, 'success');
   });
 
   // Command palette input

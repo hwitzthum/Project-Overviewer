@@ -3,6 +3,18 @@ const path = require('path');
 const crypto = require('crypto');
 const logger = require('./logger');
 
+const VALID_SETTINGS_KEYS = [
+  'theme', 'defaultView', 'sortBy', 'showCompleted', 'showArchived',
+  'wipLimits', 'kanbanColumns', 'sidebarCollapsed', 'workspaceMode'
+];
+
+const ALLOWED_DOC_MIME_TYPES = [
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/pdf',
+  'text/plain',
+  'application/octet-stream'
+];
+
 // ========== DATABASE CONNECTION ==========
 
 const dbPath = path.join(__dirname, 'projects.db');
@@ -240,7 +252,9 @@ async function initDatabase() {
   await run('CREATE INDEX IF NOT EXISTS idx_documents_project_id ON documents(project_id)');
   await run('CREATE INDEX IF NOT EXISTS idx_quick_notes_user_id ON quick_notes(user_id)');
   await run('CREATE INDEX IF NOT EXISTS idx_user_settings_user_id ON user_settings(user_id)');
+  await run('CREATE INDEX IF NOT EXISTS idx_user_settings_user_key ON user_settings(user_id, key)');
   await run('CREATE INDEX IF NOT EXISTS idx_team_members_user_id ON team_members(user_id)');
+  await run('CREATE UNIQUE INDEX IF NOT EXISTS idx_quick_notes_user_id_unique ON quick_notes(user_id)');
 
   // ========== SEED DEFAULTS ==========
 
@@ -628,7 +642,11 @@ async function updateProject(id, userId, updates) {
   );
 
   if (result.changes === 0) return null;
-  return await getProjectById(id, userId);
+
+  // Return updated fields directly instead of re-fetching
+  const updatedProject = await get('SELECT * FROM projects WHERE id = ? AND user_id = ?', [id, userId]);
+  if (!updatedProject) return null;
+  return mapProject(updatedProject);
 }
 
 async function deleteProject(id, userId) {
@@ -639,14 +657,19 @@ async function deleteProject(id, userId) {
 
 async function reorderProjects(userId, projectOrders) {
   await waitForDb();
+  if (!projectOrders || projectOrders.length === 0) return;
+
   await run('BEGIN TRANSACTION');
   try {
-    for (const { id, order } of projectOrders) {
-      await run(
-        'UPDATE projects SET project_order = ? WHERE id = ? AND user_id = ?',
-        [order, id, userId]
-      );
-    }
+    const cases = projectOrders.map(() => 'WHEN ? THEN ?').join(' ');
+    const caseParams = projectOrders.flatMap(p => [p.id, p.order]);
+    const ids = projectOrders.map(p => p.id);
+    const placeholders = ids.map(() => '?').join(',');
+
+    await run(
+      `UPDATE projects SET project_order = CASE id ${cases} END WHERE id IN (${placeholders}) AND user_id = ?`,
+      [...caseParams, ...ids, userId]
+    );
     await run('COMMIT');
   } catch (error) {
     await run('ROLLBACK');
@@ -769,15 +792,19 @@ async function reorderTasks(projectId, userId, taskOrders) {
   // Verify project ownership
   const project = await get('SELECT id FROM projects WHERE id = ? AND user_id = ?', [projectId, userId]);
   if (!project) return false;
+  if (!taskOrders || taskOrders.length === 0) return true;
 
   await run('BEGIN TRANSACTION');
   try {
-    for (const { id, order } of taskOrders) {
-      await run(
-        'UPDATE tasks SET task_order = ? WHERE id = ? AND project_id = ?',
-        [order, id, projectId]
-      );
-    }
+    const cases = taskOrders.map(() => 'WHEN ? THEN ?').join(' ');
+    const caseParams = taskOrders.flatMap(t => [t.id, t.order]);
+    const ids = taskOrders.map(t => t.id);
+    const placeholders = ids.map(() => '?').join(',');
+
+    await run(
+      `UPDATE tasks SET task_order = CASE id ${cases} END WHERE id IN (${placeholders}) AND project_id = ?`,
+      [...caseParams, ...ids, projectId]
+    );
     await run('COMMIT');
     return true;
   } catch (error) {
@@ -841,7 +868,8 @@ async function createDocument(projectId, userId, doc) {
     title = title || email.subject || 'Email';
   } else if (docType === 'docx') {
     fileName = doc.fileName || '';
-    mimeType = doc.mimeType || 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    const requestedMime = doc.mimeType || 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    mimeType = ALLOWED_DOC_MIME_TYPES.includes(requestedMime) ? requestedMime : 'application/octet-stream';
     contentBase64 = doc.contentBase64 || '';
     title = title || fileName || 'Document';
   } else {
@@ -932,12 +960,11 @@ async function getQuickNotes(userId) {
 
 async function saveQuickNotes(userId, content) {
   await waitForDb();
-  const existing = await get('SELECT id FROM quick_notes WHERE user_id = ? ORDER BY id DESC LIMIT 1', [userId]);
-  if (existing) {
-    await run('UPDATE quick_notes SET content = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [content, existing.id]);
-  } else {
-    await run('INSERT INTO quick_notes (user_id, content) VALUES (?, ?)', [userId, content]);
-  }
+  await run(
+    `INSERT INTO quick_notes (user_id, content, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)
+     ON CONFLICT(user_id) DO UPDATE SET content = excluded.content, updated_at = CURRENT_TIMESTAMP`,
+    [userId, content]
+  );
 }
 
 // ========== TEMPLATES QUERIES ==========
@@ -1026,12 +1053,13 @@ async function deleteTeam(teamId) {
 
 async function getTeamUserIds(userId) {
   await waitForDb();
-  const membership = await get('SELECT team_id FROM team_members WHERE user_id = ?', [userId]);
-  if (!membership) return [userId];
-
-  const members = await all('SELECT user_id FROM team_members WHERE team_id = ?',
-    [membership.team_id]);
-  return members.map(m => m.user_id);
+  const members = await all(
+    `SELECT tm2.user_id FROM team_members tm1
+     JOIN team_members tm2 ON tm1.team_id = tm2.team_id
+     WHERE tm1.user_id = ?`,
+    [userId]
+  );
+  return members.length > 0 ? members.map(m => m.user_id) : [userId];
 }
 
 // ========== EXPORT/IMPORT (user-scoped) ==========
@@ -1144,9 +1172,10 @@ async function importData(userId, data) {
       }
     }
 
-    // Import user settings
+    // Import user settings (allowlist enforced)
     if (data.settings) {
       for (const [key, value] of Object.entries(data.settings)) {
+        if (!VALID_SETTINGS_KEYS.includes(key)) continue;
         await run(
           'INSERT OR REPLACE INTO user_settings (user_id, key, value) VALUES (?, ?, ?)',
           [userId, key, JSON.stringify(value)]
@@ -1179,7 +1208,8 @@ async function healthCheck() {
     await get('SELECT 1');
     return { status: 'ok' };
   } catch (error) {
-    return { status: 'error', message: error.message };
+    logger.error({ err: error }, 'Health check failed');
+    return { status: 'error', message: 'Database unavailable' };
   }
 }
 

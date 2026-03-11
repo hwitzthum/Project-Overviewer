@@ -276,10 +276,16 @@
 
   <script src="/js/api-client.js"></script>
   <script>
-    // Auth + admin guard
-    if (!API.token) {
+    // Auth + admin guard (cookie-based — token lives in HttpOnly cookie)
+    API.getMe().then(user => {
+      if (user.role !== 'admin') {
+        window.location.href = '/';
+        return;
+      }
+      loadUsers();
+    }).catch(() => {
       window.location.href = '/login.html';
-    }
+    });
 
     // Theme
     const savedTheme = localStorage.getItem('theme') || 'light';
@@ -307,13 +313,6 @@
 
     async function loadUsers() {
       try {
-        // Verify admin access
-        const me = await API.getMe();
-        if (me.role !== 'admin') {
-          window.location.href = '/';
-          return;
-        }
-
         allUsers = await API.getUsers();
         renderStats();
         renderPending();
@@ -465,7 +464,7 @@
       }
     }
 
-    loadUsers();
+    // loadUsers() is called from the auth guard above after verifying admin role
   </script>
 </body>
 </html>

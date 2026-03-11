@@ -58,12 +58,20 @@ function initKeyboardShortcuts() {
       document.getElementById('quickNotes').classList.toggle('active');
     }
     if (e.key === 'Escape') {
-      closeModal('settingsModal');
-      closeModal('createProjectModal');
-      closeModal('projectModal');
-      closeModal('confirmModal');
-      closeModal('statsModal');
-      document.getElementById('quickNotes').classList.remove('active');
+      // Close the topmost modal only (priority order: confirm > stats > project > create > settings)
+      const modalStack = ['confirmModal', 'statsModal', 'projectModal', 'createProjectModal', 'settingsModal'];
+      let closed = false;
+      for (const id of modalStack) {
+        const modal = document.getElementById(id);
+        if (modal && modal.classList.contains('active')) {
+          closeModal(id);
+          closed = true;
+          break;
+        }
+      }
+      if (!closed) {
+        document.getElementById('quickNotes').classList.remove('active');
+      }
     }
   });
 }

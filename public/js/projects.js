@@ -86,7 +86,8 @@ async function deleteProject(id) {
 
   showConfirmModal(`Delete "${project.title}"?`, 'This cannot be undone.', async () => {
     try {
-      const projectSnapshot = await API.getProject(id, { includeDocumentContent: true }).catch(() => project);
+      // Use in-memory snapshot instead of prefetching from API
+      const projectSnapshot = { ...project, tasks: [...(project.tasks || [])], documents: [...(project.documents || [])] };
       await API.deleteProject(id);
       setState(s => ({ projects: s.projects.filter(p => p.id !== id) }));
       closeModal('projectModal');

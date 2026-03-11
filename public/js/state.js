@@ -217,7 +217,14 @@ async function restoreDeletedProject(deletedProject) {
   }
 }
 
+var _loadAbortController = null;
+
 async function loadFromStorage() {
+  // Cancel any in-flight load to prevent race conditions (e.g. rapid workspace toggles)
+  if (_loadAbortController) _loadAbortController.abort();
+  _loadAbortController = new AbortController();
+  const signal = _loadAbortController.signal;
+
   try {
     const [projects, settings, notes, templates] = await Promise.allSettled([
       API.getAllProjects(),
@@ -225,6 +232,9 @@ async function loadFromStorage() {
       API.getQuickNotes(),
       API.getTemplates()
     ]);
+
+    // If a newer load was triggered, discard these results
+    if (signal.aborted) return;
 
     if (projects.status === 'fulfilled') {
       state.projects = projects.value;
@@ -248,6 +258,7 @@ async function loadFromStorage() {
 
     showToast('Data loaded', 'success');
   } catch (e) {
+    if (signal.aborted) return;
     console.error('Load failed:', e);
     showToast('Failed to load data from server', 'error');
   }

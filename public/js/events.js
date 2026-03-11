@@ -370,17 +370,8 @@ function initEventDelegation() {
     }
   });
 
-  // Prevent click events on inputs from bubbling to card
-  content.addEventListener('click', e => {
-    if (e.target.classList.contains('project-title') ||
-        e.target.classList.contains('task-add-input') ||
-        e.target.classList.contains('quick-stakeholder') ||
-        e.target.classList.contains('quick-status') ||
-        e.target.classList.contains('quick-priority') ||
-        e.target.classList.contains('kanban-limit-input')) {
-      e.stopPropagation();
-    }
-  });
+  // Note: input click propagation is handled within the main click handler above
+  // via the card click guard (checking for input/select/button ancestors)
 
   wireTaskDrag(content,
     () => ({ taskId: draggedHomeTaskId, projectId: draggedHomeProjectId }),

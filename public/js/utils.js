@@ -1,11 +1,18 @@
 // Project Overviewer — Utility Functions
 
 function uuid() {
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
-    const r = Math.random() * 16 | 0;
-    return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
-  });
+  return crypto.randomUUID();
 }
+
+function parseLocalDate(dateStr) {
+  if (!dateStr) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+    return new Date(dateStr + 'T00:00:00');
+  }
+  return new Date(dateStr);
+}
+
+const HTML_ESCAPE_MAP = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' };
 
 function formatStatus(status) {
   return status || 'not-started';
@@ -13,15 +20,12 @@ function formatStatus(status) {
 
 function escapeHtml(text) {
   if (!text) return '';
-  const str = String(text);
-  return str.replace(/[&<>"']/g, c => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'
-  })[c]);
+  return String(text).replace(/[&<>"']/g, c => HTML_ESCAPE_MAP[c]);
 }
 
 function formatDate(dateStr) {
   if (!dateStr) return '';
-  const date = new Date(dateStr);
+  const date = parseLocalDate(dateStr);
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const tomorrow = new Date(today);
@@ -37,17 +41,17 @@ function formatDate(dateStr) {
 
 function isOverdue(dateStr) {
   if (!dateStr) return false;
-  return new Date(dateStr) < new Date(new Date().toDateString());
+  return parseLocalDate(dateStr) < new Date(new Date().toDateString());
 }
 
 function isToday(dateStr) {
   if (!dateStr) return false;
-  return new Date(dateStr).toDateString() === new Date().toDateString();
+  return parseLocalDate(dateStr).toDateString() === new Date().toDateString();
 }
 
 function isThisWeek(dateStr) {
   if (!dateStr) return false;
-  const date = new Date(dateStr);
+  const date = parseLocalDate(dateStr);
   const today = new Date();
   const weekFromNow = new Date(today);
   weekFromNow.setDate(weekFromNow.getDate() + 7);
@@ -56,7 +60,7 @@ function isThisWeek(dateStr) {
 
 function isDueWithinDays(dateStr, days) {
   if (!dateStr) return false;
-  const date = new Date(dateStr);
+  const date = parseLocalDate(dateStr);
   const today = new Date(new Date().toDateString());
   const limit = new Date(today);
   limit.setDate(limit.getDate() + days);

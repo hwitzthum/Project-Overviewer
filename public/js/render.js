@@ -576,7 +576,7 @@ function render() {
 }
 
 function renderStatistics() {
-  const projects = state.projects;
+  const projects = state.projects.filter(p => !p.archived);
   const tasks = projects.flatMap(p => p.tasks || []);
   const completedTasks = tasks.filter(t => t.completed).length;
   const totalTasks = tasks.length;

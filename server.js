@@ -39,7 +39,8 @@ try {
     crossOriginEmbedderPolicy: false
   }));
 } catch {
-  logger.warn('helmet not installed — running without security headers');
+  logger.error('helmet is required but not installed. Run: npm install helmet');
+  process.exit(1);
 }
 
 // Compression
@@ -107,16 +108,8 @@ let z;
 try {
   z = require('zod');
 } catch {
-  logger.warn('zod not installed — running without input validation');
-  // Minimal fallback that always passes
-  z = {
-    object: () => ({ parse: (v) => v, safeParse: (v) => ({ success: true, data: v }) }),
-    string: () => ({ min: () => ({ max: () => ({ optional: () => ({ nullable: () => z.string() }), ...z.string() }), optional: () => ({ nullable: () => z.string(), ...z.string() }), ...z.string() }), optional: () => ({ nullable: () => z.string(), ...z.string() }), nullable: () => z.string(), ...z.string() }),
-    array: () => ({ max: () => ({ optional: () => z.array() }), optional: () => z.array() }),
-    number: () => ({ int: () => ({ min: () => ({ optional: () => z.number() }), optional: () => z.number() }), optional: () => z.number() }),
-    boolean: () => ({ optional: () => z.boolean() }),
-    enum: () => ({ optional: () => z.enum() })
-  };
+  logger.error('zod is required but not installed. Run: npm install zod');
+  process.exit(1);
 }
 
 // Validation schemas
@@ -387,8 +380,8 @@ app.put('/api/auth/password', requireAuth, async (req, res) => {
   try {
     const { currentPassword, newPassword } = req.body;
 
-    if (!currentPassword || !newPassword || newPassword.length < 8) {
-      return res.status(400).json({ error: 'New password must be at least 8 characters' });
+    if (!currentPassword || !newPassword || newPassword.length < 8 || newPassword.length > 128) {
+      return res.status(400).json({ error: 'New password must be between 8 and 128 characters' });
     }
 
     const user = await db.getUserById(req.user.userId);
@@ -819,6 +812,10 @@ app.get('/api/projects/:projectId/documents', requireAuth, async (req, res) => {
 
 app.post('/api/projects/:projectId/documents', requireAuth, async (req, res) => {
   try {
+    // Validate MIME type for docx uploads
+    if (req.body.type === 'docx' && req.body.mimeType && !ALLOWED_MIME_TYPES.has(req.body.mimeType)) {
+      return res.status(400).json({ error: 'Unsupported MIME type' });
+    }
     const documentId = await db.createDocument(req.params.projectId, req.user.userId, req.body);
     if (documentId === null) {
       return res.status(404).json({ error: 'Project not found' });
@@ -865,7 +862,8 @@ app.get('/api/documents/:id/download', requireAuth, async (req, res) => {
 
     // Sanitize filename: only allow safe characters
     const rawName = document.fileName || 'document.docx';
-    const safeFileName = rawName.replace(/[^\w\s.\-()]/g, '_').replace(/\.\./g, '_').substring(0, 255);
+    const safeFileName = rawName.replace(/[^\w.\-]/g, '_').replace(/\.\./g, '_').substring(0, 200);
+    const encodedFileName = encodeURIComponent(safeFileName);
 
     // Whitelist MIME type
     const mimeType = ALLOWED_MIME_TYPES.has(document.mimeType)
@@ -873,7 +871,7 @@ app.get('/api/documents/:id/download', requireAuth, async (req, res) => {
       : 'application/octet-stream';
 
     res.setHeader('Content-Type', mimeType);
-    res.setHeader('Content-Disposition', `attachment; filename="${safeFileName}"`);
+    res.setHeader('Content-Disposition', `attachment; filename="${safeFileName}"; filename*=UTF-8''${encodedFileName}`);
     res.setHeader('Content-Length', buffer.length);
     res.send(buffer);
   } catch (error) {

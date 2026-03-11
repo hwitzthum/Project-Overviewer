@@ -80,10 +80,15 @@ function openProjectModal(projectId, options = {}) {
     </div>
   `;
 
-  // Attach change listeners
+  // Attach change listeners with debounce to avoid redundant saves
+  let saveDebounceTimer = null;
+  const debouncedSave = () => {
+    clearTimeout(saveDebounceTimer);
+    saveDebounceTimer = setTimeout(() => saveProjectEdits(projectId), 300);
+  };
   ['editTitle', 'editStakeholder', 'editDescription', 'editStatus', 'editPriority', 'editDueDate', 'editTags'].forEach(id => {
-    document.getElementById(id).addEventListener('change', () => saveProjectEdits(projectId));
-    document.getElementById(id).addEventListener('blur', () => saveProjectEdits(projectId));
+    document.getElementById(id).addEventListener('change', debouncedSave);
+    document.getElementById(id).addEventListener('blur', debouncedSave);
   });
   document.getElementById('editStatus').addEventListener('change', () => {
     updatePriorityControls('editStatus', 'editPriority', 'editPriorityGroup');

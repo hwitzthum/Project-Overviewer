@@ -112,13 +112,11 @@
   <script src="/js/api-client.js"></script>
   <script>
     // If already logged in, redirect
-    if (API.token) {
-      API.getMe().then(() => {
-        window.location.href = '/';
-      }).catch(() => {
-        API.setToken(null);
-      });
-    }
+    API.getMe().then(() => {
+      window.location.href = '/';
+    }).catch(() => {
+      // Not logged in — stay on login page
+    });
 
     // Theme handling
     const savedTheme = localStorage.getItem('theme') || 'light';

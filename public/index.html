@@ -7,15 +7,12 @@
   <link rel="stylesheet" href="/css/app.css">
   <script src="/js/api-client.js"></script>
   <script>
-    // Auth guard — redirect to login if no session
-    if (!API.token) {
+    // Auth guard — validate session via cookie
+    API.getMe().then(user => {
+      // Session valid — token will be set by app init
+    }).catch(() => {
       window.location.href = '/login.html';
-    } else {
-      API.getMe().catch(() => {
-        API.setToken(null);
-        window.location.href = '/login.html';
-      });
-    }
+    });
   </script>
 </head>
 <body>

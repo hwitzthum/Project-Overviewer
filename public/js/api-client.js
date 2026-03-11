@@ -2,15 +2,10 @@
 const API_BASE = '';
 
 class API {
-  static token = localStorage.getItem('session_token') || null;
+  static token = null;
 
   static setToken(token) {
     this.token = token;
-    if (token) {
-      localStorage.setItem('session_token', token);
-    } else {
-      localStorage.removeItem('session_token');
-    }
   }
 
   static async request(endpoint, options = {}) {
