@@ -82,7 +82,16 @@ if (process.env.NODE_ENV !== 'test') {
       message: { error: 'Import rate limit exceeded' }
     });
 
+    const adminLimiter = rateLimit({
+      windowMs: 15 * 60 * 1000,
+      max: 30,
+      standardHeaders: true,
+      legacyHeaders: false,
+      message: { error: 'Too many admin requests, please try again later' }
+    });
+
     app.use('/api/auth/', authLimiter);
+    app.use('/api/admin/', adminLimiter);
     app.use('/api/import', importLimiter);
     app.use('/api/', generalLimiter);
   } catch {
@@ -440,6 +449,10 @@ app.get('/api/admin/users', requireAuth, requireAdmin, async (req, res) => {
 
 app.put('/api/admin/users/:id/approve', requireAuth, requireAdmin, async (req, res) => {
   try {
+    const user = await db.getUserById(req.params.id);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
     await db.updateUser(req.params.id, { approved: true });
     res.json({ success: true });
   } catch (error) {
@@ -460,6 +473,10 @@ app.put('/api/admin/users/:id/role', requireAuth, requireAdmin, async (req, res)
       return res.status(400).json({ error: 'Cannot change your own role' });
     }
 
+    const user = await db.getUserById(req.params.id);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
     await db.updateUser(req.params.id, { role });
     res.json({ success: true });
   } catch (error) {

@@ -13,6 +13,8 @@
     }
 
     .admin-shell {
+      position: relative;
+      z-index: 1;
       max-width: 960px;
       margin: 0 auto;
       padding: 32px 24px;
@@ -210,6 +212,36 @@
       color: var(--text-tertiary);
     }
 
+    .admin-toast {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 100;
+      padding: 12px 20px;
+      border-radius: var(--radius-md);
+      font-size: 13px;
+      font-weight: 500;
+      max-width: 360px;
+      animation: toastSlide 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+      box-shadow: var(--shadow-md);
+    }
+
+    .admin-toast.success {
+      background: rgba(52, 199, 89, 0.12);
+      border: 1px solid rgba(52, 199, 89, 0.2);
+      color: var(--success);
+    }
+
+    .admin-toast.error {
+      background: rgba(255, 59, 48, 0.12);
+      border: 1px solid rgba(255, 59, 48, 0.2);
+      color: var(--danger);
+    }
+
+    @keyframes toastSlide {
+      from { opacity: 0; transform: translateX(20px); }
+    }
+
     @media (max-width: 640px) {
       .admin-user-row {
         flex-wrap: wrap;
@@ -231,6 +263,7 @@
   </div>
 
   <div class="admin-shell">
+    <div id="adminToast" class="admin-toast" style="display:none;"></div>
     <div class="admin-header">
       <h1>Admin Panel</h1>
       <a href="/" class="admin-back">← Back to App</a>
@@ -302,11 +335,14 @@
       });
     });
 
-    function escapeHtml(text) {
-      if (!text) return '';
-      return String(text).replace(/[&<>"']/g, c => ({
-        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'
-      })[c]);
+    let toastTimer;
+    function showToast(message, type = 'error') {
+      const toast = document.getElementById('adminToast');
+      toast.textContent = message;
+      toast.className = 'admin-toast ' + type;
+      toast.style.display = '';
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => { toast.style.display = 'none'; }, 4000);
     }
 
     let allUsers = [];
@@ -441,7 +477,7 @@
         await API.approveUser(id);
         await loadUsers();
       } catch (err) {
-        alert('Failed to approve user: ' + err.message);
+        showToast('Failed to approve user: ' + err.message);
       }
     }
 
@@ -450,7 +486,7 @@
         await API.changeUserRole(id, role);
         await loadUsers();
       } catch (err) {
-        alert('Failed to change role: ' + err.message);
+        showToast('Failed to change role: ' + err.message);
       }
     }
 
@@ -460,7 +496,7 @@
         await API.deleteUser(id);
         await loadUsers();
       } catch (err) {
-        alert('Failed to delete user: ' + err.message);
+        showToast('Failed to delete user: ' + err.message);
       }
     }
 
