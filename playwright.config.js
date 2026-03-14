@@ -1,5 +1,12 @@
 const { defineConfig } = require('@playwright/test');
 
+// Playwright sets FORCE_COLOR in some environments. If NO_COLOR is also
+// present, Node warns that one overrides the other, so drop the conflicting
+// variable before spawning the web server and worker processes.
+if (process.env.FORCE_COLOR && process.env.NO_COLOR) {
+  delete process.env.NO_COLOR;
+}
+
 module.exports = defineConfig({
   testDir: './tests/e2e',
   fullyParallel: false, // Sequential — tests share server state
@@ -13,7 +20,7 @@ module.exports = defineConfig({
     screenshot: 'only-on-failure',
   },
   webServer: {
-    command: 'NODE_ENV=test ADMIN_USER=testadmin ADMIN_PASS=SecureTestPass123 PORT=3099 node server.js',
+    command: 'env -u NO_COLOR NODE_ENV=test ADMIN_USER=testadmin ADMIN_PASS=SecureTestPass123 PORT=3099 node server.js',
     port: 3099,
     timeout: 15000,
     reuseExistingServer: false,
