@@ -6,14 +6,7 @@
   <title>Project Overviewer</title>
   <link rel="stylesheet" href="/css/app.css">
   <script src="/js/api-client.js"></script>
-  <script>
-    // Auth guard — validate session via cookie
-    API.getMe().then(user => {
-      // Session valid — token will be set by app init
-    }).catch(() => {
-      window.location.href = '/login.html';
-    });
-  </script>
+  <script src="/js/index-guard.js"></script>
 </head>
 <body>
   <div class="app" id="app">

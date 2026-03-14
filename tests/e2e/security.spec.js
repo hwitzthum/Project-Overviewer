@@ -11,6 +11,7 @@ test.describe('Security Headers & Input Validation', () => {
     expect(headers['x-content-type-options']).toBe('nosniff');
     expect(headers['x-frame-options']).toBe('SAMEORIGIN');
     expect(headers['x-xss-protection']).toBeDefined();
+    expect(headers['x-powered-by']).toBeUndefined();
   });
 
   test('CSP header present', async ({ request }) => {
@@ -18,6 +19,8 @@ test.describe('Security Headers & Input Validation', () => {
     const csp = res.headers()['content-security-policy'];
     expect(csp).toBeTruthy();
     expect(csp).toContain("default-src 'self'");
+    expect(csp).toContain("script-src 'self'");
+    expect(csp).toContain("script-src-attr 'none'");
   });
 
   test('health endpoint works without auth', async ({ request }) => {
@@ -102,6 +105,33 @@ test.describe('Security Headers & Input Validation', () => {
     expect(res.status()).toBe(400);
   });
 
+  test('reject oversized user setting payloads', async ({ request }) => {
+    const { token } = await loginAPI(request);
+    const res = await request.post(`${BASE_URL}/api/settings/theme`, {
+      headers: authHeaders(token),
+      data: { value: 'x'.repeat(20 * 1024) },
+    });
+    expect(res.status()).toBe(400);
+  });
+
+  test('reject invalid document upload payloads', async ({ request }) => {
+    const { token } = await loginAPI(request);
+    const { body: project } = await createProjectAPI(request, token, {
+      title: 'Document Validation'
+    });
+    const res = await request.post(`${BASE_URL}/api/projects/${project.id}/documents`, {
+      headers: authHeaders(token),
+      data: {
+        type: 'docx',
+        title: 'bad',
+        fileName: 'bad.docx',
+        mimeType: 'text/html',
+        contentBase64: 'PGgxPmJhZDwvaDE+'
+      },
+    });
+    expect(res.status()).toBe(400);
+  });
+
   // ─── Settings ──────────────────────────────────────────────
 
   test('user settings CRUD', async ({ request }) => {
@@ -127,6 +157,7 @@ test.describe('Security Headers & Input Validation', () => {
       headers: authHeaders(token),
     });
     expect(allRes.status()).toBe(200);
+    expect(allRes.headers()['cache-control']).toBe('no-store, max-age=0');
   });
 
   // ─── Quick Notes ───────────────────────────────────────────
@@ -148,6 +179,40 @@ test.describe('Security Headers & Input Validation', () => {
     expect(getRes.status()).toBe(200);
     const { content } = await getRes.json();
     expect(content).toBe('My test notes');
+  });
+
+  test('same-origin cookie-authenticated writes succeed', async ({ request }) => {
+    const loginRes = await request.post(`${BASE_URL}/api/auth/login`, {
+      data: { username: 'testadmin', password: 'SecureTestPass123' },
+    });
+    expect(loginRes.status()).toBe(200);
+
+    const cookie = loginRes.headers()['set-cookie'].split(';')[0];
+    const res = await request.post(`${BASE_URL}/api/notes`, {
+      headers: {
+        Cookie: cookie,
+        Referer: `${BASE_URL}/`
+      },
+      data: { content: 'same-origin note' },
+    });
+    expect(res.status()).toBe(200);
+  });
+
+  test('cross-site cookie-authenticated writes are rejected', async ({ request }) => {
+    const loginRes = await request.post(`${BASE_URL}/api/auth/login`, {
+      data: { username: 'testadmin', password: 'SecureTestPass123' },
+    });
+    expect(loginRes.status()).toBe(200);
+
+    const cookie = loginRes.headers()['set-cookie'].split(';')[0];
+    const res = await request.post(`${BASE_URL}/api/notes`, {
+      headers: {
+        Cookie: cookie,
+        Origin: 'https://evil.example'
+      },
+      data: { content: 'blocked note' },
+    });
+    expect(res.status()).toBe(403);
   });
 
   // ─── Templates ─────────────────────────────────────────────

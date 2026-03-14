@@ -16,6 +16,9 @@ try {
 const app = express();
 const PORT = process.env.PORT || 3001;
 const BCRYPT_ROUNDS = 12;
+const SAFE_HTTP_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+
+app.disable('x-powered-by');
 
 // ========== SECURITY MIDDLEWARE ==========
 
@@ -27,13 +30,17 @@ try {
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
-        scriptSrc: ["'self'", "'unsafe-inline'"],
+        scriptSrc: ["'self'"],
+        scriptSrcAttr: ["'none'"],
         styleSrc: ["'self'", "'unsafe-inline'"],
         imgSrc: ["'self'", "data:"],
         connectSrc: ["'self'"],
         fontSrc: ["'self'"],
         objectSrc: ["'none'"],
-        frameAncestors: ["'none'"]
+        frameAncestors: ["'none'"],
+        baseUri: ["'self'"],
+        formAction: ["'self'"],
+        upgradeInsecureRequests: process.env.NODE_ENV === 'production' ? [] : null
       }
     },
     crossOriginEmbedderPolicy: false
@@ -111,6 +118,12 @@ app.use(express.static(path.join(__dirname, 'public'), {
   lastModified: true
 }));
 
+app.use('/api', (req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store, max-age=0');
+  res.setHeader('Pragma', 'no-cache');
+  next();
+});
+
 // ========== INPUT VALIDATION ==========
 
 let z;
@@ -142,6 +155,14 @@ const VALID_GLOBAL_SETTINGS_KEYS = [
   'registrationEnabled', 'maxProjectsPerUser', 'maxTasksPerProject',
   'siteName', 'maintenanceMode'
 ];
+
+function isSerializedJsonWithinLimit(value, maxBytes) {
+  try {
+    return Buffer.byteLength(JSON.stringify(value), 'utf8') <= maxBytes;
+  } catch {
+    return false;
+  }
+}
 
 function validate(schema, data) {
   if (!z.object) return { success: true, data };
@@ -189,6 +210,24 @@ if (z.object && z.string && typeof z.string === 'function') {
       mimeType: z.string().refine(value => ALLOWED_MIME_TYPES.has(value), 'Unsupported MIME type').optional(),
       contentBase64: z.string().max(10 * 1024 * 1024).optional()
     });
+    const createEmailDocumentSchema = z.object({
+      type: z.literal('email'),
+      title: z.string().max(500).optional(),
+      email: z.object({
+        subject: z.string().max(500).optional(),
+        from: z.string().max(255).optional(),
+        to: z.string().max(255).optional(),
+        date: emailDateSchema.optional(),
+        body: z.string().max(10000).optional()
+      }).optional()
+    });
+    const createDocxDocumentSchema = z.object({
+      type: z.literal('docx'),
+      title: z.string().max(500).optional(),
+      fileName: z.string().max(255).optional(),
+      mimeType: z.string().refine(value => ALLOWED_MIME_TYPES.has(value), 'Unsupported MIME type').optional(),
+      contentBase64: z.string().max(10 * 1024 * 1024)
+    });
 
     schemas.register = z.object({
       username: z.string().min(3).max(50),
@@ -199,6 +238,14 @@ if (z.object && z.string && typeof z.string === 'function') {
     schemas.login = z.object({
       username: z.string().min(1).max(50),
       password: z.string().min(1).max(128)
+    });
+
+    schemas.changePassword = z.object({
+      currentPassword: z.string().min(1).max(128),
+      newPassword: z.string().min(8).max(128)
+    }).refine(data => data.currentPassword !== data.newPassword, {
+      message: 'New password must be different from the current password',
+      path: ['newPassword']
     });
 
     schemas.createProject = z.object({
@@ -257,6 +304,19 @@ if (z.object && z.string && typeof z.string === 'function') {
       name: z.string().min(1).max(100)
     });
 
+    schemas.addTeamMember = z.object({
+      username: z.string().min(3).max(50)
+    });
+
+    schemas.createDocument = z.discriminatedUnion('type', [
+      createEmailDocumentSchema,
+      createDocxDocumentSchema
+    ]);
+
+    schemas.notes = z.object({
+      content: z.string().max(100000)
+    });
+
     schemas.importData = z.object({
       version: z.string().max(20).optional(),
       projects: z.array(z.object({
@@ -312,6 +372,55 @@ async function requireAuth(req, res, next) {
   next();
 }
 
+function getExpectedOrigin(req) {
+  const forwardedProto = req.headers['x-forwarded-proto'];
+  const protocol = (Array.isArray(forwardedProto) ? forwardedProto[0] : forwardedProto || req.protocol || 'http')
+    .split(',')[0]
+    .trim();
+  const forwardedHost = req.headers['x-forwarded-host'];
+  const host = (Array.isArray(forwardedHost) ? forwardedHost[0] : forwardedHost || req.headers.host || '')
+    .split(',')[0]
+    .trim();
+  return host ? `${protocol}://${host}` : null;
+}
+
+function parseHeaderOrigin(value) {
+  if (!value || typeof value !== 'string') return null;
+  try {
+    return new URL(value).origin;
+  } catch {
+    return null;
+  }
+}
+
+function requireSameOriginCookieWrite(req, res, next) {
+  if (SAFE_HTTP_METHODS.has(req.method)) return next();
+  if (req.path === '/auth/login' || req.path === '/auth/register') return next();
+
+  const authHeader = req.headers.authorization;
+  const hasBearerAuth = typeof authHeader === 'string' && authHeader.startsWith('Bearer ');
+  if (hasBearerAuth || !req.cookies?.session_token) {
+    return next();
+  }
+
+  const secFetchSite = req.headers['sec-fetch-site'];
+  if (secFetchSite && secFetchSite !== 'same-origin') {
+    return res.status(403).json({ error: 'Cross-site request rejected' });
+  }
+
+  if (secFetchSite === 'same-origin') {
+    return next();
+  }
+
+  const sourceOrigin = parseHeaderOrigin(req.headers.origin) || parseHeaderOrigin(req.headers.referer);
+  const expectedOrigin = getExpectedOrigin(req);
+  if (!sourceOrigin || !expectedOrigin || sourceOrigin !== expectedOrigin) {
+    return res.status(403).json({ error: 'Cross-site request rejected' });
+  }
+
+  next();
+}
+
 function requireAdmin(req, res, next) {
   if (req.user.role !== 'admin') {
     return res.status(403).json({ error: 'Admin access required' });
@@ -347,6 +456,8 @@ app.use((req, res, next) => {
   }
   next();
 });
+
+app.use('/api', requireSameOriginCookieWrite);
 
 // ========== COLD-START INITIALIZATION (for serverless / Vercel) ==========
 // Kick off DB init + admin seeding as soon as the module is imported.
@@ -475,12 +586,15 @@ app.get('/api/auth/me', requireAuth, async (req, res) => {
 
 app.put('/api/auth/password', requireAuth, async (req, res) => {
   try {
-    const { currentPassword, newPassword } = req.body;
-
-    if (!currentPassword || !newPassword || newPassword.length < 8 || newPassword.length > 128) {
-      return res.status(400).json({ error: 'New password must be between 8 and 128 characters' });
+    if (schemas.changePassword) {
+      const result = schemas.changePassword.safeParse(req.body);
+      if (!result.success) {
+        const message = result.error.issues[0]?.message || 'Invalid password change request';
+        return res.status(400).json({ error: message, details: result.error.issues });
+      }
     }
 
+    const { currentPassword, newPassword } = req.body;
     const user = await db.getUserById(req.user.userId);
     const passwordMatch = await bcrypt.compare(currentPassword, user.password_hash);
     if (!passwordMatch) {
@@ -620,11 +734,14 @@ app.post('/api/teams/:id/members', requireAuth, async (req, res) => {
       return res.status(403).json({ error: 'Only team owner or admin can add members' });
     }
 
-    const { username } = req.body;
-    if (!username) {
-      return res.status(400).json({ error: 'Username is required' });
+    if (schemas.addTeamMember) {
+      const result = schemas.addTeamMember.safeParse(req.body);
+      if (!result.success) {
+        return res.status(400).json({ error: 'Invalid input', details: result.error.issues });
+      }
     }
 
+    const { username } = req.body;
     const user = await db.getUserByUsername(username);
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
@@ -917,9 +1034,11 @@ app.get('/api/projects/:projectId/documents', requireAuth, async (req, res) => {
 
 app.post('/api/projects/:projectId/documents', requireAuth, async (req, res) => {
   try {
-    // Validate MIME type for docx uploads
-    if (req.body.type === 'docx' && req.body.mimeType && !ALLOWED_MIME_TYPES.has(req.body.mimeType)) {
-      return res.status(400).json({ error: 'Unsupported MIME type' });
+    if (schemas.createDocument) {
+      const result = schemas.createDocument.safeParse(req.body);
+      if (!result.success) {
+        return res.status(400).json({ error: 'Invalid input', details: result.error.issues });
+      }
     }
     const documentId = await db.createDocument(req.params.projectId, req.user.userId, req.body);
     if (documentId === null) {
@@ -1008,6 +1127,9 @@ app.post('/api/settings/:key', requireAuth, async (req, res) => {
     if (!VALID_SETTINGS_KEYS.includes(req.params.key)) {
       return res.status(400).json({ error: 'Invalid settings key' });
     }
+    if (!isSerializedJsonWithinLimit(req.body?.value, 16 * 1024)) {
+      return res.status(400).json({ error: 'Setting value is too large' });
+    }
     await db.setUserSetting(req.user.userId, req.params.key, req.body.value);
     res.json({ success: true });
   } catch (error) {
@@ -1032,6 +1154,9 @@ app.post('/api/admin/settings/:key', requireAuth, requireAdmin, async (req, res)
     if (!VALID_GLOBAL_SETTINGS_KEYS.includes(req.params.key)) {
       return res.status(400).json({ error: 'Invalid global settings key' });
     }
+    if (!isSerializedJsonWithinLimit(req.body?.value, 16 * 1024)) {
+      return res.status(400).json({ error: 'Setting value is too large' });
+    }
     await db.setGlobalSetting(req.params.key, req.body.value);
     res.json({ success: true });
   } catch (error) {
@@ -1054,6 +1179,12 @@ app.get('/api/notes', requireAuth, async (req, res) => {
 
 app.post('/api/notes', requireAuth, async (req, res) => {
   try {
+    if (schemas.notes) {
+      const result = schemas.notes.safeParse(req.body);
+      if (!result.success) {
+        return res.status(400).json({ error: 'Invalid input', details: result.error.issues });
+      }
+    }
     await db.saveQuickNotes(req.user.userId, req.body.content);
     res.json({ success: true });
   } catch (error) {

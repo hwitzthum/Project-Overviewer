@@ -66,6 +66,10 @@ function generateId() {
   return crypto.randomUUID();
 }
 
+function hashSessionToken(token) {
+  return crypto.createHash('sha256').update(String(token)).digest('hex');
+}
+
 function safeJsonParse(str, fallback = null) {
   if (!str) return fallback;
   try {
@@ -346,24 +350,26 @@ async function createSession(userId) {
   await waitForDb();
   const id = generateId();
   const token = crypto.randomBytes(32).toString('hex');
+  const tokenHash = hashSessionToken(token);
   const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
 
   await run(`
     INSERT INTO sessions (id, user_id, token, expires_at)
     VALUES (?, ?, ?, ?)
-  `, [id, userId, token, expiresAt]);
+  `, [id, userId, tokenHash, expiresAt]);
 
   return { token, expiresAt };
 }
 
 async function getSessionByToken(token) {
   await waitForDb();
+  const tokenHash = hashSessionToken(token);
   const session = await get(`
     SELECT s.*, u.id as uid, u.username, u.email, u.role, u.approved
     FROM sessions s
     JOIN users u ON s.user_id = u.id
-    WHERE s.token = ? AND s.expires_at > datetime('now')
-  `, [token]);
+    WHERE s.token IN (?, ?) AND s.expires_at > datetime('now')
+  `, [tokenHash, token]);
 
   if (!session) return null;
 
@@ -380,7 +386,7 @@ async function getSessionByToken(token) {
 
 async function deleteSession(token) {
   await waitForDb();
-  await run('DELETE FROM sessions WHERE token = ?', [token]);
+  await run('DELETE FROM sessions WHERE token IN (?, ?)', [hashSessionToken(token), token]);
 }
 
 async function deleteUserSessions(userId) {

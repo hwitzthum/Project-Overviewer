@@ -250,6 +250,11 @@ function initEventDelegation() {
 
   // Task checkboxes - click event
   content.addEventListener('click', e => {
+    if (e.target.id === 'emptyStateCreateProject') {
+      createProject();
+      return;
+    }
+
     // Delete button on project card
     const deleteBtn = e.target.closest('.project-delete-btn');
     if (deleteBtn) {

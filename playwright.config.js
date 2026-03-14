@@ -12,7 +12,8 @@ module.exports = defineConfig({
   fullyParallel: false, // Sequential — tests share server state
   retries: 0,
   workers: 1,
-  reporter: [['list'], ['html', { open: 'never' }]],
+  reporter: [['list'], ['html', { open: 'never', outputFolder: '/tmp/project-overviewer-playwright-report' }]],
+  outputDir: '/tmp/project-overviewer-test-results',
   timeout: 30000,
   use: {
     baseURL: 'http://localhost:3099',
@@ -20,7 +21,7 @@ module.exports = defineConfig({
     screenshot: 'only-on-failure',
   },
   webServer: {
-    command: 'env -u NO_COLOR NODE_ENV=test ADMIN_USER=testadmin ADMIN_PASS=SecureTestPass123 PORT=3099 node server.js',
+    command: 'env -u NO_COLOR NODE_ENV=test ADMIN_USER=testadmin ADMIN_PASS=SecureTestPass123 PORT=3099 TURSO_DATABASE_URL=file:/tmp/project-overviewer-e2e.db node server.js',
     port: 3099,
     timeout: 15000,
     reuseExistingServer: false,
@@ -29,6 +30,7 @@ module.exports = defineConfig({
       ADMIN_USER: 'testadmin',
       ADMIN_PASS: 'SecureTestPass123',
       PORT: '3099',
+      TURSO_DATABASE_URL: 'file:/tmp/project-overviewer-e2e.db',
     },
   },
 });

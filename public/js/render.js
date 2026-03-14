@@ -472,7 +472,7 @@ function renderEmptyState() {
       <div class="empty-state-icon">📋</div>
       <h2 class="empty-state-title">No projects yet</h2>
       <p class="empty-state-desc">Create your first project to get started</p>
-      <button class="btn btn-primary" onclick="createProject()">
+      <button class="btn btn-primary" id="emptyStateCreateProject" type="button">
         + New Project
       </button>
     </div>

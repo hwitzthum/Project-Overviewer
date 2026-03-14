@@ -1,4 +1,5 @@
 const { test, expect } = require('@playwright/test');
+const { createClient } = require('@libsql/client');
 const { BASE_URL, ADMIN, loginAPI, registerAPI, approveUserAPI, uniqueUser, loginUI } = require('./helpers');
 
 test.describe('Authentication', () => {
@@ -112,6 +113,23 @@ test.describe('Authentication', () => {
     expect(body.role).toBe('admin');
   });
 
+  test('session tokens are hashed at rest', async ({ request }) => {
+    const { token, user } = await loginAPI(request);
+    const client = createClient({
+      url: process.env.TURSO_DATABASE_URL || 'file:/tmp/project-overviewer-e2e.db'
+    });
+    const result = await client.execute({
+      sql: 'SELECT token FROM sessions WHERE user_id = ? ORDER BY created_at DESC LIMIT 1',
+      args: [user.id]
+    });
+    client.close();
+
+    expect(result.rows).toHaveLength(1);
+    const storedToken = result.rows[0].token;
+    expect(storedToken).not.toBe(token);
+    expect(storedToken).toMatch(/^[a-f0-9]{64}$/);
+  });
+
   test('reject request without auth token', async ({ request }) => {
     const res = await request.get(`${BASE_URL}/api/projects`);
     expect(res.status()).toBe(401);
@@ -183,5 +201,14 @@ test.describe('Authentication', () => {
       data: { currentPassword: 'wrongpassword', newPassword: 'NewPass67890' },
     });
     expect(res.status()).toBe(401);
+  });
+
+  test('reject password reuse on change', async ({ request }) => {
+    const { token } = await loginAPI(request);
+    const res = await request.put(`${BASE_URL}/api/auth/password`, {
+      headers: { Authorization: `Bearer ${token}` },
+      data: { currentPassword: 'SecureTestPass123', newPassword: 'SecureTestPass123' },
+    });
+    expect(res.status()).toBe(400);
   });
 });
