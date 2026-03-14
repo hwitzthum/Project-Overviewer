@@ -37,9 +37,8 @@ function handleDocAction(container, action, projectId, docId) {
     form.querySelectorAll('input, textarea').forEach(el => { el.value = ''; });
   }
 
-  if (action === 'toggle-email') {
-    const body = container.querySelector(`[data-doc-body="${docId}"]`);
-    if (body) body.classList.toggle('hidden');
+  if (action === 'open') {
+    toggleDocumentPreview(container, projectId, docId);
   }
 
   if (action === 'delete') {

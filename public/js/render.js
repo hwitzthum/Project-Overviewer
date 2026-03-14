@@ -312,6 +312,21 @@ function formatDocumentMeta(doc) {
   return parts.join(' • ');
 }
 
+function renderEmailDocumentPreview(doc) {
+  const email = doc.email || {};
+  return `
+    <div class="doc-preview-email">
+      ${email.subject ? `<div class="doc-preview-heading">${escapeHtml(email.subject)}</div>` : ''}
+      <div class="doc-preview-email-meta">
+        ${email.from ? `<div><strong>From:</strong> ${escapeHtml(email.from)}</div>` : ''}
+        ${email.to ? `<div><strong>To:</strong> ${escapeHtml(email.to)}</div>` : ''}
+        ${email.date ? `<div><strong>Date:</strong> ${escapeHtml(email.date)}</div>` : ''}
+      </div>
+      <pre class="doc-preview-text">${escapeHtml(email.body || 'No email body provided.')}</pre>
+    </div>
+  `;
+}
+
 function renderProjectModalTasks(project, options = {}) {
   const tasks = project.tasks || [];
   const isArchived = options.readOnly || project.archived;
@@ -420,18 +435,24 @@ function renderProjectModalDocuments(project, options = {}) {
               <div class="doc-meta">${formatDocumentMeta(doc)}</div>
             </div>
             <div class="doc-actions">
+              <button class="btn btn-secondary btn-sm" data-doc-action="open" data-doc-id="${doc.id}" data-project-id="${project.id}">Open</button>
               ${doc.type === 'docx'
                 ? `<a class="btn btn-secondary btn-sm" href="/api/documents/${doc.id}/download">Download</a>`
-                : `<button class="btn btn-secondary btn-sm" data-doc-action="toggle-email" data-doc-id="${doc.id}">View</button>`}
+                : ''}
               ${isArchived ? '' : `
                 <button class="btn btn-secondary btn-sm" data-doc-action="delete" data-doc-id="${doc.id}"
                   data-project-id="${project.id}">Delete</button>
               `}
             </div>
           </div>
-          ${doc.type === 'email'
-            ? `<div class="doc-body hidden" data-doc-body="${doc.id}">${escapeHtml(doc.email?.body || '')}</div>`
-            : ''}
+          <div class="doc-preview hidden" data-doc-preview="${doc.id}">
+            ${doc.type === 'email'
+              ? renderEmailDocumentPreview(doc)
+              : `
+                <div class="doc-preview-loading hidden" data-doc-preview-loading="${doc.id}">Loading preview...</div>
+                <div class="doc-preview-body" data-doc-preview-body="${doc.id}"></div>
+              `}
+          </div>
         </div>
       `).join('') : '<div class="empty-muted">No documents yet.</div>'}
     </div>

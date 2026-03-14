@@ -1,4 +1,6 @@
 // Project Overviewer — Task CRUD
+const documentPreviewCache = new Map();
+
 async function addTask(projectId, title) {
   const trimmedTitle = title.trim();
   if (!trimmedTitle) return;
@@ -274,6 +276,105 @@ async function refreshProjectDocuments(projectId) {
   } catch (error) {
     console.error('Failed to refresh documents:', error);
     showToast('Failed to load documents', 'error');
+  }
+}
+
+function closeAllDocumentPreviews(container) {
+  container.querySelectorAll('[data-doc-preview]').forEach(preview => {
+    preview.classList.add('hidden');
+  });
+  container.querySelectorAll('[data-doc-action="open"]').forEach(button => {
+    button.textContent = 'Open';
+  });
+}
+
+function renderDocumentPreviewContent(preview) {
+  if (preview.previewType === 'text') {
+    return `
+      <div class="doc-preview-toolbar">
+        <span class="doc-preview-badge">Inline preview</span>
+      </div>
+      <pre class="doc-preview-text">${escapeHtml(preview.text || 'No preview available.')}</pre>
+    `;
+  }
+
+  if (preview.previewType === 'pdf') {
+    return `
+      <div class="doc-preview-toolbar">
+        <span class="doc-preview-badge">PDF preview</span>
+        <a class="btn btn-secondary btn-sm" href="${escapeAttribute(preview.inlineUrl)}" target="_blank" rel="noopener noreferrer">Open in tab</a>
+      </div>
+      <iframe
+        class="doc-preview-frame"
+        src="${escapeAttribute(preview.inlineUrl)}"
+        title="${escapeAttribute(preview.title || preview.fileName || 'Document preview')}"></iframe>
+    `;
+  }
+
+  return `
+    <div class="doc-preview-empty">
+      <div>${escapeHtml(preview.message || 'Preview is not available for this document.')}</div>
+      ${preview.downloadUrl
+        ? `<a class="btn btn-secondary btn-sm" href="${escapeAttribute(preview.downloadUrl)}">Download document</a>`
+        : ''}
+    </div>
+  `;
+}
+
+async function toggleDocumentPreview(container, projectId, docId) {
+  const previewEl = container.querySelector(`[data-doc-preview="${docId}"]`);
+  const toggleButton = container.querySelector(`[data-doc-action="open"][data-doc-id="${docId}"]`);
+  if (!previewEl || !toggleButton) return;
+
+  const isOpen = !previewEl.classList.contains('hidden');
+  if (isOpen) {
+    previewEl.classList.add('hidden');
+    toggleButton.textContent = 'Open';
+    return;
+  }
+
+  closeAllDocumentPreviews(container);
+  previewEl.classList.remove('hidden');
+  toggleButton.textContent = 'Close';
+
+  const project = state.projects.find(p => p.id === projectId);
+  const document = project?.documents?.find(doc => doc.id === docId);
+  if (!document || document.type === 'email') {
+    return;
+  }
+
+  const loadingEl = previewEl.querySelector(`[data-doc-preview-loading="${docId}"]`);
+  const bodyEl = previewEl.querySelector(`[data-doc-preview-body="${docId}"]`);
+  if (!loadingEl || !bodyEl) return;
+
+  if (documentPreviewCache.has(docId)) {
+    bodyEl.innerHTML = documentPreviewCache.get(docId);
+    return;
+  }
+
+  loadingEl.classList.remove('hidden');
+  bodyEl.innerHTML = '';
+
+  try {
+    const preview = await API.getDocumentPreview(docId);
+    const html = renderDocumentPreviewContent(preview);
+    documentPreviewCache.set(docId, html);
+    if (!previewEl.isConnected) return;
+    bodyEl.innerHTML = html;
+  } catch (error) {
+    console.error('Failed to preview document:', error);
+    if (!previewEl.isConnected) return;
+    bodyEl.innerHTML = `
+      <div class="doc-preview-empty">
+        <div>Failed to load preview.</div>
+        <a class="btn btn-secondary btn-sm" href="/api/documents/${escapeAttribute(docId)}/download">Download document</a>
+      </div>
+    `;
+    showToast('Failed to load document preview', 'error');
+  } finally {
+    if (loadingEl.isConnected) {
+      loadingEl.classList.add('hidden');
+    }
   }
 }
 

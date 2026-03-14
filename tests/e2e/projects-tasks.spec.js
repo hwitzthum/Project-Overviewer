@@ -1,5 +1,7 @@
 const { test, expect } = require('@playwright/test');
-const { BASE_URL, loginAPI, createProjectAPI, createTaskAPI, authHeaders, registerAPI, approveUserAPI, uniqueUser } = require('./helpers');
+const { BASE_URL, loginAPI, loginUI, createProjectAPI, createTaskAPI, createDocumentAPI, authHeaders, registerAPI, approveUserAPI, uniqueUser } = require('./helpers');
+
+const PREVIEW_FIXTURE_DOCX_BASE64 = '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';
 
 test.describe('Projects & Tasks CRUD', () => {
 
@@ -64,6 +66,50 @@ test.describe('Projects & Tasks CRUD', () => {
       headers: authHeaders(token),
     });
     expect(getRes.status()).toBe(404);
+  });
+
+  test('preview email and document attachments', async ({ request }) => {
+    const { token } = await loginAPI(request);
+    const { body: project } = await createProjectAPI(request, token, { title: 'Preview API' });
+
+    const { response: emailRes, body: emailBody } = await createDocumentAPI(request, token, project.id, {
+      type: 'email',
+      title: 'Status Email',
+      email: {
+        subject: 'Status update',
+        from: 'pm@example.com',
+        to: 'team@example.com',
+        date: '2026-03-14',
+        body: 'Email preview body'
+      }
+    });
+    expect(emailRes.status()).toBe(201);
+
+    const emailPreviewRes = await request.get(`${BASE_URL}/api/documents/${emailBody.id}/preview`, {
+      headers: authHeaders(token),
+    });
+    expect(emailPreviewRes.status()).toBe(200);
+    const emailPreview = await emailPreviewRes.json();
+    expect(emailPreview.previewType).toBe('email');
+    expect(emailPreview.email.body).toContain('Email preview body');
+
+    const { response: docRes, body: docBody } = await createDocumentAPI(request, token, project.id, {
+      type: 'docx',
+      title: 'Fixture Document',
+      fileName: 'fixture.docx',
+      mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      contentBase64: PREVIEW_FIXTURE_DOCX_BASE64
+    });
+    expect(docRes.status()).toBe(201);
+
+    const docPreviewRes = await request.get(`${BASE_URL}/api/documents/${docBody.id}/preview`, {
+      headers: authHeaders(token),
+    });
+    expect(docPreviewRes.status()).toBe(200);
+    const docPreview = await docPreviewRes.json();
+    expect(docPreview.previewType).toBe('text');
+    expect(docPreview.text).toContain('Preview fixture document');
+    expect(docPreview.text).toContain('Second line for inline open test');
   });
 
   test('reject project with empty title', async ({ request }) => {
@@ -180,6 +226,36 @@ test.describe('Projects & Tasks CRUD', () => {
       data: { title: 'Orphan Task' },
     });
     expect(res.status()).toBe(404);
+  });
+
+  test('open document renders inline preview in the project view', async ({ request, page }) => {
+    const { token } = await loginAPI(request);
+    const title = `Preview Home ${Date.now()}`;
+    const { body: project } = await createProjectAPI(request, token, { title });
+    const { response } = await createDocumentAPI(request, token, project.id, {
+      type: 'docx',
+      title: 'Fixture Document',
+      fileName: 'fixture.docx',
+      mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      contentBase64: PREVIEW_FIXTURE_DOCX_BASE64
+    });
+    expect(response.status()).toBe(201);
+
+    await loginUI(page);
+    await page.waitForSelector('#newProject');
+
+    const card = page.locator('.project-card').filter({
+      has: page.locator(`input.project-title[value="${title}"]`)
+    }).first();
+    await card.locator('.doc-manage').click();
+
+    const openButton = page.locator('.doc-item [data-doc-action="open"]').first();
+    await openButton.click();
+
+    const preview = page.locator('.doc-preview-text').first();
+    await expect(preview).toContainText('Preview fixture document');
+    await expect(preview).toContainText('Second line for inline open test');
+    await expect(openButton).toHaveText('Close');
   });
 });
 

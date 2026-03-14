@@ -59,6 +59,17 @@ async function createTaskAPI(request, token, projectId, data = {}) {
 }
 
 /**
+ * Create a document via API
+ */
+async function createDocumentAPI(request, token, projectId, data) {
+  const res = await request.post(`${BASE_URL}/api/projects/${projectId}/documents`, {
+    headers: { Authorization: `Bearer ${token}` },
+    data,
+  });
+  return { response: res, body: await res.json() };
+}
+
+/**
  * Authenticated fetch helper
  */
 function authHeaders(token) {
@@ -90,6 +101,7 @@ module.exports = {
   approveUserAPI,
   createProjectAPI,
   createTaskAPI,
+  createDocumentAPI,
   authHeaders,
   loginUI,
   uniqueUser,

@@ -233,6 +233,10 @@ class API {
     return await this.request(`/api/documents/${documentId}`, { method: 'DELETE' });
   }
 
+  static async getDocumentPreview(documentId) {
+    return await this.request(`/api/documents/${documentId}/preview`);
+  }
+
   // ========== SETTINGS ==========
   static async getAllSettings() {
     return await this.request('/api/settings');

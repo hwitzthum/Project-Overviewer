@@ -13,6 +13,13 @@ try {
   process.exit(1);
 }
 
+let mammoth = null;
+try {
+  mammoth = require('mammoth');
+} catch {
+  logger.warn('mammoth not installed — docx previews will fall back to download only');
+}
+
 const app = express();
 const PORT = process.env.PORT || 3001;
 const BCRYPT_ROUNDS = 12;
@@ -433,6 +440,16 @@ function setSessionCookie(res, token, maxAge = 86400) {
   res.setHeader('Set-Cookie',
     `session_token=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${maxAge}${isProduction ? '; Secure' : ''}`
   );
+}
+
+function getSafeDocumentMimeType(mimeType) {
+  return ALLOWED_MIME_TYPES.has(mimeType) ? mimeType : 'application/octet-stream';
+}
+
+function getSafeDocumentFileName(document) {
+  const fallback = document.mimeType === 'application/pdf' ? 'document.pdf' : 'document.docx';
+  const rawName = document.fileName || fallback;
+  return rawName.replace(/[^\w.\-]/g, '_').replace(/\.\./g, '_').substring(0, 200);
 }
 
 async function resolveTeamScope(userId) {
@@ -1064,6 +1081,86 @@ app.delete('/api/documents/:id', requireAuth, async (req, res) => {
   }
 });
 
+app.get('/api/documents/:id/preview', requireAuth, async (req, res) => {
+  try {
+    const document = await db.getDocumentById(req.params.id, req.user.userId);
+    if (!document) {
+      return res.status(404).json({ error: 'Document not found' });
+    }
+
+    if (document.type === 'email') {
+      return res.json({
+        id: document.id,
+        type: 'email',
+        previewType: 'email',
+        title: document.title || 'Email',
+        email: document.email || {}
+      });
+    }
+
+    if (document.type !== 'docx' || !document.contentBase64) {
+      return res.status(400).json({ error: 'Document preview is unavailable' });
+    }
+
+    const buffer = Buffer.from(document.contentBase64, 'base64');
+    const mimeType = getSafeDocumentMimeType(document.mimeType);
+    const fileName = getSafeDocumentFileName(document);
+    const downloadUrl = `/api/documents/${document.id}/download`;
+
+    if (mimeType === 'application/pdf') {
+      return res.json({
+        id: document.id,
+        type: 'docx',
+        previewType: 'pdf',
+        title: document.title || fileName,
+        fileName,
+        mimeType,
+        inlineUrl: `${downloadUrl}?disposition=inline`,
+        downloadUrl
+      });
+    }
+
+    if (mimeType === 'text/plain') {
+      return res.json({
+        id: document.id,
+        type: 'docx',
+        previewType: 'text',
+        title: document.title || fileName,
+        fileName,
+        mimeType,
+        text: buffer.toString('utf8')
+      });
+    }
+
+    if (mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' && mammoth) {
+      const result = await mammoth.extractRawText({ buffer });
+      return res.json({
+        id: document.id,
+        type: 'docx',
+        previewType: 'text',
+        title: document.title || fileName,
+        fileName,
+        mimeType,
+        text: result.value?.trim() || 'No readable text found in this document.'
+      });
+    }
+
+    return res.json({
+      id: document.id,
+      type: 'docx',
+      previewType: 'download',
+      title: document.title || fileName,
+      fileName,
+      mimeType,
+      downloadUrl,
+      message: 'Preview is not available for this file type. Use download instead.'
+    });
+  } catch (error) {
+    logger.error({ err: error }, 'Error previewing document');
+    res.status(500).json({ error: 'Failed to preview document' });
+  }
+});
+
 app.get('/api/documents/:id/download', requireAuth, async (req, res) => {
   try {
     const document = await db.getDocumentById(req.params.id, req.user.userId);
@@ -1075,19 +1172,13 @@ app.get('/api/documents/:id/download', requireAuth, async (req, res) => {
     }
 
     const buffer = Buffer.from(document.contentBase64, 'base64');
-
-    // Sanitize filename: only allow safe characters
-    const rawName = document.fileName || 'document.docx';
-    const safeFileName = rawName.replace(/[^\w.\-]/g, '_').replace(/\.\./g, '_').substring(0, 200);
+    const safeFileName = getSafeDocumentFileName(document);
     const encodedFileName = encodeURIComponent(safeFileName);
-
-    // Whitelist MIME type
-    const mimeType = ALLOWED_MIME_TYPES.has(document.mimeType)
-      ? document.mimeType
-      : 'application/octet-stream';
+    const mimeType = getSafeDocumentMimeType(document.mimeType);
+    const disposition = req.query.disposition === 'inline' ? 'inline' : 'attachment';
 
     res.setHeader('Content-Type', mimeType);
-    res.setHeader('Content-Disposition', `attachment; filename="${safeFileName}"; filename*=UTF-8''${encodedFileName}`);
+    res.setHeader('Content-Disposition', `${disposition}; filename="${safeFileName}"; filename*=UTF-8''${encodedFileName}`);
     res.setHeader('Content-Length', buffer.length);
     res.send(buffer);
   } catch (error) {
