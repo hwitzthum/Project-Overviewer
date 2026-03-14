@@ -1162,7 +1162,8 @@ async function importData(userId, data) {
               });
             } else if (docType === 'docx') {
               fileName = doc.fileName || '';
-              mimeType = doc.mimeType || 'application/octet-stream';
+              const requestedMime = doc.mimeType || 'application/octet-stream';
+              mimeType = ALLOWED_DOC_MIME_TYPES.includes(requestedMime) ? requestedMime : 'application/octet-stream';
               contentBase64 = doc.contentBase64 || '';
             }
 

@@ -1,4 +1,8 @@
 // Project Overviewer — Team Management & Workspace
+let workspaceToggleAppliedMode = 'team';
+let workspaceToggleRequestedMode = 'team';
+let workspaceToggleInFlight = false;
+
 async function initUserMenu() {
   try {
     const user = await API.getMe();
@@ -66,30 +70,65 @@ async function initWorkspaceToggle(user) {
     currentUserId = user.id;
 
     // Load saved workspace mode
-    try {
-      const saved = await API.getSetting('workspaceMode');
-      if (saved === 'personal' || saved === 'team') {
-        currentWorkspaceMode = saved;
-      }
-    } catch (e) { /* default to team */ }
+    const savedWorkspaceMode = state.settings.workspaceMode;
+    if (savedWorkspaceMode === 'personal' || savedWorkspaceMode === 'team') {
+      currentWorkspaceMode = savedWorkspaceMode;
+    } else {
+      try {
+        const saved = await API.getSetting('workspaceMode');
+        if (saved === 'personal' || saved === 'team') {
+          currentWorkspaceMode = saved;
+        }
+      } catch (e) { /* default to team */ }
+    }
+
+    workspaceToggleAppliedMode = currentWorkspaceMode;
+    workspaceToggleRequestedMode = currentWorkspaceMode;
 
     updateWorkspaceToggleUI();
 
     // Click handlers
     document.querySelectorAll('.workspace-toggle-btn').forEach(btn => {
-      btn.addEventListener('click', async () => {
+      btn.addEventListener('click', () => {
         const mode = btn.dataset.mode;
-        if (mode === currentWorkspaceMode) return;
+        if (!mode || mode === workspaceToggleRequestedMode) return;
+        workspaceToggleRequestedMode = mode;
         currentWorkspaceMode = mode;
         updateWorkspaceToggleUI();
-        await API.setSetting('workspaceMode', mode);
-        // Reload projects with new scope
-        await loadFromStorage();
-        render();
+        flushWorkspaceToggle();
       });
     });
   } catch (e) {
     console.error('Failed to init workspace toggle:', e);
+  }
+}
+
+async function flushWorkspaceToggle() {
+  if (workspaceToggleInFlight) return;
+
+  workspaceToggleInFlight = true;
+  try {
+    while (workspaceToggleAppliedMode !== workspaceToggleRequestedMode) {
+      const mode = workspaceToggleRequestedMode;
+      await API.setSetting('workspaceMode', mode);
+      workspaceToggleAppliedMode = mode;
+      await loadFromStorage();
+    }
+    currentWorkspaceMode = workspaceToggleRequestedMode;
+    render();
+  } catch (e) {
+    console.error('Failed to switch workspace:', e);
+    currentWorkspaceMode = workspaceToggleAppliedMode;
+    updateWorkspaceToggleUI();
+    await loadFromStorage();
+    render();
+    showToast('Failed to switch workspace', 'error');
+  } finally {
+    workspaceToggleInFlight = false;
+    updateWorkspaceToggleUI();
+    if (workspaceToggleAppliedMode !== workspaceToggleRequestedMode) {
+      flushWorkspaceToggle();
+    }
   }
 }
 

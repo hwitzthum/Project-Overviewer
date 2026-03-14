@@ -191,6 +191,42 @@ test.describe('Security Headers & Input Validation', () => {
     expect(importRes.status()).toBe(200);
   });
 
+  test('reject import with invalid project fields', async ({ request }) => {
+    const { token } = await loginAPI(request);
+    const res = await request.post(`${BASE_URL}/api/import`, {
+      headers: authHeaders(token),
+      data: {
+        projects: [{
+          title: 'Bad Import',
+          status: 'owned-status',
+          priority: 'medium',
+          dueDate: 'x" data-owned="1'
+        }]
+      },
+    });
+    expect(res.status()).toBe(400);
+  });
+
+  test('reject import with unsupported document MIME type', async ({ request }) => {
+    const { token } = await loginAPI(request);
+    const res = await request.post(`${BASE_URL}/api/import`, {
+      headers: authHeaders(token),
+      data: {
+        projects: [{
+          title: 'Bad Doc Import',
+          documents: [{
+            type: 'docx',
+            title: 'evil',
+            fileName: 'evil.docx',
+            mimeType: 'text/html',
+            contentBase64: 'PGgxPkVWSUw8L2gxPg=='
+          }]
+        }]
+      },
+    });
+    expect(res.status()).toBe(400);
+  });
+
   // ─── 404 Handling ──────────────────────────────────────────
 
   test('unknown API route returns 404 JSON', async ({ request }) => {

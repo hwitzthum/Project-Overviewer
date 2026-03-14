@@ -73,7 +73,7 @@ function renderProjectCard(project) {
               ${task.completed ? '✓' : ''}
             </div>
             <div class="task-content">
-              <input type="text" class="task-title task-title-input" value="${escapeHtml(task.title)}"
+      <input type="text" class="task-title task-title-input" value="${escapeHtml(task.title)}"
                 data-project-id="${project.id}" data-task-id="${task.id}" aria-label="Task title" ${disabledAttr}>
               ${task.dueDate ? `
                 <div class="task-meta">
@@ -131,7 +131,7 @@ function renderTaskListRow(entry, options = {}) {
       <input type="text" class="task-title-input" value="${escapeHtml(task.title)}"
         data-project-id="${project.id}" data-task-id="${task.id}" aria-label="Task title">
       ${showProject ? `<span class="task-project-badge">${escapeHtml(project.title)}</span>` : ''}
-      <input type="date" class="task-due-input" value="${task.dueDate || ''}"
+      <input type="date" class="task-due-input" value="${formatDateInputValue(task.dueDate)}"
         data-project-id="${project.id}" data-task-id="${task.id}" aria-label="Task due date">
       <button class="btn btn-secondary btn-sm task-open-project" data-project-id="${project.id}">Open</button>
     </div>
@@ -275,11 +275,11 @@ function renderProjectHome(project) {
             </div>
             <div>
               <label class="settings-label">Due Date</label>
-              <input type="date" class="project-home-field" data-field="dueDate" data-project-id="${project.id}" value="${project.dueDate || ''}" ${disabledAttr}>
+              <input type="date" class="project-home-field" data-field="dueDate" data-project-id="${project.id}" value="${formatDateInputValue(project.dueDate)}" ${disabledAttr}>
             </div>
             <div>
               <label class="settings-label">Tags</label>
-              <input type="text" class="project-home-field" data-field="tags" data-project-id="${project.id}" value="${(project.tags || []).join(', ')}" ${disabledAttr}>
+              <input type="text" class="project-home-field" data-field="tags" data-project-id="${project.id}" value="${escapeAttribute((project.tags || []).join(', '))}" ${disabledAttr}>
             </div>
           </div>
           <div class="project-details-grid full">
@@ -335,7 +335,7 @@ function renderProjectModalTasks(project, options = {}) {
             </div>
             <input type="text" class="task-title-input modal-task-title" value="${escapeHtml(task.title)}"
               data-project-id="${project.id}" data-task-id="${task.id}" aria-label="Task title" ${disabledAttr}>
-            <input type="date" class="modal-task-date" value="${task.dueDate || ''}"
+            <input type="date" class="modal-task-date" value="${formatDateInputValue(task.dueDate)}"
               data-project-id="${project.id}" data-task-id="${task.id}" aria-label="Task due date" ${disabledAttr}>
             ${isArchived ? '' : `
               <button class="btn-icon btn-icon-small modal-task-move" data-direction="up"
@@ -351,8 +351,8 @@ function renderProjectModalTasks(project, options = {}) {
                 <input type="text" class="task-blocked-by-input" placeholder="Search tasks..."
                   value="${blockedEntry ? escapeHtml(formatDependencyLabel(blockedEntry)) : ''}"
                   data-project-id="${project.id}" data-task-id="${task.id}"
-                  data-blocked-by-id="${task.blockedBy || ''}"
-                  data-blocked-by-label="${blockedEntry ? escapeHtml(formatDependencyLabel(blockedEntry)) : ''}"
+                  data-blocked-by-id="${escapeAttribute(task.blockedBy || '')}"
+                  data-blocked-by-label="${blockedEntry ? escapeAttribute(formatDependencyLabel(blockedEntry)) : ''}"
                   ${disabledAttr}>
                 <button class="btn-icon btn-icon-small dependency-clear" data-project-id="${project.id}" data-task-id="${task.id}" title="Clear dependency" ${disabledAttr}>✕</button>
                 <div class="dependency-options hidden"></div>

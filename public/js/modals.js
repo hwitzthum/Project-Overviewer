@@ -64,11 +64,11 @@ function openProjectModal(projectId, options = {}) {
         </div>
         <div>
           <label class="settings-label">Due Date</label>
-          <input type="date" id="editDueDate" value="${project.dueDate || ''}" style="width:100%;" ${disabledAttr}>
+          <input type="date" id="editDueDate" value="${formatDateInputValue(project.dueDate)}" style="width:100%;" ${disabledAttr}>
         </div>
         <div>
           <label class="settings-label">Tags (comma-separated)</label>
-          <input type="text" id="editTags" value="${(project.tags || []).join(', ')}" placeholder="design, frontend, urgent" style="width:100%;" ${disabledAttr}>
+          <input type="text" id="editTags" value="${escapeAttribute((project.tags || []).join(', '))}" placeholder="design, frontend, urgent" style="width:100%;" ${disabledAttr}>
         </div>
       </div>
       <div class="modal-section" id="projectModalTasks" data-project-id="${project.id}">

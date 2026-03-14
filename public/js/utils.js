@@ -13,6 +13,7 @@ function parseLocalDate(dateStr) {
 }
 
 const HTML_ESCAPE_MAP = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' };
+const DATE_INPUT_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 function formatStatus(status) {
   return status || 'not-started';
@@ -21,6 +22,16 @@ function formatStatus(status) {
 function escapeHtml(text) {
   if (!text) return '';
   return String(text).replace(/[&<>"']/g, c => HTML_ESCAPE_MAP[c]);
+}
+
+function escapeAttribute(value) {
+  return escapeHtml(value);
+}
+
+function formatDateInputValue(value) {
+  if (!value) return '';
+  const normalized = String(value).trim();
+  return DATE_INPUT_PATTERN.test(normalized) ? normalized : '';
 }
 
 function formatDate(dateStr) {

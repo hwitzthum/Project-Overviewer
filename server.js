@@ -125,6 +125,13 @@ try {
 const VALID_STATUSES = ['backlog', 'not-started', 'in-progress', 'completed'];
 const VALID_PRIORITIES = ['high', 'medium', 'low', 'none'];
 const VALID_ROLES = ['admin', 'user'];
+const DATE_INPUT_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+const ALLOWED_MIME_TYPES = new Set([
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/pdf',
+  'text/plain',
+  'application/octet-stream'
+]);
 
 const VALID_SETTINGS_KEYS = [
   'theme', 'defaultView', 'sortBy', 'showCompleted', 'showArchived',
@@ -150,6 +157,39 @@ function validate(schema, data) {
 let schemas = {};
 if (z.object && z.string && typeof z.string === 'function') {
   try {
+    const dueDateSchema = z.string().regex(DATE_INPUT_REGEX).max(10).nullable();
+    const emailDateSchema = z.union([z.string().regex(DATE_INPUT_REGEX).max(10), z.literal(''), z.null()]);
+    const archivedAtSchema = z.string().max(50).optional().nullable();
+    const projectTagSchema = z.array(z.string().max(100)).max(50).optional();
+    const importTaskSchema = z.object({
+      title: z.string().min(1).max(500),
+      completed: z.boolean().optional(),
+      dueDate: dueDateSchema.optional(),
+      notes: z.string().max(10000).optional(),
+      priority: z.enum(VALID_PRIORITIES).optional(),
+      recurring: z.string().max(100).optional().nullable(),
+      blockedBy: z.string().max(100).optional().nullable(),
+      order: z.number().int().min(0).optional()
+    });
+    const importEmailDocumentSchema = z.object({
+      type: z.literal('email'),
+      title: z.string().max(500).optional(),
+      email: z.object({
+        subject: z.string().max(500).optional(),
+        from: z.string().max(255).optional(),
+        to: z.string().max(255).optional(),
+        date: emailDateSchema.optional(),
+        body: z.string().max(10000).optional()
+      }).optional()
+    });
+    const importDocxDocumentSchema = z.object({
+      type: z.literal('docx'),
+      title: z.string().max(500).optional(),
+      fileName: z.string().max(255).optional(),
+      mimeType: z.string().refine(value => ALLOWED_MIME_TYPES.has(value), 'Unsupported MIME type').optional(),
+      contentBase64: z.string().max(10 * 1024 * 1024).optional()
+    });
+
     schemas.register = z.object({
       username: z.string().min(3).max(50),
       email: z.string().email().max(255),
@@ -167,11 +207,11 @@ if (z.object && z.string && typeof z.string === 'function') {
       description: z.string().max(10000).optional(),
       status: z.enum(VALID_STATUSES).optional(),
       priority: z.enum(VALID_PRIORITIES).optional(),
-      dueDate: z.string().max(50).optional().nullable(),
-      tags: z.array(z.string().max(100)).max(50).optional(),
+      dueDate: dueDateSchema.optional(),
+      tags: projectTagSchema,
       order: z.number().int().min(0).optional(),
       archived: z.boolean().optional(),
-      archivedAt: z.string().optional().nullable()
+      archivedAt: archivedAtSchema
     });
 
     schemas.updateProject = z.object({
@@ -180,17 +220,17 @@ if (z.object && z.string && typeof z.string === 'function') {
       description: z.string().max(10000).optional(),
       status: z.enum(VALID_STATUSES).optional(),
       priority: z.enum(VALID_PRIORITIES).optional(),
-      dueDate: z.string().max(50).optional().nullable(),
-      tags: z.array(z.string().max(100)).max(50).optional(),
+      dueDate: dueDateSchema.optional(),
+      tags: projectTagSchema,
       order: z.number().int().min(0).optional(),
       archived: z.boolean().optional(),
-      archivedAt: z.string().optional().nullable()
+      archivedAt: archivedAtSchema
     });
 
     schemas.createTask = z.object({
       title: z.string().min(1).max(500),
       completed: z.boolean().optional(),
-      dueDate: z.string().max(50).optional().nullable(),
+      dueDate: dueDateSchema.optional(),
       notes: z.string().max(10000).optional(),
       priority: z.enum(VALID_PRIORITIES).optional(),
       recurring: z.string().max(100).optional().nullable(),
@@ -201,7 +241,7 @@ if (z.object && z.string && typeof z.string === 'function') {
     schemas.updateTask = z.object({
       title: z.string().min(1).max(500).optional(),
       completed: z.boolean().optional(),
-      dueDate: z.string().max(50).optional().nullable(),
+      dueDate: dueDateSchema.optional(),
       notes: z.string().max(10000).optional(),
       priority: z.enum(VALID_PRIORITIES).optional(),
       recurring: z.string().max(100).optional().nullable(),
@@ -215,6 +255,34 @@ if (z.object && z.string && typeof z.string === 'function') {
 
     schemas.createTeam = z.object({
       name: z.string().min(1).max(100)
+    });
+
+    schemas.importData = z.object({
+      version: z.string().max(20).optional(),
+      projects: z.array(z.object({
+        title: z.string().min(1).max(500),
+        stakeholder: z.string().max(200).optional(),
+        description: z.string().max(10000).optional(),
+        status: z.enum(VALID_STATUSES).optional(),
+        priority: z.enum(VALID_PRIORITIES).optional(),
+        dueDate: dueDateSchema.optional(),
+        tags: projectTagSchema,
+        order: z.number().int().min(0).optional(),
+        archived: z.boolean().optional(),
+        archivedAt: archivedAtSchema,
+        tasks: z.array(importTaskSchema).max(1000).optional(),
+        documents: z.array(z.discriminatedUnion('type', [
+          importEmailDocumentSchema,
+          importDocxDocumentSchema
+        ])).max(200).optional()
+      })).max(2000).optional(),
+      settings: z.record(z.string(), z.unknown()).optional(),
+      quickNotes: z.string().max(100000).optional(),
+      templates: z.array(z.object({
+        name: z.string().max(200),
+        tasks: z.array(z.string().max(500)).max(100)
+      })).max(100).optional(),
+      exportedAt: z.string().max(100).optional()
     });
   } catch {
     schemas = {};
@@ -877,14 +945,6 @@ app.delete('/api/documents/:id', requireAuth, async (req, res) => {
   }
 });
 
-// Document download with sanitized headers
-const ALLOWED_MIME_TYPES = new Set([
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  'application/pdf',
-  'text/plain',
-  'application/octet-stream'
-]);
-
 app.get('/api/documents/:id/download', requireAuth, async (req, res) => {
   try {
     const document = await db.getDocumentById(req.params.id, req.user.userId);
@@ -1031,7 +1091,15 @@ app.post('/api/import', requireAuth, async (req, res) => {
     if (!req.body || typeof req.body !== 'object') {
       return res.status(400).json({ error: 'Invalid import data' });
     }
-    await db.importData(req.user.userId, req.body);
+    if (schemas.importData) {
+      const result = schemas.importData.safeParse(req.body);
+      if (!result.success) {
+        return res.status(400).json({ error: 'Invalid import data', details: result.error.issues });
+      }
+      await db.importData(req.user.userId, result.data);
+    } else {
+      await db.importData(req.user.userId, req.body);
+    }
     res.json({ success: true });
   } catch (error) {
     logger.error({ err: error }, 'Error importing data');

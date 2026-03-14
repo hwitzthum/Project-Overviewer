@@ -1,4 +1,5 @@
 // Project Overviewer — Project CRUD
+let createProjectPending = false;
 
 function updatePriorityControls(statusSelectId, prioritySelectId, priorityGroupId) {
   const statusEl = document.getElementById(statusSelectId);
@@ -27,12 +28,16 @@ function openCreateProjectModal() {
   document.getElementById('createPriority').value = 'medium';
   document.getElementById('createDueDate').value = '';
   document.getElementById('createTags').value = '';
+  createProjectPending = false;
+  document.getElementById('createProjectSubmit').disabled = false;
   updatePriorityControls('createStatus', 'createPriority', 'createPriorityGroup');
   openModal('createProjectModal');
   setTimeout(() => document.getElementById('createTitle')?.focus(), 0);
 }
 
 async function submitCreateProject() {
+  if (createProjectPending) return;
+
   const title = document.getElementById('createTitle')?.value?.trim();
   const stakeholder = document.getElementById('createStakeholder')?.value?.trim() || '';
   const description = document.getElementById('createDescription')?.value?.trim() || '';
@@ -56,6 +61,9 @@ async function submitCreateProject() {
   }
 
   try {
+    createProjectPending = true;
+    document.getElementById('createProjectSubmit').disabled = true;
+
     const project = {
       id: uuid(),
       title,
@@ -77,6 +85,9 @@ async function submitCreateProject() {
   } catch (error) {
     console.error('Failed to create project:', error);
     showToast('Failed to create project', 'error');
+  } finally {
+    createProjectPending = false;
+    document.getElementById('createProjectSubmit').disabled = false;
   }
 }
 
