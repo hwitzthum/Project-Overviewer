@@ -148,7 +148,7 @@ window.addEventListener('DOMContentLoaded', initRegisterPage);
 window.addEventListener('pageshow', event => {
   if (!event.persisted) return;
   API.getMe().then(() => {
-    window.location.replace('/');
+    window.location.replace('/index.html');
   }).catch(() => {
     // Stay on the register page when there is no session.
   });

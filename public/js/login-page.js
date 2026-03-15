@@ -65,7 +65,7 @@ function initLoginPage() {
       applyTheme(themePreference);
       showLoginMessage('success', 'Signed in successfully. Redirecting...');
       setTimeout(() => {
-        window.location.replace('/');
+        window.location.replace('/index.html');
       }, 500);
     } catch (error) {
       showLoginMessage('error', error.message || 'Sign in failed. Please try again.');
@@ -79,7 +79,7 @@ window.addEventListener('DOMContentLoaded', initLoginPage);
 window.addEventListener('pageshow', event => {
   if (!event.persisted) return;
   API.getMe().then(() => {
-    window.location.replace('/');
+    window.location.replace('/index.html');
   }).catch(() => {
     // Stay on the sign-in page when there is no session.
   });

@@ -128,7 +128,7 @@ async function loadAdminUsers() {
     renderAllAdminUsers();
   } catch (error) {
     if (error.message.includes('Admin') || error.message.includes('403')) {
-      window.location.href = '/';
+      window.location.href = '/index.html';
       return;
     }
     document.getElementById('userList').textContent = 'Failed to load users.';
@@ -172,7 +172,7 @@ function initAdminPage() {
 
   API.getMe().then(async user => {
     if (user.role !== 'admin') {
-      window.location.href = '/';
+      window.location.href = '/index.html';
       return;
     }
     document.documentElement.setAttribute('data-auth-state', 'authorized');

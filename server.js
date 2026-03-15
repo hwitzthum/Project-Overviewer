@@ -254,7 +254,7 @@ app.get('/admin.html', async (req, res, next) => {
       return res.redirect(302, '/login.html');
     }
     if (pageSession.session.role !== 'admin') {
-      return res.redirect(302, '/');
+      return res.redirect(302, '/index.html');
     }
     return sendHtmlPage(res, 'admin.html', { protectedPage: true });
   } catch (err) {
@@ -267,7 +267,7 @@ app.get(['/login.html', '/register.html'], async (req, res, next) => {
     await initPromise;
     const pageSession = await getPageSession(req);
     if (pageSession.status === 'ok' && pageSession.session) {
-      return res.redirect(302, '/');
+      return res.redirect(302, '/index.html');
     }
     return sendHtmlPage(res, path.basename(req.path));
   } catch (err) {
