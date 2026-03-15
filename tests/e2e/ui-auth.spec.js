@@ -7,6 +7,7 @@ test.describe('UI: Login Page', () => {
     await page.goto('/');
     await page.waitForURL('**/login.html', { timeout: 5000 });
     await expect(page.locator('#username')).toBeVisible();
+    await expect.poll(async () => page.evaluate(() => getComputedStyle(document.body).visibility)).toBe('visible');
     await expect(page.locator('#app')).toHaveCount(0);
   });
 
@@ -53,7 +54,7 @@ test.describe('UI: Login Page', () => {
     await expect(registerLink).toBeVisible();
   });
 
-  test('authenticated users do not see the login form while redirecting to the app', async ({ browser, page }) => {
+  test('authenticated users are redirected away from the login page server-side', async ({ browser, page }) => {
     await loginUI(page);
     await page.waitForURL('/', { timeout: 5000 });
 
@@ -61,15 +62,7 @@ test.describe('UI: Login Page', () => {
     const loginContext = await browser.newContext({ baseURL: 'http://localhost:3099' });
     await loginContext.addCookies(cookies.filter(cookie => cookie.name === 'session_token' || cookie.name === 'theme_preference'));
     const loginPage = await loginContext.newPage();
-
-    await loginPage.route('**/api/v1/auth/me', async route => {
-      await new Promise(resolve => setTimeout(resolve, 1200));
-      await route.continue();
-    });
-
-    await loginPage.goto('/login.html', { waitUntil: 'domcontentloaded' });
-    await expect(loginPage.locator('html')).toHaveAttribute('data-page-ready', 'false');
-    await expect.poll(async () => loginPage.evaluate(() => getComputedStyle(document.body).visibility)).toBe('hidden');
+    await loginPage.goto('/login.html');
     await loginPage.waitForURL('/', { timeout: 5000 });
 
     await loginContext.close();

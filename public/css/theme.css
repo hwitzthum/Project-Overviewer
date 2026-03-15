@@ -110,7 +110,7 @@ body {
   color: var(--text-primary);
 }
 
-html[data-page-ready="false"] body {
+html[data-page-ready="false"][data-auth-state] body {
   visibility: hidden;
 }
 

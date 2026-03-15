@@ -20,21 +20,10 @@ function hideLoginMessage() {
   document.getElementById('message').className = 'auth-message';
 }
 
-function checkLoginPageSession() {
-  markPagePending();
-  API.getMe().then(() => {
-    window.location.replace('/');
-  }).catch(() => {
-    // Stay on the sign-in page when there is no session.
-    markThemeReady();
-    markPageReady();
-  });
-}
-
 function initLoginPage() {
-  checkLoginPageSession();
-
   initLoginThemePicker();
+  markThemeReady();
+  markPageReady();
 
   document.getElementById('togglePwd').addEventListener('click', function() {
     const input = document.getElementById('password');
@@ -86,5 +75,9 @@ function initLoginPage() {
 window.addEventListener('DOMContentLoaded', initLoginPage);
 window.addEventListener('pageshow', event => {
   if (!event.persisted) return;
-  checkLoginPageSession();
+  API.getMe().then(() => {
+    window.location.replace('/');
+  }).catch(() => {
+    // Stay on the sign-in page when there is no session.
+  });
 });

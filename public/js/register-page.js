@@ -73,19 +73,10 @@ function getPasswordStrength(password) {
   return Math.min(score, 4);
 }
 
-function checkRegisterPageSession() {
-  markPagePending();
-  API.getMe().then(() => {
-    window.location.replace('/');
-  }).catch(() => {
-    markThemeReady();
-    markPageReady();
-  });
-}
-
 function initRegisterPage() {
   initRegisterThemePicker();
-  checkRegisterPageSession();
+  markThemeReady();
+  markPageReady();
   const hints = ['', 'Weak', 'Fair', 'Good', 'Strong'];
 
   document.getElementById('togglePwd1').addEventListener('click', function() {
@@ -153,5 +144,9 @@ function initRegisterPage() {
 window.addEventListener('DOMContentLoaded', initRegisterPage);
 window.addEventListener('pageshow', event => {
   if (!event.persisted) return;
-  checkRegisterPageSession();
+  API.getMe().then(() => {
+    window.location.replace('/');
+  }).catch(() => {
+    // Stay on the register page when there is no session.
+  });
 });
