@@ -132,4 +132,87 @@ test.describe('Red-Team Fixes', () => {
       titles: ['member-team-project', 'owner-team-project']
     });
   });
+
+  test('rapid create-team clicks only submit once from the UI', async ({ request, page }) => {
+    const { token: adminToken } = await loginAPI(request);
+    const owner = await createApprovedUser(request, adminToken, 'rapidTeamOwner');
+    let createTeamRequests = 0;
+
+    await page.route('**/api/v1/teams', async route => {
+      if (route.request().method() === 'POST') {
+        createTeamRequests += 1;
+        await new Promise(resolve => setTimeout(resolve, 250));
+      }
+      await route.continue();
+    });
+
+    await loginUI(page, { username: owner.username, password: USER_PASSWORD });
+    await page.waitForSelector('#newProject');
+    await page.click('#openSettings');
+    await page.waitForSelector('#teamContent input[placeholder="Team name"]');
+
+    await page.fill('#teamContent input[placeholder="Team name"]', 'Rapid Team');
+    await page.evaluate(() => {
+      const createBtn = Array.from(document.querySelectorAll('#teamContent button'))
+        .find(button => button.textContent?.trim() === 'Create Team');
+      for (let i = 0; i < 5; i += 1) {
+        createBtn?.click();
+      }
+    });
+
+    await expect.poll(() => createTeamRequests).toBe(1);
+    await expect(page.locator('#teamContent')).toContainText('Rapid Team');
+  });
+
+  test('concurrent create-team requests cannot create multiple teams for the same user', async ({ request }) => {
+    const { token: adminToken } = await loginAPI(request);
+    const owner = await createApprovedUser(request, adminToken, 'teamRaceOwner');
+
+    const responses = await Promise.all(
+      Array.from({ length: 6 }, (_, index) => request.post(`${BASE_URL}/api/teams`, {
+        headers: authHeaders(owner.token),
+        data: { name: `Race Team ${index}` },
+      }))
+    );
+
+    const statuses = responses.map(response => response.status()).sort((a, b) => a - b);
+    expect(statuses.filter(status => status === 201)).toHaveLength(1);
+    expect(statuses.filter(status => status === 409)).toHaveLength(5);
+  });
+
+  test('concurrent invites cannot add the same user to multiple teams', async ({ request }) => {
+    const { token: adminToken } = await loginAPI(request);
+    const ownerA = await createApprovedUser(request, adminToken, 'ownerA');
+    const ownerB = await createApprovedUser(request, adminToken, 'ownerB');
+    const victim = await createApprovedUser(request, adminToken, 'victim');
+
+    const [teamARes, teamBRes] = await Promise.all([
+      request.post(`${BASE_URL}/api/teams`, {
+        headers: authHeaders(ownerA.token),
+        data: { name: 'Alpha Team' },
+      }),
+      request.post(`${BASE_URL}/api/teams`, {
+        headers: authHeaders(ownerB.token),
+        data: { name: 'Beta Team' },
+      }),
+    ]);
+
+    const teamA = await teamARes.json();
+    const teamB = await teamBRes.json();
+
+    const inviteResponses = await Promise.all([
+      request.post(`${BASE_URL}/api/teams/${teamA.id}/members`, {
+        headers: authHeaders(ownerA.token),
+        data: { username: victim.username },
+      }),
+      request.post(`${BASE_URL}/api/teams/${teamB.id}/members`, {
+        headers: authHeaders(ownerB.token),
+        data: { username: victim.username },
+      }),
+    ]);
+
+    const statuses = inviteResponses.map(response => response.status()).sort((a, b) => a - b);
+    expect(statuses.filter(status => status === 200)).toHaveLength(1);
+    expect(statuses.filter(status => status === 409)).toHaveLength(1);
+  });
 });

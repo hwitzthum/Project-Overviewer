@@ -85,6 +85,54 @@ function safeJsonParse(str, fallback = null) {
   }
 }
 
+function createTeamMembershipConflict() {
+  const error = new Error('User already belongs to a team');
+  error.code = 'TEAM_MEMBERSHIP_CONFLICT';
+  return error;
+}
+
+function isSingleTeamConstraintError(error) {
+  const message = String(error?.message || '');
+  return error?.code === 'TEAM_MEMBERSHIP_CONFLICT'
+    || (message.includes('team_members.user_id') && /constraint|unique/i.test(message));
+}
+
+function parseTimestampValue(value) {
+  const parsed = Date.parse(String(value || ''));
+  return Number.isFinite(parsed) ? parsed : Number.MAX_SAFE_INTEGER;
+}
+
+function compareMembershipPriority(userId, left, right) {
+  const leftScore = left.created_by === userId && left.role === 'owner'
+    ? 0
+    : left.role === 'owner' ? 1 : 2;
+  const rightScore = right.created_by === userId && right.role === 'owner'
+    ? 0
+    : right.role === 'owner' ? 1 : 2;
+
+  if (leftScore !== rightScore) return leftScore - rightScore;
+
+  const joinedDiff = parseTimestampValue(left.joined_at) - parseTimestampValue(right.joined_at);
+  if (joinedDiff !== 0) return joinedDiff;
+
+  const createdDiff = parseTimestampValue(left.created_at) - parseTimestampValue(right.created_at);
+  if (createdDiff !== 0) return createdDiff;
+
+  return String(left.team_id).localeCompare(String(right.team_id));
+}
+
+function compareOwnerPriority(team, left, right) {
+  const leftScore = left.user_id === team.created_by ? 0 : left.role === 'owner' ? 1 : 2;
+  const rightScore = right.user_id === team.created_by ? 0 : right.role === 'owner' ? 1 : 2;
+
+  if (leftScore !== rightScore) return leftScore - rightScore;
+
+  const joinedDiff = parseTimestampValue(left.joined_at) - parseTimestampValue(right.joined_at);
+  if (joinedDiff !== 0) return joinedDiff;
+
+  return String(left.user_id).localeCompare(String(right.user_id));
+}
+
 async function ensureSessionSchema() {
   const columns = await all('PRAGMA table_info(sessions)');
   const columnNames = new Set(columns.map(column => column.name));
@@ -111,6 +159,157 @@ async function cleanupExpiredSessions() {
     WHERE expires_at <= ?
        OR COALESCE(last_seen_at, created_at, CURRENT_TIMESTAMP) <= ?
   `, [nowIso, idleCutoffIso]);
+}
+
+async function repairDuplicateTeamMemberships() {
+  const memberships = await all(`
+    SELECT tm.user_id, tm.team_id, tm.role, tm.joined_at, t.created_by, t.created_at
+    FROM team_members tm
+    JOIN teams t ON t.id = tm.team_id
+    ORDER BY tm.user_id ASC, t.created_at ASC, tm.joined_at ASC, tm.team_id ASC
+  `);
+
+  const membershipsByUser = new Map();
+  for (const membership of memberships) {
+    if (!membershipsByUser.has(membership.user_id)) {
+      membershipsByUser.set(membership.user_id, []);
+    }
+    membershipsByUser.get(membership.user_id).push(membership);
+  }
+
+  const duplicateUsers = [...membershipsByUser.entries()]
+    .filter(([, userMemberships]) => userMemberships.length > 1);
+
+  if (duplicateUsers.length === 0) {
+    return { usersRepaired: 0, membershipsRemoved: 0 };
+  }
+
+  const tx = await client.transaction('write');
+  let membershipsRemoved = 0;
+
+  try {
+    for (const [userId, userMemberships] of duplicateUsers) {
+      const sortedMemberships = [...userMemberships]
+        .sort((left, right) => compareMembershipPriority(userId, left, right));
+
+      for (const membership of sortedMemberships.slice(1)) {
+        await tx.execute({
+          sql: 'DELETE FROM team_members WHERE team_id = ? AND user_id = ?',
+          args: [membership.team_id, userId]
+        });
+        membershipsRemoved += 1;
+      }
+    }
+
+    await tx.commit();
+  } catch (error) {
+    await tx.rollback().catch(() => {});
+    throw error;
+  }
+
+  logger.warn({
+    usersRepaired: duplicateUsers.length,
+    membershipsRemoved
+  }, 'Repaired duplicate team memberships during startup');
+
+  return {
+    usersRepaired: duplicateUsers.length,
+    membershipsRemoved
+  };
+}
+
+async function normalizeTeamOwnership() {
+  const teams = await all('SELECT id, created_by, created_at FROM teams ORDER BY created_at ASC, id ASC');
+  if (teams.length === 0) {
+    return { teamsDeleted: 0, teamsReowned: 0 };
+  }
+
+  const members = await all(`
+    SELECT team_id, user_id, role, joined_at
+    FROM team_members
+    ORDER BY team_id ASC, joined_at ASC, user_id ASC
+  `);
+  const membersByTeam = new Map();
+  for (const member of members) {
+    if (!membersByTeam.has(member.team_id)) {
+      membersByTeam.set(member.team_id, []);
+    }
+    membersByTeam.get(member.team_id).push(member);
+  }
+
+  const tx = await client.transaction('write');
+  let teamsDeleted = 0;
+  let teamsReowned = 0;
+
+  try {
+    for (const team of teams) {
+      const teamMembers = membersByTeam.get(team.id) || [];
+
+      if (teamMembers.length === 0) {
+        await tx.execute({
+          sql: 'DELETE FROM teams WHERE id = ?',
+          args: [team.id]
+        });
+        teamsDeleted += 1;
+        continue;
+      }
+
+      const nextOwner = [...teamMembers].sort((left, right) => compareOwnerPriority(team, left, right))[0];
+      const ownerChanged = team.created_by !== nextOwner.user_id
+        || teamMembers.some(member => member.user_id === nextOwner.user_id ? member.role !== 'owner' : member.role !== 'member');
+
+      await tx.execute({
+        sql: 'UPDATE teams SET created_by = ? WHERE id = ?',
+        args: [nextOwner.user_id, team.id]
+      });
+      await tx.execute({
+        sql: `UPDATE team_members
+              SET role = CASE WHEN user_id = ? THEN 'owner' ELSE 'member' END
+              WHERE team_id = ?`,
+        args: [nextOwner.user_id, team.id]
+      });
+
+      if (ownerChanged) {
+        teamsReowned += 1;
+      }
+    }
+
+    await tx.commit();
+  } catch (error) {
+    await tx.rollback().catch(() => {});
+    throw error;
+  }
+
+  if (teamsDeleted > 0 || teamsReowned > 0) {
+    logger.warn({
+      teamsDeleted,
+      teamsReowned
+    }, 'Normalized team ownership during startup');
+  }
+
+  return { teamsDeleted, teamsReowned };
+}
+
+async function repairTeamMembershipIntegrity() {
+  const duplicateSummary = await repairDuplicateTeamMemberships();
+  const ownershipSummary = await normalizeTeamOwnership();
+  return { ...duplicateSummary, ...ownershipSummary };
+}
+
+async function ensureSingleTeamMembershipIndex() {
+  const duplicates = await all(`
+    SELECT user_id, COUNT(*) AS membership_count
+    FROM team_members
+    GROUP BY user_id
+    HAVING COUNT(*) > 1
+  `);
+
+  if (duplicates.length > 0) {
+    logger.error({ duplicates }, 'Duplicate team memberships remain after startup repair');
+    throw new Error('Unable to enforce single-team membership integrity');
+  }
+
+  await run('CREATE UNIQUE INDEX IF NOT EXISTS idx_team_members_user_id_unique ON team_members(user_id)');
 }
 
 // ========== SCHEMA INITIALIZATION ==========
@@ -286,6 +485,8 @@ async function initDatabase() {
   ], 'write');
 
   await ensureSessionSchema();
+  await repairTeamMembershipIntegrity();
+  await ensureSingleTeamMembershipIndex();
 
   // ========== SEED DEFAULTS ==========
 
@@ -1069,14 +1270,35 @@ async function getAllTemplates() {
 
 async function createTeam(name, userId) {
   await waitForDb();
-  // User can only be in one team — check
-  const existing = await getTeamByUserId(userId);
-  if (existing) throw new Error('User already belongs to a team');
-
   const id = generateId();
-  await run('INSERT INTO teams (id, name, created_by) VALUES (?, ?, ?)', [id, name, userId]);
-  await run('INSERT INTO team_members (team_id, user_id, role) VALUES (?, ?, ?)', [id, userId, 'owner']);
-  return { id, name, createdBy: userId };
+  const tx = await client.transaction('write');
+
+  try {
+    const existing = await tx.execute({
+      sql: 'SELECT team_id FROM team_members WHERE user_id = ? LIMIT 1',
+      args: [userId]
+    });
+    if (existing.rows.length > 0) {
+      throw createTeamMembershipConflict();
+    }
+
+    await tx.execute({
+      sql: 'INSERT INTO teams (id, name, created_by) VALUES (?, ?, ?)',
+      args: [id, name, userId]
+    });
+    await tx.execute({
+      sql: 'INSERT INTO team_members (team_id, user_id, role) VALUES (?, ?, ?)',
+      args: [id, userId, 'owner']
+    });
+    await tx.commit();
+    return { id, name, createdBy: userId };
+  } catch (error) {
+    await tx.rollback().catch(() => {});
+    if (isSingleTeamConstraintError(error)) {
+      throw createTeamMembershipConflict();
+    }
+    throw error;
+  }
 }
 
 async function getTeamByUserId(userId) {
@@ -1116,12 +1338,29 @@ async function getTeamByUserId(userId) {
 
 async function addTeamMember(teamId, userId) {
   await waitForDb();
-  // Check user isn't already in a team
-  const existing = await getTeamByUserId(userId);
-  if (existing) throw new Error('User already belongs to a team');
+  const tx = await client.transaction('write');
 
-  await run('INSERT INTO team_members (team_id, user_id, role) VALUES (?, ?, ?)',
-    [teamId, userId, 'member']);
+  try {
+    const existing = await tx.execute({
+      sql: 'SELECT team_id FROM team_members WHERE user_id = ? LIMIT 1',
+      args: [userId]
+    });
+    if (existing.rows.length > 0) {
+      throw createTeamMembershipConflict();
+    }
+
+    await tx.execute({
+      sql: 'INSERT INTO team_members (team_id, user_id, role) VALUES (?, ?, ?)',
+      args: [teamId, userId, 'member']
+    });
+    await tx.commit();
+  } catch (error) {
+    await tx.rollback().catch(() => {});
+    if (isSingleTeamConstraintError(error)) {
+      throw createTeamMembershipConflict();
+    }
+    throw error;
+  }
 }
 
 async function removeTeamMember(teamId, userId) {

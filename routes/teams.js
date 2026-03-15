@@ -1,6 +1,11 @@
 const express = require('express');
 
 module.exports = function createTeamsRouter({ db, logger, schemas, requireAuth }) {
+  function isTeamMembershipConflict(error) {
+    return error?.code === 'TEAM_MEMBERSHIP_CONFLICT'
+      || (error.message && error.message.includes('already belongs to a team'));
+  }
+
   const router = express.Router();
 
   router.post('/', requireAuth, async (req, res) => {
@@ -16,7 +21,7 @@ module.exports = function createTeamsRouter({ db, logger, schemas, requireAuth }
       const team = await db.createTeam(name, req.user.userId);
       res.status(201).json(team);
     } catch (error) {
-      if (error.message && error.message.includes('already belongs to a team')) {
+      if (isTeamMembershipConflict(error)) {
         return res.status(409).json({ error: error.message });
       }
       logger.error({ err: error }, 'Error creating team');
@@ -67,7 +72,7 @@ module.exports = function createTeamsRouter({ db, logger, schemas, requireAuth }
       await db.addTeamMember(teamId, user.id);
       res.json({ success: true });
     } catch (error) {
-      if (error.message && error.message.includes('already belongs to a team')) {
+      if (isTeamMembershipConflict(error)) {
         return res.status(409).json({ error: error.message });
       }
       logger.error({ err: error }, 'Error adding team member');

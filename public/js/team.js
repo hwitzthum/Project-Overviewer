@@ -2,6 +2,29 @@
 let workspaceToggleAppliedMode = 'team';
 let workspaceToggleRequestedMode = 'team';
 let workspaceToggleInFlight = false;
+const pendingTeamActions = new Set();
+
+async function withPendingState(actionKey, button, action, relatedInputs = []) {
+  if (!button || pendingTeamActions.has(actionKey)) return;
+
+  pendingTeamActions.add(actionKey);
+  button.disabled = true;
+  relatedInputs.forEach(input => {
+    if (input) input.disabled = true;
+  });
+
+  try {
+    return await action();
+  } finally {
+    if (button.isConnected) {
+      button.disabled = false;
+    }
+    relatedInputs.forEach(input => {
+      if (input?.isConnected) input.disabled = false;
+    });
+    pendingTeamActions.delete(actionKey);
+  }
+}
 
 async function initUserMenu() {
   try {
@@ -187,13 +210,15 @@ function renderNoTeam(container) {
   btn.addEventListener('click', async () => {
     const name = input.value.trim();
     if (!name) return;
-    try {
-      await API.createTeam(name);
-      showToast('Team created!');
-      await loadTeamInfo();
-    } catch (err) {
-      showToast(err.message || 'Failed to create team');
-    }
+    await withPendingState('create-team', btn, async () => {
+      try {
+        await API.createTeam(name);
+        showToast('Team created!');
+        await loadTeamInfo();
+      } catch (err) {
+        showToast(err.message || 'Failed to create team');
+      }
+    }, [input]);
   });
   row.appendChild(btn);
   div.appendChild(row);
@@ -254,13 +279,15 @@ function renderTeamPanel(container, team) {
       removeBtn.textContent = 'Remove';
       removeBtn.addEventListener('click', async () => {
         if (!confirm('Remove ' + member.username + ' from the team?')) return;
-        try {
-          await API.removeTeamMember(team.id, member.userId);
-          showToast(member.username + ' removed');
-          await loadTeamInfo();
-        } catch (err) {
-          showToast(err.message || 'Failed to remove member');
-        }
+        await withPendingState(`remove-member:${team.id}:${member.userId}`, removeBtn, async () => {
+          try {
+            await API.removeTeamMember(team.id, member.userId);
+            showToast(member.username + ' removed');
+            await loadTeamInfo();
+          } catch (err) {
+            showToast(err.message || 'Failed to remove member');
+          }
+        });
       });
       row.appendChild(removeBtn);
     }
@@ -284,14 +311,16 @@ function renderTeamPanel(container, team) {
     inviteBtn.addEventListener('click', async () => {
       const username = inviteInput.value.trim();
       if (!username) return;
-      try {
-        await API.addTeamMember(team.id, username);
-        inviteInput.value = '';
-        showToast(username + ' added to team!');
-        await loadTeamInfo();
-      } catch (err) {
-        showToast(err.message || 'Failed to invite user');
-      }
+      await withPendingState(`invite-member:${team.id}`, inviteBtn, async () => {
+        try {
+          await API.addTeamMember(team.id, username);
+          inviteInput.value = '';
+          showToast(username + ' added to team!');
+          await loadTeamInfo();
+        } catch (err) {
+          showToast(err.message || 'Failed to invite user');
+        }
+      }, [inviteInput]);
     });
     inviteRow.appendChild(inviteBtn);
     wrapper.appendChild(inviteRow);
@@ -307,16 +336,18 @@ function renderTeamPanel(container, team) {
     deleteBtn.style.cssText = 'padding:6px 12px;border:1px solid rgba(255,59,48,0.3);border-radius:var(--radius-sm);background:transparent;color:var(--danger);font-size:12px;cursor:pointer;';
     deleteBtn.addEventListener('click', async () => {
       if (!confirm('Delete team "' + team.name + '"? All members will be removed.')) return;
-      try {
-        await API.deleteTeam(team.id);
-        showToast('Team deleted');
-        currentTeam = null;
-        await loadTeamInfo();
-        await loadFromStorage();
-        render();
-      } catch (err) {
-        showToast(err.message || 'Failed to delete team');
-      }
+      await withPendingState(`delete-team:${team.id}`, deleteBtn, async () => {
+        try {
+          await API.deleteTeam(team.id);
+          showToast('Team deleted');
+          currentTeam = null;
+          await loadTeamInfo();
+          await loadFromStorage();
+          render();
+        } catch (err) {
+          showToast(err.message || 'Failed to delete team');
+        }
+      });
     });
     actions.appendChild(deleteBtn);
   } else {
@@ -325,16 +356,18 @@ function renderTeamPanel(container, team) {
     leaveBtn.style.cssText = 'padding:6px 12px;border:1px solid rgba(255,59,48,0.3);border-radius:var(--radius-sm);background:transparent;color:var(--danger);font-size:12px;cursor:pointer;';
     leaveBtn.addEventListener('click', async () => {
       if (!confirm('Leave team "' + team.name + '"?')) return;
-      try {
-        await API.leaveTeam(team.id);
-        showToast('Left team');
-        currentTeam = null;
-        await loadTeamInfo();
-        await loadFromStorage();
-        render();
-      } catch (err) {
-        showToast(err.message || 'Failed to leave team');
-      }
+      await withPendingState(`leave-team:${team.id}`, leaveBtn, async () => {
+        try {
+          await API.leaveTeam(team.id);
+          showToast('Left team');
+          currentTeam = null;
+          await loadTeamInfo();
+          await loadFromStorage();
+          render();
+        } catch (err) {
+          showToast(err.message || 'Failed to leave team');
+        }
+      });
     });
     actions.appendChild(leaveBtn);
   }
