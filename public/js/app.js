@@ -233,6 +233,7 @@ async function init() {
 
   // API saves immediately, no need for beforeunload handler
   startAppPolling();
+  markPageReady();
 }
 
 // Start the app

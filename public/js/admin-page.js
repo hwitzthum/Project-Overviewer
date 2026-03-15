@@ -167,6 +167,7 @@ async function deleteAdminUser(id, username) {
 }
 
 function initAdminPage() {
+  markPagePending();
   initAdminThemePicker();
 
   API.getMe().then(async user => {
@@ -193,6 +194,7 @@ function initAdminPage() {
     }
     markThemeReady();
     await loadAdminUsers();
+    markPageReady();
     startAdminPolling();
   }).catch(() => {
     window.location.href = '/login.html';

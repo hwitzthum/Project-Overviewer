@@ -20,15 +20,21 @@ function hideLoginMessage() {
   document.getElementById('message').className = 'auth-message';
 }
 
-function initLoginPage() {
+function checkLoginPageSession() {
+  markPagePending();
   API.getMe().then(() => {
-    window.location.href = '/';
+    window.location.replace('/');
   }).catch(() => {
     // Stay on the sign-in page when there is no session.
+    markThemeReady();
+    markPageReady();
   });
+}
+
+function initLoginPage() {
+  checkLoginPageSession();
 
   initLoginThemePicker();
-  markThemeReady();
 
   document.getElementById('togglePwd').addEventListener('click', function() {
     const input = document.getElementById('password');
@@ -67,7 +73,7 @@ function initLoginPage() {
       applyTheme(themePreference);
       showLoginMessage('success', 'Signed in successfully. Redirecting...');
       setTimeout(() => {
-        window.location.href = '/';
+        window.location.replace('/');
       }, 500);
     } catch (error) {
       showLoginMessage('error', error.message || 'Sign in failed. Please try again.');
@@ -78,3 +84,7 @@ function initLoginPage() {
 }
 
 window.addEventListener('DOMContentLoaded', initLoginPage);
+window.addEventListener('pageshow', event => {
+  if (!event.persisted) return;
+  checkLoginPageSession();
+});

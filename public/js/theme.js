@@ -109,3 +109,11 @@ function bindThemeControls(options = {}) {
 function markThemeReady() {
   document.documentElement.setAttribute('data-theme-ready', 'true');
 }
+
+function markPageReady() {
+  document.documentElement.setAttribute('data-page-ready', 'true');
+}
+
+function markPagePending() {
+  document.documentElement.setAttribute('data-page-ready', 'false');
+}

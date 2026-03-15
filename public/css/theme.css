@@ -102,7 +102,7 @@
 }
 
 html {
-  background: var(--bg-secondary);
+  background: var(--page-background);
 }
 
 body {
@@ -110,8 +110,7 @@ body {
   color: var(--text-primary);
 }
 
-html[data-auth-state="pending"] body,
-html[data-auth-state="redirecting"] body {
+html[data-page-ready="false"] body {
   visibility: hidden;
 }
 
