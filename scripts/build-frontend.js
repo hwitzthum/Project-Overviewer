@@ -111,6 +111,7 @@ async function buildBundle(bundle) {
 
   cleanupOldBundleFiles(bundle.output);
   fs.writeFileSync(path.join(distDir, hashedFileName), code, 'utf8');
+  fs.writeFileSync(path.join(distDir, bundle.output), code, 'utf8');
 
   return {
     logicalName: bundle.output,
