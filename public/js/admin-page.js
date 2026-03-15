@@ -194,10 +194,11 @@ function initAdminPage() {
     }
     markThemeReady();
     await loadAdminUsers();
-    markPageReady();
     startAdminPolling();
   }).catch(() => {
     window.location.href = '/login.html';
+  }).finally(() => {
+    markPageReady();
   });
 }
 

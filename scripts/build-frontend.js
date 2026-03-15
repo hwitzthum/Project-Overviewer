@@ -10,6 +10,12 @@ const manifestPath = path.join(distDir, 'asset-manifest.json');
 
 const bundles = [
   {
+    output: 'boot.bundle.js',
+    files: [
+      'js/boot.js'
+    ]
+  },
+  {
     output: 'app-shell.bundle.js',
     files: [
       'js/api-client.js',

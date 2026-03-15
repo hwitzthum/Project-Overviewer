@@ -56,10 +56,10 @@ try {
         defaultSrc: ["'self'"],
         scriptSrc: ["'self'"],
         scriptSrcAttr: ["'none'"],
-        styleSrc: ["'self'", "'unsafe-inline'"],
+        styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
         imgSrc: ["'self'", "data:"],
         connectSrc: ["'self'"],
-        fontSrc: ["'self'"],
+        fontSrc: ["'self'", "https://fonts.gstatic.com"],
         objectSrc: ["'none'"],
         frameAncestors: ["'none'"],
         baseUri: ["'self'"],
@@ -171,6 +171,7 @@ function getAssetManifest() {
     return {
       buildId: 'dev',
       bundles: {
+        'boot.bundle.js': 'boot.bundle.js',
         'app-shell.bundle.js': 'app-shell.bundle.js',
         'app.bundle.js': 'app.bundle.js',
         'admin.bundle.js': 'admin.bundle.js',
@@ -190,6 +191,7 @@ function injectAssetUrls(html) {
     .replaceAll('/css/theme.css', `/css/theme.css?v=${buildVersion}`)
     .replaceAll('/css/app.css', `/css/app.css?v=${buildVersion}`)
     .replaceAll('/css/auth.css', `/css/auth.css?v=${buildVersion}`)
+    .replaceAll('/dist/boot.bundle.js', `/dist/${bundleMap['boot.bundle.js'] || 'boot.bundle.js'}`)
     .replaceAll('/dist/app-shell.bundle.js', `/dist/${bundleMap['app-shell.bundle.js'] || 'app-shell.bundle.js'}`)
     .replaceAll('/dist/app.bundle.js', `/dist/${bundleMap['app.bundle.js'] || 'app.bundle.js'}`)
     .replaceAll('/dist/admin.bundle.js', `/dist/${bundleMap['admin.bundle.js'] || 'admin.bundle.js'}`)

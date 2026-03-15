@@ -245,6 +245,10 @@ async function bootApp() {
     await init();
   } catch {
     // Redirect handled by the auth guard.
+  } finally {
+    // Guarantee the page becomes visible even if init() throws,
+    // so users never see an empty colored page.
+    if (typeof markPageReady === 'function') markPageReady();
   }
 }
 

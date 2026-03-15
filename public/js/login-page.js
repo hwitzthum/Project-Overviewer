@@ -21,9 +21,12 @@ function hideLoginMessage() {
 }
 
 function initLoginPage() {
-  initLoginThemePicker();
-  markThemeReady();
-  markPageReady();
+  try {
+    initLoginThemePicker();
+    markThemeReady();
+  } finally {
+    markPageReady();
+  }
 
   document.getElementById('togglePwd').addEventListener('click', function() {
     const input = document.getElementById('password');

@@ -74,9 +74,12 @@ function getPasswordStrength(password) {
 }
 
 function initRegisterPage() {
-  initRegisterThemePicker();
-  markThemeReady();
-  markPageReady();
+  try {
+    initRegisterThemePicker();
+    markThemeReady();
+  } finally {
+    markPageReady();
+  }
   const hints = ['', 'Weak', 'Fair', 'Good', 'Strong'];
 
   document.getElementById('togglePwd1').addEventListener('click', function() {
