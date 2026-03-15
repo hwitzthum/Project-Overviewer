@@ -297,9 +297,9 @@ test.describe('Projects & Tasks CRUD', () => {
         contentType: 'application/json',
         body: JSON.stringify(staleProjects)
       });
-      await page.unroute('**/api/projects', projectsRoute);
+      await page.unroute('**/api/v1/projects', projectsRoute);
     };
-    await page.route('**/api/projects', projectsRoute);
+    await page.route('**/api/v1/projects', projectsRoute);
 
     const pollPromise = page.evaluate(() => runAppPollingCycle());
     await expect.poll(() => intercepted).toBe(true);

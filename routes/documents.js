@@ -90,7 +90,7 @@ module.exports = function createDocumentsRouters({
       const buffer = Buffer.from(document.contentBase64, 'base64');
       const mimeType = getSafeDocumentMimeType(document.mimeType);
       const fileName = getSafeDocumentFileName(document);
-      const downloadUrl = `/api/documents/${document.id}/download`;
+      const downloadUrl = `${req.baseUrl}/${document.id}/download`;
 
       if (mimeType === 'application/pdf') {
         return res.json({

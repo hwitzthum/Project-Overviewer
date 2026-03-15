@@ -34,6 +34,7 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 const BCRYPT_ROUNDS = 12;
 const SAFE_HTTP_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+const API_BASE_PATHS = ['/api', '/api/v1'];
 
 app.disable('x-powered-by');
 
@@ -115,8 +116,11 @@ if (process.env.NODE_ENV !== 'test') {
     });
 
     app.use('/api/auth/', authLimiter);
+    app.use('/api/v1/auth/', authLimiter);
     app.use('/api/admin/', adminLimiter);
+    app.use('/api/v1/admin/', adminLimiter);
     app.use('/api/import', importLimiter);
+    app.use('/api/v1/import', importLimiter);
     app.use('/api/', generalLimiter);
   } catch {
     logger.warn('express-rate-limit not installed — running without rate limiting');
@@ -125,19 +129,44 @@ if (process.env.NODE_ENV !== 'test') {
 
 // Body parsing with size limits
 app.use('/api/import', express.json({ limit: '10mb' }));
+app.use('/api/v1/import', express.json({ limit: '10mb' }));
 app.use('/api/projects/:projectId/documents', express.json({ limit: '10mb' }));
+app.use('/api/v1/projects/:projectId/documents', express.json({ limit: '10mb' }));
 app.use(express.json({ limit: '2mb' }));
 
 // Serve only the public directory
 app.use(express.static(path.join(__dirname, 'public'), {
-  maxAge: '1h',
+  maxAge: 0,
   etag: true,
-  lastModified: true
+  lastModified: true,
+  setHeaders(res, filePath) {
+    if (filePath.includes(`${path.sep}dist${path.sep}`)) {
+      res.setHeader('Cache-Control', 'public, max-age=3600, stale-while-revalidate=86400');
+      return;
+    }
+
+    if (filePath.includes(`${path.sep}css${path.sep}`)) {
+      res.setHeader('Cache-Control', 'public, max-age=900, stale-while-revalidate=86400');
+      return;
+    }
+
+    if (path.extname(filePath) === '.html') {
+      res.setHeader('Cache-Control', 'no-cache, max-age=0, must-revalidate');
+    }
+  }
 }));
 
 app.use('/api', (req, res, next) => {
-  res.setHeader('Cache-Control', 'no-store, max-age=0');
-  res.setHeader('Pragma', 'no-cache');
+  if (
+    SAFE_HTTP_METHODS.has(req.method) &&
+    !/\/documents\/[^/]+\/download$/.test(req.path)
+  ) {
+    res.setHeader('Cache-Control', 'private, no-cache, must-revalidate');
+    res.setHeader('Vary', 'Authorization, Cookie');
+  } else {
+    res.setHeader('Cache-Control', 'no-store, max-age=0');
+    res.setHeader('Pragma', 'no-cache');
+  }
   next();
 });
 
@@ -537,22 +566,28 @@ const notesRouter = createNotesRouter({ db, logger, schemas, requireAuth });
 const templatesRouter = createTemplatesRouter({ db, logger, requireAuth });
 const exportImportRouter = createExportImportRouter({ db, logger, schemas, requireAuth });
 
-app.use('/api/auth', authRouter);
-app.use('/api/admin', adminRouter);
-app.use('/api/projects/:projectId/tasks', projectTasksRouter);
-app.use('/api/tasks', tasksRouter);
-app.use('/api/projects/:projectId/documents', projectDocumentsRouter);
-app.use('/api/documents', documentsRouter);
-app.use('/api/projects', projectsRouter);
-app.use('/api/teams', teamsRouter);
-app.use('/api/settings', settingsRouter);
-app.use('/api/notes', notesRouter);
-app.use('/api/templates', templatesRouter);
-app.use('/api', exportImportRouter);
+function mountApiRoutes(prefix) {
+  app.use(`${prefix}/auth`, authRouter);
+  app.use(`${prefix}/admin`, adminRouter);
+  app.use(`${prefix}/projects/:projectId/tasks`, projectTasksRouter);
+  app.use(`${prefix}/tasks`, tasksRouter);
+  app.use(`${prefix}/projects/:projectId/documents`, projectDocumentsRouter);
+  app.use(`${prefix}/documents`, documentsRouter);
+  app.use(`${prefix}/projects`, projectsRouter);
+  app.use(`${prefix}/teams`, teamsRouter);
+  app.use(`${prefix}/settings`, settingsRouter);
+  app.use(`${prefix}/notes`, notesRouter);
+  app.use(`${prefix}/templates`, templatesRouter);
+  app.use(prefix, exportImportRouter);
+}
+
+for (const prefix of API_BASE_PATHS) {
+  mountApiRoutes(prefix);
+}
 
 // ========== HEALTH CHECK ==========
 
-app.get('/api/health', async (req, res) => {
+app.get(['/api/health', '/api/v1/health'], async (req, res) => {
   const health = await db.healthCheck();
   res.status(health.status === 'ok' ? 200 : 503).json(health);
 });
@@ -564,6 +599,7 @@ app.get('*', (req, res) => {
   if (req.path.startsWith('/api/')) {
     return res.status(404).json({ error: 'Not found' });
   }
+  res.setHeader('Cache-Control', 'no-cache, max-age=0, must-revalidate');
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 

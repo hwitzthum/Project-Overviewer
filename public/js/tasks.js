@@ -367,7 +367,7 @@ async function toggleDocumentPreview(container, projectId, docId) {
     bodyEl.innerHTML = `
       <div class="doc-preview-empty">
         <div>Failed to load preview.</div>
-        <a class="btn btn-secondary btn-sm" href="/api/documents/${escapeAttribute(docId)}/download">Download document</a>
+        <a class="btn btn-secondary btn-sm" href="${escapeAttribute(buildApiPath(`/api/documents/${docId}/download`))}">Download document</a>
       </div>
     `;
     showToast('Failed to load document preview', 'error');

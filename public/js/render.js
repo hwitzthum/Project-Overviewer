@@ -437,7 +437,7 @@ function renderProjectModalDocuments(project, options = {}) {
             <div class="doc-actions">
               <button class="btn btn-secondary btn-sm" data-doc-action="open" data-doc-id="${doc.id}" data-project-id="${project.id}">Open</button>
               ${doc.type === 'docx'
-                ? `<a class="btn btn-secondary btn-sm" href="/api/documents/${doc.id}/download">Download</a>`
+                ? `<a class="btn btn-secondary btn-sm" href="${buildApiPath(`/api/documents/${doc.id}/download`)}">Download</a>`
                 : ''}
               ${isArchived ? '' : `
                 <button class="btn btn-secondary btn-sm" data-doc-action="delete" data-doc-id="${doc.id}"

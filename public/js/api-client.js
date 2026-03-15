@@ -1,22 +1,44 @@
 // API Client for Project Overviewer — with authentication
 const API_BASE = '';
+const API_LEGACY_PREFIX = '/api/';
+const API_VERSION_PREFIX = '/api/v1/';
 const SAFE_HTTP_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+
+function buildApiPath(endpoint) {
+  const value = String(endpoint || '');
+  if (value.startsWith(API_VERSION_PREFIX)) return value;
+  if (value.startsWith(API_LEGACY_PREFIX)) {
+    return value.replace(API_LEGACY_PREFIX, API_VERSION_PREFIX);
+  }
+  return value;
+}
+
+function getComparableApiPath(endpoint) {
+  const value = buildApiPath(endpoint);
+  if (value.startsWith(API_VERSION_PREFIX)) {
+    return value.replace(API_VERSION_PREFIX, API_LEGACY_PREFIX);
+  }
+  return value;
+}
+
+window.buildApiPath = buildApiPath;
 
 function markPollingMutation(endpoint, method) {
   if (SAFE_HTTP_METHODS.has(method)) return;
+  const comparableEndpoint = getComparableApiPath(endpoint);
 
   if (
-    (endpoint.startsWith('/api/projects') ||
-      endpoint.startsWith('/api/tasks') ||
-      endpoint.startsWith('/api/documents') ||
-      endpoint.startsWith('/api/teams')) &&
+    (comparableEndpoint.startsWith('/api/projects') ||
+      comparableEndpoint.startsWith('/api/tasks') ||
+      comparableEndpoint.startsWith('/api/documents') ||
+      comparableEndpoint.startsWith('/api/teams')) &&
     typeof window.markSharedDataMutation === 'function'
   ) {
     window.markSharedDataMutation();
   }
 
   if (
-    endpoint.startsWith('/api/admin/users') &&
+    comparableEndpoint.startsWith('/api/admin/users') &&
     typeof window.markAdminUsersMutation === 'function'
   ) {
     window.markAdminUsersMutation();
@@ -33,7 +55,8 @@ class API {
   static async request(endpoint, options = {}) {
     try {
       const method = String(options.method || 'GET').toUpperCase();
-      markPollingMutation(endpoint, method);
+      const requestEndpoint = buildApiPath(endpoint);
+      markPollingMutation(requestEndpoint, method);
 
       const headers = {
         'Content-Type': 'application/json',
@@ -44,7 +67,7 @@ class API {
         headers['Authorization'] = `Bearer ${this.token}`;
       }
 
-      const response = await fetch(`${API_BASE}${endpoint}`, {
+      const response = await fetch(`${API_BASE}${requestEndpoint}`, {
         ...options,
         headers
       });
@@ -66,7 +89,7 @@ class API {
 
       return await response.json();
     } catch (error) {
-      console.error(`API Error [${endpoint}]:`, error);
+      console.error(`API Error [${buildApiPath(endpoint)}]:`, error);
       throw error;
     }
   }

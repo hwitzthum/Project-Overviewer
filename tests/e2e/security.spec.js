@@ -157,7 +157,7 @@ test.describe('Security Headers & Input Validation', () => {
       headers: authHeaders(token),
     });
     expect(allRes.status()).toBe(200);
-    expect(allRes.headers()['cache-control']).toBe('no-store, max-age=0');
+    expect(allRes.headers()['cache-control']).toBe('private, no-cache, must-revalidate');
   });
 
   // ─── Quick Notes ───────────────────────────────────────────

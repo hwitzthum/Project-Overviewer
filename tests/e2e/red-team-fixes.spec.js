@@ -21,7 +21,7 @@ async function createApprovedUser(request, adminToken, prefix = 'user') {
 
 async function getProjectsByTitleInBrowser(page, title) {
   return page.evaluate(async (projectTitle) => {
-    const res = await fetch('/api/projects');
+    const res = await fetch('/api/v1/projects');
     const projects = await res.json();
     return projects.filter(project => project.title === projectTitle).length;
   }, title);
@@ -99,7 +99,7 @@ test.describe('Red-Team Fixes', () => {
       data: { value: 'team' },
     });
 
-    await page.route('**/api/settings/workspaceMode', async route => {
+    await page.route('**/api/v1/settings/workspaceMode', async route => {
       const payload = route.request().postDataJSON?.();
       if (route.request().method() === 'POST' && payload?.value === 'personal') {
         await new Promise(resolve => setTimeout(resolve, 700));
