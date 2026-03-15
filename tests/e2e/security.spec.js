@@ -1,5 +1,16 @@
 const { test, expect } = require('@playwright/test');
+const fs = require('fs');
 const { BASE_URL, loginAPI, authHeaders, createProjectAPI } = require('./helpers');
+
+const SECURITY_LOG_PATH = '/tmp/project-overviewer-security.log';
+
+function readSecurityLogEntries() {
+  if (!fs.existsSync(SECURITY_LOG_PATH)) return [];
+  return fs.readFileSync(SECURITY_LOG_PATH, 'utf8')
+    .split('\n')
+    .filter(Boolean)
+    .map(line => JSON.parse(line));
+}
 
 test.describe('Security Headers & Input Validation', () => {
 
@@ -213,6 +224,61 @@ test.describe('Security Headers & Input Validation', () => {
       data: { content: 'blocked note' },
     });
     expect(res.status()).toBe(403);
+  });
+
+  test('failed login is written to the security event log', async ({ request }) => {
+    fs.rmSync(SECURITY_LOG_PATH, { force: true });
+
+    const attemptedUsername = `missing_${Date.now()}`;
+    const res = await request.post(`${BASE_URL}/api/auth/login`, {
+      data: { username: attemptedUsername, password: 'WrongPassword123' },
+    });
+
+    expect(res.status()).toBe(401);
+
+    const events = readSecurityLogEntries().filter(entry => entry.eventType === 'auth.login.failed');
+    const loginFailure = events.find(entry => entry.attemptedUsername === attemptedUsername);
+
+    expect(loginFailure).toBeTruthy();
+    expect(loginFailure.logType).toBe('security');
+    expect(loginFailure.outcome).toBe('failure');
+  });
+
+  test('admin authorization denials are written to the security event log', async ({ request }) => {
+    fs.rmSync(SECURITY_LOG_PATH, { force: true });
+
+    const { token } = await loginAPI(request);
+    const suffix = Date.now();
+
+    const userRes = await request.post(`${BASE_URL}/api/auth/register`, {
+      data: {
+        username: `securitylog_${suffix}`,
+        email: `securitylog_${suffix}@example.com`,
+        password: 'SecurePass123'
+      },
+    });
+    const userBody = await userRes.json();
+
+    await request.put(`${BASE_URL}/api/admin/users/${userBody.user.id}/approve`, {
+      headers: authHeaders(token),
+    });
+
+    const loginRes = await request.post(`${BASE_URL}/api/auth/login`, {
+      data: { username: userBody.user.username, password: 'SecurePass123' },
+    });
+    const loginBody = await loginRes.json();
+
+    const res = await request.get(`${BASE_URL}/api/admin/users`, {
+      headers: authHeaders(loginBody.token),
+    });
+    expect(res.status()).toBe(403);
+
+    const events = readSecurityLogEntries().filter(entry => entry.eventType === 'authz.admin_denied');
+    const denialEvent = events.find(entry => entry.actorUsername === userBody.user.username);
+
+    expect(denialEvent).toBeTruthy();
+    expect(denialEvent.logType).toBe('security');
+    expect(denialEvent.outcome).toBe('denied');
   });
 
   // ─── Templates ─────────────────────────────────────────────

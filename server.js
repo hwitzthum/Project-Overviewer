@@ -13,6 +13,8 @@ const createSettingsRouter = require('./routes/settings');
 const createTasksRouters = require('./routes/tasks');
 const createTeamsRouter = require('./routes/teams');
 const createTemplatesRouter = require('./routes/templates');
+const { logSecurityEvent, fingerprintToken } = require('./security-events');
+const { SESSION_ABSOLUTE_TIMEOUT_SECONDS } = require('./session-config');
 
 // Load bcryptjs (pure-JS implementation, works in serverless environments)
 let bcrypt;
@@ -398,24 +400,59 @@ if (z.object && z.string && typeof z.string === 'function') {
 // ========== AUTH MIDDLEWARE ==========
 
 async function requireAuth(req, res, next) {
-  const token = req.headers.authorization?.replace('Bearer ', '')
-    || req.cookies?.session_token;
+  try {
+    const token = req.headers.authorization?.replace('Bearer ', '')
+      || req.cookies?.session_token;
+    const hasSessionCookie = Boolean(req.cookies?.session_token);
+    const hasBearerToken = typeof req.headers.authorization === 'string' && req.headers.authorization.startsWith('Bearer ');
 
-  if (!token) {
-    return res.status(401).json({ error: 'Authentication required' });
+    if (!token) {
+      logSecurityEvent('auth.session.missing', {
+        req,
+        statusCode: 401,
+        reason: 'missing_token'
+      });
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    const sessionLookup = await db.getSessionByToken(token);
+    if (sessionLookup.status !== 'ok' || !sessionLookup.session) {
+      if (!hasBearerToken && hasSessionCookie) {
+        setSessionCookie(res, '', 0);
+      }
+      logSecurityEvent(`auth.session.${sessionLookup.status === 'not_found' ? 'invalid' : sessionLookup.status}`, {
+        req,
+        statusCode: 401,
+        reason: sessionLookup.status,
+        tokenFingerprint: fingerprintToken(token)
+      });
+      return res.status(401).json({ error: 'Invalid or expired session' });
+    }
+
+    if (!sessionLookup.session.approved) {
+      logSecurityEvent('auth.session.pending_approval', {
+        req,
+        statusCode: 403,
+        outcome: 'denied',
+        actorUserId: sessionLookup.session.userId,
+        actorUsername: sessionLookup.session.username
+      });
+      return res.status(403).json({ error: 'Account pending approval' });
+    }
+
+    req.user = sessionLookup.session;
+    next();
+  } catch (error) {
+    logger.error({ err: error }, 'Authentication middleware error');
+    logSecurityEvent('auth.session.middleware_error', {
+      req,
+      level: 'error',
+      statusCode: 500,
+      outcome: 'failure',
+      severity: 'high'
+    });
+    res.status(500).json({ error: 'Authentication failed' });
   }
-
-  const session = await db.getSessionByToken(token);
-  if (!session) {
-    return res.status(401).json({ error: 'Invalid or expired session' });
-  }
-
-  if (!session.approved) {
-    return res.status(403).json({ error: 'Account pending approval' });
-  }
-
-  req.user = session;
-  next();
 }
 
 function getExpectedOrigin(req) {
@@ -441,7 +478,7 @@ function parseHeaderOrigin(value) {
 
 function requireSameOriginCookieWrite(req, res, next) {
   if (SAFE_HTTP_METHODS.has(req.method)) return next();
-  if (req.path === '/auth/login' || req.path === '/auth/register') return next();
+  if (req.path.endsWith('/auth/login') || req.path.endsWith('/auth/register')) return next();
 
   const authHeader = req.headers.authorization;
   const hasBearerAuth = typeof authHeader === 'string' && authHeader.startsWith('Bearer ');
@@ -451,6 +488,11 @@ function requireSameOriginCookieWrite(req, res, next) {
 
   const secFetchSite = req.headers['sec-fetch-site'];
   if (secFetchSite && secFetchSite !== 'same-origin') {
+    logSecurityEvent('request.same_origin_rejected', {
+      req,
+      statusCode: 403,
+      reason: 'sec_fetch_site_mismatch'
+    });
     return res.status(403).json({ error: 'Cross-site request rejected' });
   }
 
@@ -461,6 +503,13 @@ function requireSameOriginCookieWrite(req, res, next) {
   const sourceOrigin = parseHeaderOrigin(req.headers.origin) || parseHeaderOrigin(req.headers.referer);
   const expectedOrigin = getExpectedOrigin(req);
   if (!sourceOrigin || !expectedOrigin || sourceOrigin !== expectedOrigin) {
+    logSecurityEvent('request.same_origin_rejected', {
+      req,
+      statusCode: 403,
+      reason: 'origin_mismatch',
+      expectedOrigin,
+      sourceOrigin
+    });
     return res.status(403).json({ error: 'Cross-site request rejected' });
   }
 
@@ -469,12 +518,18 @@ function requireSameOriginCookieWrite(req, res, next) {
 
 function requireAdmin(req, res, next) {
   if (req.user.role !== 'admin') {
+    logSecurityEvent('authz.admin_denied', {
+      req,
+      statusCode: 403,
+      outcome: 'denied',
+      severity: 'high'
+    });
     return res.status(403).json({ error: 'Admin access required' });
   }
   next();
 }
 
-function setSessionCookie(res, token, maxAge = 86400) {
+function setSessionCookie(res, token, maxAge = SESSION_ABSOLUTE_TIMEOUT_SECONDS) {
   const isProduction = process.env.NODE_ENV === 'production';
   res.setHeader('Set-Cookie',
     `session_token=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${maxAge}${isProduction ? '; Secure' : ''}`
@@ -533,7 +588,8 @@ const authRouter = createAuthRouter({
   bcrypt,
   bcryptRounds: BCRYPT_ROUNDS,
   requireAuth,
-  setSessionCookie
+  setSessionCookie,
+  logSecurityEvent
 });
 const adminRouter = createAdminRouter({
   db,
@@ -542,7 +598,8 @@ const adminRouter = createAdminRouter({
   requireAdmin,
   validRoles: VALID_ROLES,
   validGlobalSettingsKeys: VALID_GLOBAL_SETTINGS_KEYS,
-  isSerializedJsonWithinLimit
+  isSerializedJsonWithinLimit,
+  logSecurityEvent
 });
 const projectsRouter = createProjectsRouter({ db, logger, schemas, requireAuth });
 const { projectTasksRouter, tasksRouter } = createTasksRouters({ db, logger, schemas, requireAuth });

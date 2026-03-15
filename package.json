@@ -13,6 +13,7 @@
     "predev": "npm run build",
     "dev": "node server.js",
     "pretest": "npm run build",
+    "audit:deps": "npm audit --audit-level=high",
     "test": "node scripts/run-playwright.js test",
     "test:ui": "node scripts/run-playwright.js test --ui"
   },

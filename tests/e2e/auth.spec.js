@@ -1,5 +1,6 @@
 const { test, expect } = require('@playwright/test');
 const { createClient } = require('@libsql/client');
+const crypto = require('crypto');
 const { BASE_URL, ADMIN, loginAPI, registerAPI, approveUserAPI, uniqueUser, loginUI } = require('./helpers');
 
 test.describe('Authentication', () => {
@@ -58,6 +59,7 @@ test.describe('Authentication', () => {
     const { token, user, response } = await loginAPI(request);
     expect(response.status()).toBe(200);
     expect(token).toBeTruthy();
+    expect(token).toMatch(/^[a-f0-9]{64}$/);
     expect(user.role).toBe('admin');
   });
 
@@ -128,6 +130,33 @@ test.describe('Authentication', () => {
     const storedToken = result.rows[0].token;
     expect(storedToken).not.toBe(token);
     expect(storedToken).toMatch(/^[a-f0-9]{64}$/);
+  });
+
+  test('idle sessions expire server-side', async ({ request }) => {
+    const { token, user } = await loginAPI(request);
+    const client = createClient({
+      url: process.env.TURSO_DATABASE_URL || 'file:/tmp/project-overviewer-e2e.db'
+    });
+    const tokenHash = crypto.createHash('sha256').update(String(token)).digest('hex');
+    const staleTimestamp = new Date(Date.now() - 31 * 60 * 1000).toISOString();
+
+    await client.execute({
+      sql: 'UPDATE sessions SET last_seen_at = ? WHERE user_id = ? AND token = ?',
+      args: [staleTimestamp, user.id, tokenHash]
+    });
+
+    const meRes = await request.get(`${BASE_URL}/api/auth/me`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(meRes.status()).toBe(401);
+
+    const sessionCheck = await client.execute({
+      sql: 'SELECT id FROM sessions WHERE user_id = ? AND token = ?',
+      args: [user.id, tokenHash]
+    });
+    client.close();
+
+    expect(sessionCheck.rows).toHaveLength(0);
   });
 
   test('reject request without auth token', async ({ request }) => {

@@ -1,6 +1,12 @@
 const { createClient } = require('@libsql/client');
 const crypto = require('crypto');
 const logger = require('./logger');
+const {
+  SESSION_ABSOLUTE_TIMEOUT_MS,
+  SESSION_IDLE_TIMEOUT_MS,
+  SESSION_TOUCH_INTERVAL_MS,
+  SESSION_TOKEN_BYTES
+} = require('./session-config');
 
 const VALID_SETTINGS_KEYS = [
   'theme', 'defaultView', 'sortBy', 'showCompleted', 'showArchived',
@@ -79,6 +85,34 @@ function safeJsonParse(str, fallback = null) {
   }
 }
 
+async function ensureSessionSchema() {
+  const columns = await all('PRAGMA table_info(sessions)');
+  const columnNames = new Set(columns.map(column => column.name));
+
+  if (!columnNames.has('last_seen_at')) {
+    await run('ALTER TABLE sessions ADD COLUMN last_seen_at TEXT');
+  }
+
+  await run(`
+    UPDATE sessions
+    SET last_seen_at = COALESCE(last_seen_at, created_at, CURRENT_TIMESTAMP)
+    WHERE last_seen_at IS NULL
+  `);
+
+  await run('CREATE INDEX IF NOT EXISTS idx_sessions_last_seen_at ON sessions(last_seen_at)');
+}
+
+async function cleanupExpiredSessions() {
+  const nowIso = new Date().toISOString();
+  const idleCutoffIso = new Date(Date.now() - SESSION_IDLE_TIMEOUT_MS).toISOString();
+
+  await run(`
+    DELETE FROM sessions
+    WHERE expires_at <= ?
+       OR COALESCE(last_seen_at, created_at, CURRENT_TIMESTAMP) <= ?
+  `, [nowIso, idleCutoffIso]);
+}
+
 // ========== SCHEMA INITIALIZATION ==========
 
 async function initDatabase() {
@@ -110,6 +144,7 @@ async function initDatabase() {
         user_id TEXT NOT NULL,
         token TEXT UNIQUE NOT NULL,
         expires_at TEXT NOT NULL,
+        last_seen_at TEXT DEFAULT CURRENT_TIMESTAMP,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       )`,
@@ -250,6 +285,8 @@ async function initDatabase() {
     { sql: 'CREATE UNIQUE INDEX IF NOT EXISTS idx_quick_notes_user_id_unique ON quick_notes(user_id)', args: [] }
   ], 'write');
 
+  await ensureSessionSchema();
+
   // ========== SEED DEFAULTS ==========
 
   // Default templates
@@ -266,8 +303,8 @@ async function initDatabase() {
     }
   }
 
-  // Clean expired sessions on startup
-  await run('DELETE FROM sessions WHERE expires_at < datetime(\'now\')');
+  // Clean expired and idle sessions on startup.
+  await cleanupExpiredSessions();
 
   logger.info('Database initialized successfully');
 }
@@ -349,16 +386,17 @@ async function deleteUser(id) {
 async function createSession(userId) {
   await waitForDb();
   const id = generateId();
-  const token = crypto.randomBytes(32).toString('hex');
+  const token = crypto.randomBytes(SESSION_TOKEN_BYTES).toString('hex');
   const tokenHash = hashSessionToken(token);
-  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+  const lastSeenAt = new Date().toISOString();
+  const expiresAt = new Date(Date.now() + SESSION_ABSOLUTE_TIMEOUT_MS).toISOString();
 
   await run(`
-    INSERT INTO sessions (id, user_id, token, expires_at)
-    VALUES (?, ?, ?, ?)
-  `, [id, userId, tokenHash, expiresAt]);
+    INSERT INTO sessions (id, user_id, token, expires_at, last_seen_at)
+    VALUES (?, ?, ?, ?, ?)
+  `, [id, userId, tokenHash, expiresAt, lastSeenAt]);
 
-  return { token, expiresAt };
+  return { token, expiresAt, lastSeenAt };
 }
 
 async function getSessionByToken(token) {
@@ -368,19 +406,45 @@ async function getSessionByToken(token) {
     SELECT s.*, u.id as uid, u.username, u.email, u.role, u.approved
     FROM sessions s
     JOIN users u ON s.user_id = u.id
-    WHERE s.token IN (?, ?) AND s.expires_at > datetime('now')
+    WHERE s.token IN (?, ?)
   `, [tokenHash, token]);
 
-  if (!session) return null;
+  if (!session) {
+    return { status: 'not_found', session: null };
+  }
+
+  const now = Date.now();
+  const expiresAtMs = Date.parse(session.expires_at);
+  if (!Number.isFinite(expiresAtMs) || expiresAtMs <= now) {
+    await run('DELETE FROM sessions WHERE id = ?', [session.id]);
+    return { status: 'absolute_timeout', session: null };
+  }
+
+  const lastSeenAt = session.last_seen_at || session.created_at || session.expires_at;
+  const lastSeenAtMs = Date.parse(lastSeenAt);
+  if (!Number.isFinite(lastSeenAtMs) || lastSeenAtMs <= now - SESSION_IDLE_TIMEOUT_MS) {
+    await run('DELETE FROM sessions WHERE id = ?', [session.id]);
+    return { status: 'idle_timeout', session: null };
+  }
+
+  let effectiveLastSeenAt = lastSeenAt;
+  if (now - lastSeenAtMs >= SESSION_TOUCH_INTERVAL_MS) {
+    effectiveLastSeenAt = new Date(now).toISOString();
+    await run('UPDATE sessions SET last_seen_at = ? WHERE id = ?', [effectiveLastSeenAt, session.id]);
+  }
 
   return {
-    sessionId: session.id,
-    userId: session.uid,
-    username: session.username,
-    email: session.email,
-    role: session.role,
-    approved: session.approved === 1,
-    expiresAt: session.expires_at
+    status: 'ok',
+    session: {
+      sessionId: session.id,
+      userId: session.uid,
+      username: session.username,
+      email: session.email,
+      role: session.role,
+      approved: session.approved === 1,
+      expiresAt: session.expires_at,
+      lastSeenAt: effectiveLastSeenAt
+    }
   };
 }
 
