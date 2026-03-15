@@ -54,9 +54,10 @@ async function initUserMenu() {
     });
 
     // Initialize workspace toggle (pass user to avoid duplicate API call)
-    initWorkspaceToggle(user);
+    await initWorkspaceToggle(user);
+    render();
     // Load team info for settings
-    loadTeamInfo();
+    await loadTeamInfo();
   } catch (err) {
     console.error('Failed to init user menu:', err);
   }

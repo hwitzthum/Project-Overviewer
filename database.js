@@ -399,6 +399,7 @@ async function deleteUserSessions(userId) {
 function mapProject(project) {
   return {
     ...project,
+    ownerName: project.owner_name || project.ownerName || '',
     stakeholder: project.stakeholder || '',
     archived: project.archived === 1,
     archivedAt: project.archived_at || null,
@@ -445,12 +446,20 @@ async function getAllProjects(userId, options = {}) {
   if (teamUserIds && teamUserIds.length > 1) {
     const userPlaceholders = teamUserIds.map(() => '?').join(',');
     projects = await all(
-      `SELECT * FROM projects WHERE user_id IN (${userPlaceholders}) ORDER BY project_order ASC, created_at DESC`,
+      `SELECT p.*, u.username AS owner_name
+       FROM projects p
+       JOIN users u ON p.user_id = u.id
+       WHERE p.user_id IN (${userPlaceholders})
+       ORDER BY p.project_order ASC, p.created_at DESC`,
       teamUserIds
     );
   } else {
     projects = await all(
-      'SELECT * FROM projects WHERE user_id = ? ORDER BY project_order ASC, created_at DESC',
+      `SELECT p.*, u.username AS owner_name
+       FROM projects p
+       JOIN users u ON p.user_id = u.id
+       WHERE p.user_id = ?
+       ORDER BY p.project_order ASC, p.created_at DESC`,
       [userId]
     );
   }
@@ -515,11 +524,20 @@ async function getProjectById(id, userId, options = {}) {
   if (teamUserIds && teamUserIds.length > 1) {
     const userPlaceholders = teamUserIds.map(() => '?').join(',');
     project = await get(
-      `SELECT * FROM projects WHERE id = ? AND user_id IN (${userPlaceholders})`,
+      `SELECT p.*, u.username AS owner_name
+       FROM projects p
+       JOIN users u ON p.user_id = u.id
+       WHERE p.id = ? AND p.user_id IN (${userPlaceholders})`,
       [id, ...teamUserIds]
     );
   } else {
-    project = await get('SELECT * FROM projects WHERE id = ? AND user_id = ?', [id, userId]);
+    project = await get(
+      `SELECT p.*, u.username AS owner_name
+       FROM projects p
+       JOIN users u ON p.user_id = u.id
+       WHERE p.id = ? AND p.user_id = ?`,
+      [id, userId]
+    );
   }
   if (!project) return null;
 
@@ -542,6 +560,7 @@ async function getProjectById(id, userId, options = {}) {
 async function createProject(userId, project) {
   await waitForDb();
   const id = generateId();
+  const owner = await getUserById(userId);
   await run(`
     INSERT INTO projects (id, user_id, title, stakeholder, description, status, priority, due_date, tags, project_order, archived, archived_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -564,6 +583,7 @@ async function createProject(userId, project) {
   return {
     id,
     user_id: userId,
+    ownerName: owner?.username || '',
     title: project.title,
     stakeholder: project.stakeholder || '',
     description: project.description || '',
@@ -640,7 +660,13 @@ async function updateProject(id, userId, updates) {
   if (result.changes === 0) return null;
 
   // Return updated fields directly instead of re-fetching
-  const updatedProject = await get('SELECT * FROM projects WHERE id = ? AND user_id = ?', [id, userId]);
+  const updatedProject = await get(
+    `SELECT p.*, u.username AS owner_name
+     FROM projects p
+     JOIN users u ON p.user_id = u.id
+     WHERE p.id = ? AND p.user_id = ?`,
+    [id, userId]
+  );
   if (!updatedProject) return null;
   return mapProject(updatedProject);
 }

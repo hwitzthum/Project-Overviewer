@@ -1,5 +1,5 @@
 const { test, expect } = require('@playwright/test');
-const { BASE_URL, loginAPI, registerAPI, approveUserAPI, uniqueUser, authHeaders, createProjectAPI } = require('./helpers');
+const { BASE_URL, loginAPI, loginUI, registerAPI, approveUserAPI, uniqueUser, authHeaders, createProjectAPI } = require('./helpers');
 
 // Helper: create and approve a user, return their token
 async function createApprovedUser(request, adminToken, prefix = 'team') {
@@ -438,5 +438,42 @@ test.describe('UI: Workspace Toggle', () => {
     // Open settings
     await page.click('#openSettings');
     await expect(page.locator('#teamSection')).toBeVisible({ timeout: 3000 });
+  });
+
+  test('team project cards show creator usernames', async ({ request, page }) => {
+    const { token: adminToken } = await loginAPI(request);
+    const owner = await createApprovedUser(request, adminToken, 'ownerui');
+    const member = await createApprovedUser(request, adminToken, 'memberui');
+
+    const createRes = await request.post(`${BASE_URL}/api/teams`, {
+      headers: authHeaders(owner.token),
+      data: { name: 'Owner Labels' },
+    });
+    const { id: teamId } = await createRes.json();
+
+    await request.post(`${BASE_URL}/api/teams/${teamId}/members`, {
+      headers: authHeaders(owner.token),
+      data: { username: member.username },
+    });
+
+    await createProjectAPI(request, owner.token, { title: 'Owner Label Project' });
+    await createProjectAPI(request, member.token, { title: 'Member Label Project' });
+    await request.post(`${BASE_URL}/api/settings/workspaceMode`, {
+      headers: authHeaders(member.token),
+      data: { value: 'team' },
+    });
+
+    await loginUI(page, { username: member.username, password: 'SecurePass123' });
+    await page.waitForURL('/', { timeout: 5000 });
+
+    const ownerCard = page.locator('.project-card').filter({
+      has: page.locator('input.project-title[value="Owner Label Project"]')
+    }).first();
+    const memberCard = page.locator('.project-card').filter({
+      has: page.locator('input.project-title[value="Member Label Project"]')
+    }).first();
+
+    await expect(ownerCard).toContainText(owner.username);
+    await expect(memberCard).toContainText(member.username);
   });
 });

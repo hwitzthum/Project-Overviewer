@@ -34,7 +34,7 @@ function renderProjectCard(project) {
         ` : ''}
         ${currentWorkspaceMode === 'team' && project.user_id && currentUserId ? `
           <span class="project-owner-badge ${project.user_id === currentUserId ? 'is-mine' : ''}">
-            ${project.user_id === currentUserId ? '● Mine' : '● ' + escapeHtml(project.ownerName || 'Team')}
+            ● ${escapeHtml(project.ownerName || 'Unknown')}
           </span>
         ` : ''}
       </div>
