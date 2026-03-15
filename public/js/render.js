@@ -552,7 +552,215 @@ function renderKanbanBoard(projects) {
   `;
 }
 
-function render() {
+// --- Selective Rendering Helpers ---
+
+function htmlToElement(html) {
+  var doc = new DOMParser().parseFromString(html.trim(), 'text/html');
+  return doc.body.firstElementChild;
+}
+
+function createKanbanEmptyPlaceholder() {
+  var el = document.createElement('div');
+  el.className = 'kanban-empty';
+  el.textContent = 'Drop a project here';
+  return el;
+}
+
+function patchProjectCard(projectId) {
+  var project = state.projects.find(function(p) { return p.id === projectId; });
+  if (!project) return false;
+
+  var existingCard = document.querySelector('.project-card[data-id="' + projectId + '"]');
+  if (!existingCard) return false;
+
+  var newCard = htmlToElement(renderProjectCard(project));
+  existingCard.replaceWith(newCard);
+  return true;
+}
+
+function moveKanbanCard(projectId, prevStatus) {
+  var project = state.projects.find(function(p) { return p.id === projectId; });
+  if (!project) return false;
+
+  var newStatus = project.status;
+  var existingCard = document.querySelector('.project-card[data-id="' + projectId + '"]');
+  if (!existingCard) return false;
+
+  var newCard = htmlToElement(renderProjectCard(project));
+
+  if (prevStatus === newStatus) {
+    existingCard.replaceWith(newCard);
+    return true;
+  }
+
+  existingCard.remove();
+
+  var oldLane = document.querySelector('.kanban-lane[data-status="' + prevStatus + '"] .kanban-lane-body');
+  if (oldLane && oldLane.querySelectorAll('.project-card').length === 0) {
+    oldLane.replaceChildren(createKanbanEmptyPlaceholder());
+  }
+
+  var newLane = document.querySelector('.kanban-lane[data-status="' + newStatus + '"] .kanban-lane-body');
+  if (!newLane) return false;
+
+  var empty = newLane.querySelector('.kanban-empty');
+  if (empty) empty.remove();
+
+  newLane.appendChild(newCard);
+  updateKanbanLaneCounts();
+  return true;
+}
+
+function updateKanbanLaneCounts() {
+  var wipLimits = getWipLimits();
+  var lanes = ['backlog', 'not-started', 'in-progress', 'completed'];
+
+  for (var i = 0; i < lanes.length; i++) {
+    var status = lanes[i];
+    var countEl = document.querySelector('.kanban-lane[data-status="' + status + '"] .kanban-lane-count');
+    if (!countEl) continue;
+
+    var laneTotalCount = getLaneProjectCount(status);
+    var limit = wipLimits[status];
+    var countLabel = limit ? laneTotalCount + '/' + limit : '' + laneTotalCount;
+
+    countEl.textContent = countLabel;
+    countEl.className = 'kanban-lane-count';
+    if (limit) {
+      if (laneTotalCount > limit) countEl.classList.add('limit-exceeded');
+      else if (laneTotalCount === limit) countEl.classList.add('limit-reached');
+    }
+  }
+}
+
+function addProjectCardToDOM(projectId) {
+  var project = state.projects.find(function(p) { return p.id === projectId; });
+  if (!project) return false;
+
+  var filteredProjects = getFilteredProjects();
+  var isVisible = filteredProjects.some(function(p) { return p.id === projectId; });
+  if (!isVisible) return true;
+
+  var newCard = htmlToElement(renderProjectCard(project));
+
+  if (currentView === 'kanban') {
+    var lane = document.querySelector('.kanban-lane[data-status="' + project.status + '"] .kanban-lane-body');
+    if (!lane) return false;
+
+    var empty = lane.querySelector('.kanban-empty');
+    if (empty) empty.remove();
+
+    lane.appendChild(newCard);
+    updateKanbanLaneCounts();
+    return true;
+  }
+
+  var grid = document.querySelector('.projects-grid');
+  if (!grid) return false;
+
+  grid.appendChild(newCard);
+  return true;
+}
+
+function removeProjectCardFromDOM(projectId) {
+  var card = document.querySelector('.project-card[data-id="' + projectId + '"]');
+  if (!card) return true;
+
+  if (currentView === 'kanban') {
+    var laneBody = card.closest('.kanban-lane-body');
+    card.remove();
+
+    if (laneBody && laneBody.querySelectorAll('.project-card').length === 0) {
+      laneBody.replaceChildren(createKanbanEmptyPlaceholder());
+    }
+
+    updateKanbanLaneCounts();
+    return true;
+  }
+
+  var grid = card.closest('.projects-grid');
+  card.remove();
+
+  if (grid && grid.querySelectorAll('.project-card').length === 0) {
+    return false;
+  }
+
+  return true;
+}
+
+function isCardInCorrectPosition(projectId) {
+  var sortBy = state.settings.sortBy || 'manual';
+  if (sortBy === 'manual') return true;
+
+  var filteredProjects = getFilteredProjects();
+  var expectedIndex = filteredProjects.findIndex(function(p) { return p.id === projectId; });
+  if (expectedIndex === -1) return true;
+
+  var cards = document.querySelectorAll('.projects-grid .project-card');
+  if (cards.length === 0) return true;
+
+  var actualIndex = Array.from(cards).findIndex(function(c) { return c.dataset.id === projectId; });
+  return actualIndex === expectedIndex;
+}
+
+function trySelectiveRender(hint) {
+  if (!hint) return false;
+
+  if (['project', 'focus'].includes(currentView) || currentView.startsWith('smart-')) return false;
+
+  var content = document.getElementById('content');
+  if (!content) return false;
+
+  var activeEl = document.activeElement;
+  if (hint.projectId && activeEl) {
+    var card = activeEl.closest('.project-card');
+    if (card && card.dataset.id === hint.projectId) return false;
+  }
+
+  switch (hint.type) {
+    case 'project-update': {
+      var project = state.projects.find(function(p) { return p.id === hint.projectId; });
+      var filteredProjects = getFilteredProjects();
+      var isVisible = filteredProjects.some(function(p) { return p.id === hint.projectId; });
+      var existsInDOM = !!document.querySelector('.project-card[data-id="' + hint.projectId + '"]');
+
+      if (!isVisible && existsInDOM) {
+        return removeProjectCardFromDOM(hint.projectId);
+      }
+
+      if (isVisible && !existsInDOM) {
+        return addProjectCardToDOM(hint.projectId);
+      }
+
+      if (!isVisible && !existsInDOM) return true;
+
+      if (currentView === 'kanban' && hint.prevStatus && hint.prevStatus !== (project && project.status)) {
+        if (!moveKanbanCard(hint.projectId, hint.prevStatus)) return false;
+      } else {
+        if (!patchProjectCard(hint.projectId)) return false;
+      }
+
+      if (currentView !== 'kanban' && !isCardInCorrectPosition(hint.projectId)) {
+        return false;
+      }
+
+      return true;
+    }
+
+    case 'project-add':
+      return addProjectCardToDOM(hint.projectId);
+
+    case 'project-remove':
+      return removeProjectCardFromDOM(hint.projectId);
+
+    default:
+      return false;
+  }
+}
+
+// --- Full Render (rebuilds entire content area) ---
+
+function fullRender() {
   document.documentElement.classList.add('rendering');
   const content = document.getElementById('content');
   if (currentView === 'project') {
@@ -596,6 +804,18 @@ function render() {
   updateQuickActions();
   attachEventListeners();
   document.documentElement.classList.remove('rendering');
+}
+
+function render() {
+  var hint = consumeRenderHint();
+
+  if (hint && trySelectiveRender(hint)) {
+    updateCounts();
+    updateQuickActions();
+    return;
+  }
+
+  fullRender();
 }
 
 function renderStatistics() {

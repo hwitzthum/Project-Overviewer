@@ -30,6 +30,7 @@ async function addTask(projectId, title) {
         : p)
     }));
 
+    setRenderHint({ type: 'project-update', projectId });
     render();
     if (currentEditingProject === projectId) {
       refreshProjectModalTasks(projectId);
@@ -85,6 +86,7 @@ async function toggleTask(projectId, taskId) {
         ? { ...p, tasks: p.tasks.map(t => t.id === taskId ? { ...t, completed } : t) }
         : p)
     }));
+    setRenderHint({ type: 'project-update', projectId });
     render();
     if (currentEditingProject === projectId) {
       refreshProjectModalTasks(projectId);
@@ -136,6 +138,7 @@ async function updateTaskFields(projectId, taskId, updates) {
         ? { ...p, tasks: p.tasks.map(t => t.id === taskId ? { ...t, ...normalizedUpdates } : t) }
         : p)
     }));
+    setRenderHint({ type: 'project-update', projectId });
     render();
     if (currentEditingProject === projectId) {
       refreshProjectModalTasks(projectId);
@@ -162,6 +165,7 @@ async function deleteTask(projectId, taskId) {
           ? { ...p, tasks: p.tasks.filter(t => t.id !== taskId) }
           : p)
       }));
+      setRenderHint({ type: 'project-update', projectId });
       render();
       if (currentEditingProject === projectId) {
         refreshProjectModalTasks(projectId);

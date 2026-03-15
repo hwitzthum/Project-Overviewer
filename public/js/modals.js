@@ -210,8 +210,10 @@ function saveProjectEdits(projectId) {
   const tagsStr = document.getElementById('editTags')?.value || '';
   const tags = tagsStr.split(',').map(t => t.trim()).filter(Boolean);
 
+  var prevStatus = existingProject ? existingProject.status : status;
   updateProject(projectId, { title, stakeholder, description, status, priority, dueDate, tags });
   document.getElementById('projectModalTitle').textContent = title;
+  setRenderHint({ type: 'project-update', projectId, prevStatus: prevStatus });
   render();
 }
 

@@ -139,6 +139,7 @@ async function archiveProject(projectId) {
   if (!project || project.archived) return;
   const updated = await updateProject(projectId, { archived: true });
   if (updated) {
+    setRenderHint({ type: 'project-update', projectId });
     render();
     showToast('Project archived', 'info', {
       actionLabel: 'Undo',
@@ -153,6 +154,7 @@ async function restoreProject(projectId) {
   if (!project || !project.archived) return;
   const updated = await updateProject(projectId, { archived: false });
   if (updated) {
+    setRenderHint({ type: 'project-update', projectId });
     render();
     showToast('Project restored', 'success');
   }
@@ -186,16 +188,21 @@ async function applyProjectQuickUpdate(projectId, updates, successMessage = 'Pro
     }
   }
   const undoSnapshot = buildUndoSnapshot(project, normalizedUpdates);
+  const prevStatus = project.status;
   const updated = await updateProject(projectId, normalizedUpdates);
   if (!updated) return;
 
+  setRenderHint({ type: 'project-update', projectId, prevStatus });
   render();
   showToast(successMessage, 'success', {
     actionLabel: 'Undo',
     duration: 7000,
     onAction: async () => {
+      const currentProject = state.projects.find(p => p.id === projectId);
+      const undoPrevStatus = currentProject ? currentProject.status : prevStatus;
       const undone = await updateProject(projectId, undoSnapshot);
       if (undone) {
+        setRenderHint({ type: 'project-update', projectId, prevStatus: undoPrevStatus });
         render();
         showToast('Change undone', 'info');
       }
@@ -242,6 +249,7 @@ async function restoreDeletedProject(deletedProject) {
 
     const refreshedProject = await API.getProject(restoredProject.id);
     setState(s => ({ projects: [...s.projects, refreshedProject] }));
+    setRenderHint({ type: 'project-add', projectId: refreshedProject.id });
     render();
     showToast('Project restored', 'success');
   } catch (error) {
@@ -350,3 +358,16 @@ var currentWorkspaceMode = 'team';
 var currentUserId = null;
 
 var currentTeam = null;
+
+// Selective rendering hints — set before calling render() to enable patching
+var renderHint = null;
+
+function setRenderHint(hint) {
+  renderHint = hint;
+}
+
+function consumeRenderHint() {
+  var hint = renderHint;
+  renderHint = null;
+  return hint;
+}

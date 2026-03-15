@@ -81,6 +81,7 @@ async function submitCreateProject() {
     const createdProject = await API.createProject(project);
     setState(s => ({ projects: [...s.projects, createdProject] }));
     closeModal('createProjectModal');
+    setRenderHint({ type: 'project-add', projectId: createdProject.id });
     render();
   } catch (error) {
     console.error('Failed to create project:', error);
@@ -105,6 +106,7 @@ async function deleteProject(id) {
       if (currentView === 'project' && currentProjectId === id) {
         closeProjectHome();
       } else {
+        setRenderHint({ type: 'project-remove', projectId: id });
         render();
       }
       showToast(`Deleted "${project.title}"`, 'info', {
