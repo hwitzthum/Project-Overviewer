@@ -1,6 +1,7 @@
 // Project Overviewer — Theme Management
 
 const THEME_STORAGE_KEY = 'theme';
+const THEME_COOKIE_KEY = 'theme_preference';
 const DARK_FAMILY_THEMES = new Set(['dark', 'ocean', 'forest']);
 const THEME_CHROME_COLORS = {
   light: '#efe4d0',
@@ -12,11 +13,31 @@ const THEME_CHROME_COLORS = {
 function getStoredThemePreference() {
   try {
     return localStorage.getItem(THEME_STORAGE_KEY)
+      || readThemePreferenceCookie()
       || document.documentElement.getAttribute('data-theme-preference')
       || 'auto';
   } catch {
-    return document.documentElement.getAttribute('data-theme-preference') || 'auto';
+    return readThemePreferenceCookie()
+      || document.documentElement.getAttribute('data-theme-preference')
+      || 'auto';
   }
+}
+
+function readThemePreferenceCookie() {
+  if (typeof document === 'undefined' || typeof document.cookie !== 'string') return null;
+  const prefix = `${THEME_COOKIE_KEY}=`;
+  for (const part of document.cookie.split(';')) {
+    const trimmed = part.trim();
+    if (trimmed.startsWith(prefix)) {
+      return decodeURIComponent(trimmed.slice(prefix.length));
+    }
+  }
+  return null;
+}
+
+function writeThemePreferenceCookie(preference) {
+  if (typeof document === 'undefined') return;
+  document.cookie = `${THEME_COOKIE_KEY}=${encodeURIComponent(preference)}; Path=/; Max-Age=31536000; SameSite=Lax`;
 }
 
 function resolveThemePreference(theme) {
@@ -50,6 +71,7 @@ function applyTheme(theme, options = {}) {
     } catch {
       // Ignore storage failures in restricted browsing modes.
     }
+    writeThemePreferenceCookie(preference);
   }
 
   document.querySelectorAll('[data-theme]').forEach(el => {

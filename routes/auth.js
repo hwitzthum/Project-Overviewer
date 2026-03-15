@@ -8,6 +8,7 @@ module.exports = function createAuthRouter({
   bcryptRounds,
   requireAuth,
   setSessionCookie,
+  setThemePreferenceCookie,
   logSecurityEvent
 }) {
   const router = express.Router();
@@ -130,7 +131,9 @@ module.exports = function createAuthRouter({
       }
 
       const session = await db.createSession(user.id);
+      const themePreference = await db.getUserSetting(user.id, 'theme') || 'auto';
       setSessionCookie(res, session.token);
+      setThemePreferenceCookie(res, themePreference);
 
       res.json({
         token: session.token,

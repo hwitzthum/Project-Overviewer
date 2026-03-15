@@ -153,4 +153,34 @@ test.describe('UI: Theme Switcher', () => {
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'forest');
     await expect(page.locator('h1')).toContainText('Admin');
   });
+
+  test('theme cookie preserves the chosen theme in a fresh browser context', async ({ browser, page }) => {
+    await loginUI(page);
+    await page.waitForURL('/', { timeout: 5000 });
+
+    await page.click('#openSettings');
+    await page.click('#settingsModal .settings-option[data-theme="ocean"]');
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'ocean');
+    await expect.poll(async () => page.evaluate(() => document.cookie)).toContain('theme_preference=ocean');
+
+    const cookies = await page.context().cookies();
+    const freshContext = await browser.newContext({ baseURL: 'http://localhost:3099' });
+    await freshContext.addCookies([
+      ...cookies.filter(cookie => cookie.name === 'session_token'),
+      {
+        name: 'theme_preference',
+        value: 'ocean',
+        url: 'http://localhost:3099',
+        sameSite: 'Lax',
+        httpOnly: false,
+        secure: false
+      }
+    ]);
+    const freshPage = await freshContext.newPage();
+
+    await freshPage.goto('/');
+    await expect(freshPage.locator('html')).toHaveAttribute('data-theme', 'ocean');
+
+    await freshContext.close();
+  });
 });

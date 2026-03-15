@@ -51,17 +51,45 @@ function setState(updates) {
 
   // If settings changed, save to API
   if (updates.settings || (typeof updates === 'function' && state.settings !== oldSettings)) {
-    saveSettings();
+    const changedSettingKeys = Object.keys(state.settings).filter(key => (
+      JSON.stringify(state.settings[key]) !== JSON.stringify(oldSettings[key])
+    ));
+    saveSettings(changedSettingKeys);
   }
 }
 
 var settingsSaveTimeout = null;
 var lastSavedSettings = {};
-async function saveSettings() {
+var themeSaveRequestId = 0;
+
+async function saveThemeSettingImmediately(value) {
+  const serialized = JSON.stringify(value);
+  if (lastSavedSettings.theme === serialized) {
+    return;
+  }
+
+  const requestId = ++themeSaveRequestId;
+
+  try {
+    await API.setSetting('theme', value);
+    if (requestId === themeSaveRequestId) {
+      lastSavedSettings.theme = serialized;
+    }
+  } catch (error) {
+    console.error('Failed to save theme setting:', error);
+  }
+}
+
+async function saveSettings(changedSettingKeys = []) {
+  if (changedSettingKeys.includes('theme')) {
+    saveThemeSettingImmediately(state.settings.theme);
+  }
+
   clearTimeout(settingsSaveTimeout);
   settingsSaveTimeout = setTimeout(async () => {
     try {
       for (const [key, value] of Object.entries(state.settings)) {
+        if (key === 'theme') continue;
         const serialized = JSON.stringify(value);
         if (lastSavedSettings[key] !== serialized) {
           await API.setSetting(key, value);

@@ -609,10 +609,29 @@ function requireAdmin(req, res, next) {
   next();
 }
 
+function appendSetCookie(res, value) {
+  const existing = res.getHeader('Set-Cookie');
+  if (!existing) {
+    res.setHeader('Set-Cookie', value);
+    return;
+  }
+  const values = Array.isArray(existing) ? existing : [existing];
+  res.setHeader('Set-Cookie', [...values, value]);
+}
+
 function setSessionCookie(res, token, maxAge = SESSION_ABSOLUTE_TIMEOUT_SECONDS) {
   const isProduction = process.env.NODE_ENV === 'production';
-  res.setHeader('Set-Cookie',
+  appendSetCookie(
+    res,
     `session_token=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${maxAge}${isProduction ? '; Secure' : ''}`
+  );
+}
+
+function setThemePreferenceCookie(res, theme, maxAge = 31536000) {
+  const isProduction = process.env.NODE_ENV === 'production';
+  appendSetCookie(
+    res,
+    `theme_preference=${encodeURIComponent(theme || 'auto')}; SameSite=Lax; Path=/; Max-Age=${maxAge}${isProduction ? '; Secure' : ''}`
   );
 }
 
@@ -669,6 +688,7 @@ const authRouter = createAuthRouter({
   bcryptRounds: BCRYPT_ROUNDS,
   requireAuth,
   setSessionCookie,
+  setThemePreferenceCookie,
   logSecurityEvent
 });
 const adminRouter = createAdminRouter({
@@ -697,7 +717,8 @@ const settingsRouter = createSettingsRouter({
   logger,
   requireAuth,
   validSettingsKeys: VALID_SETTINGS_KEYS,
-  isSerializedJsonWithinLimit
+  isSerializedJsonWithinLimit,
+  setThemePreferenceCookie
 });
 const notesRouter = createNotesRouter({ db, logger, schemas, requireAuth });
 const templatesRouter = createTemplatesRouter({ db, logger, requireAuth });
