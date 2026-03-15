@@ -1,5 +1,27 @@
 // API Client for Project Overviewer — with authentication
 const API_BASE = '';
+const SAFE_HTTP_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+
+function markPollingMutation(endpoint, method) {
+  if (SAFE_HTTP_METHODS.has(method)) return;
+
+  if (
+    (endpoint.startsWith('/api/projects') ||
+      endpoint.startsWith('/api/tasks') ||
+      endpoint.startsWith('/api/documents') ||
+      endpoint.startsWith('/api/teams')) &&
+    typeof window.markSharedDataMutation === 'function'
+  ) {
+    window.markSharedDataMutation();
+  }
+
+  if (
+    endpoint.startsWith('/api/admin/users') &&
+    typeof window.markAdminUsersMutation === 'function'
+  ) {
+    window.markAdminUsersMutation();
+  }
+}
 
 class API {
   static token = null;
@@ -10,6 +32,9 @@ class API {
 
   static async request(endpoint, options = {}) {
     try {
+      const method = String(options.method || 'GET').toUpperCase();
+      markPollingMutation(endpoint, method);
+
       const headers = {
         'Content-Type': 'application/json',
         ...options.headers

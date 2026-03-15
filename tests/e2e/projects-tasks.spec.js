@@ -257,6 +257,79 @@ test.describe('Projects & Tasks CRUD', () => {
     await expect(preview).toContainText('Second line for inline open test');
     await expect(openButton).toHaveText('Close');
   });
+
+  test('document persists when a stale poll resolves after attachment and sidebar navigation', async ({ request, page }) => {
+    const { token } = await loginAPI(request);
+    const title = `Polling Doc ${Date.now()}`;
+    const { body: project } = await createProjectAPI(request, token, { title });
+
+    const staleProjectsRes = await request.get(`${BASE_URL}/api/projects`, {
+      headers: authHeaders(token),
+    });
+    expect(staleProjectsRes.status()).toBe(200);
+    const staleProjects = await staleProjectsRes.json();
+
+    await loginUI(page);
+    await page.waitForSelector('#newProject');
+
+    await expect(page.locator('.project-card').filter({
+      has: page.locator(`input.project-title[value="${title}"]`)
+    }).first()).toBeVisible();
+    await page.evaluate(projectId => {
+      openProjectHome(projectId);
+    }, project.id);
+    await page.waitForSelector('#projectHomeDocuments');
+
+    let intercepted = false;
+    let releaseProjectsResponse;
+    const projectsResponseGate = new Promise(resolve => {
+      releaseProjectsResponse = resolve;
+    });
+    const projectsRoute = async route => {
+      if (intercepted) {
+        await route.continue();
+        return;
+      }
+      intercepted = true;
+      await projectsResponseGate;
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(staleProjects)
+      });
+      await page.unroute('**/api/projects', projectsRoute);
+    };
+    await page.route('**/api/projects', projectsRoute);
+
+    const pollPromise = page.evaluate(() => runAppPollingCycle());
+    await expect.poll(() => intercepted).toBe(true);
+
+    await page.evaluate(async ({ projectId, contentBase64 }) => {
+      await API.createDocument(projectId, {
+        type: 'docx',
+        title: 'fixture.docx',
+        fileName: 'fixture.docx',
+        mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        contentBase64
+      });
+      await refreshProjectDocuments(projectId);
+    }, { projectId: project.id, contentBase64: PREVIEW_FIXTURE_DOCX_BASE64 });
+
+    await expect(page.locator('#projectHomeDocuments .doc-item')).toHaveCount(1);
+    await expect(page.locator('#projectHomeDocuments')).toContainText('fixture.docx');
+
+    releaseProjectsResponse();
+    await pollPromise;
+
+    await page.click('.nav-item[data-view="kanban"]');
+    await page.click('.nav-item[data-view="all"]');
+    await page.evaluate(projectId => {
+      openProjectHome(projectId);
+    }, project.id);
+
+    await expect(page.locator('#projectHomeDocuments .doc-item')).toHaveCount(1);
+    await expect(page.locator('#projectHomeDocuments')).toContainText('fixture.docx');
+  });
 });
 
 test.describe('Data Isolation', () => {

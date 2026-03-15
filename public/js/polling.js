@@ -6,10 +6,12 @@ let appPollingInFlight = false;
 let pendingProjectRender = false;
 let pendingProjectSupplementalRefresh = false;
 let pendingTeamRender = false;
+let sharedDataMutationVersion = 0;
 
 let adminPollingStarted = false;
 let adminPollingTimer = null;
 let adminPollingInFlight = false;
+let adminUsersMutationVersion = 0;
 
 function serializeForComparison(value) {
   try {
@@ -45,6 +47,14 @@ function scheduleNextAppPoll(delay = SHARED_DATA_POLL_INTERVAL_MS) {
 function scheduleNextAdminPoll(delay = SHARED_DATA_POLL_INTERVAL_MS) {
   clearTimeout(adminPollingTimer);
   adminPollingTimer = window.setTimeout(runAdminPollingCycle, delay);
+}
+
+function markSharedDataMutation() {
+  sharedDataMutationVersion += 1;
+}
+
+function markAdminUsersMutation() {
+  adminUsersMutationVersion += 1;
 }
 
 function applyPendingProjectRender() {
@@ -114,36 +124,30 @@ async function pollProjects() {
   try {
     const nextProjects = await API.getAllProjects();
     if (serializeForComparison(state.projects) === serializeForComparison(nextProjects)) {
-      return false;
+      return { changed: false, nextProjects: null };
     }
-
-    state.projects = nextProjects;
-    notify();
-    pendingProjectRender = true;
-    pendingProjectSupplementalRefresh = true;
-    return true;
+    return { changed: true, nextProjects };
   } catch (error) {
     console.error('Shared project polling failed:', error);
-    return false;
+    return { changed: false, nextProjects: null };
   }
 }
 
 async function pollTeamInfo() {
-  if (isBusyWithin('#teamContent')) return false;
+  if (isBusyWithin('#teamContent')) {
+    return { changed: false, nextTeam: null };
+  }
 
   try {
     const payload = await API.getMyTeam();
     const nextTeam = normalizeTeamPayload(payload);
     if (serializeForComparison(currentTeam) === serializeForComparison(nextTeam)) {
-      return false;
+      return { changed: false, nextTeam: null };
     }
-
-    currentTeam = nextTeam;
-    pendingTeamRender = true;
-    return true;
+    return { changed: true, nextTeam };
   } catch (error) {
     console.error('Team polling failed:', error);
-    return false;
+    return { changed: false, nextTeam: null };
   }
 }
 
@@ -159,8 +163,25 @@ async function runAppPollingCycle() {
   }
 
   appPollingInFlight = true;
+  const pollVersion = sharedDataMutationVersion;
   try {
-    await Promise.all([pollProjects(), pollTeamInfo()]);
+    const [projectsResult, teamResult] = await Promise.all([pollProjects(), pollTeamInfo()]);
+    if (pollVersion !== sharedDataMutationVersion) {
+      return;
+    }
+
+    if (projectsResult.changed) {
+      state.projects = projectsResult.nextProjects;
+      notify();
+      pendingProjectRender = true;
+      pendingProjectSupplementalRefresh = true;
+    }
+
+    if (teamResult.changed) {
+      currentTeam = teamResult.nextTeam;
+      pendingTeamRender = true;
+    }
+
     flushPendingAppRefreshes();
   } finally {
     appPollingInFlight = false;
@@ -212,8 +233,12 @@ async function runAdminPollingCycle() {
   }
 
   adminPollingInFlight = true;
+  const pollVersion = adminUsersMutationVersion;
   try {
     const users = await API.getUsers();
+    if (pollVersion !== adminUsersMutationVersion) {
+      return;
+    }
     syncAdminUsers(users);
   } catch (error) {
     console.error('Admin polling failed:', error);
@@ -235,3 +260,6 @@ function startAdminPolling() {
   document.addEventListener('visibilitychange', handleAdminVisibilityChange);
   scheduleNextAdminPoll();
 }
+
+window.markSharedDataMutation = markSharedDataMutation;
+window.markAdminUsersMutation = markAdminUsersMutation;
