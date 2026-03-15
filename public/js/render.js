@@ -553,6 +553,7 @@ function renderKanbanBoard(projects) {
 }
 
 function render() {
+  document.documentElement.classList.add('rendering');
   const content = document.getElementById('content');
   if (currentView === 'project') {
     const project = state.projects.find(p => p.id === currentProjectId);
@@ -594,6 +595,7 @@ function render() {
   updateCounts();
   updateQuickActions();
   attachEventListeners();
+  document.documentElement.classList.remove('rendering');
 }
 
 function renderStatistics() {

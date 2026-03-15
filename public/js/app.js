@@ -139,8 +139,8 @@ async function init() {
     quickActionDocxProjectId = null;
   });
 
-  // Theme options
-  document.querySelectorAll('[data-theme]').forEach(option => {
+  // Theme options (scoped to settings modal only, not all [data-theme] elements)
+  document.querySelectorAll('#settingsModal .settings-option[data-theme]').forEach(option => {
     option.addEventListener('click', () => {
       const theme = option.dataset.theme;
       setState(s => ({ settings: { ...s.settings, theme } }));

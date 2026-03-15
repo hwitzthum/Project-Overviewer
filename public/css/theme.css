@@ -154,7 +154,6 @@ html {
 }
 
 body {
-  background: var(--page-background);
   color: var(--text-primary);
 }
 
@@ -164,7 +163,10 @@ html[data-page-ready="false"][data-auth-state] body {
 
 html[data-theme-ready="false"] *,
 html[data-theme-ready="false"] *::before,
-html[data-theme-ready="false"] *::after {
+html[data-theme-ready="false"] *::after,
+html.rendering *,
+html.rendering *::before,
+html.rendering *::after {
   transition: none !important;
 }
 
