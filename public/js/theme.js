@@ -1,7 +1,6 @@
 // Project Overviewer — Theme Management
 
 const THEME_STORAGE_KEY = 'theme';
-const THEME_COOKIE_KEY = 'theme_preference';
 const THEME_SESSION_KEY = 'theme_boot_preference';
 const DARK_FAMILY_THEMES = new Set(['dark', 'ocean', 'forest']);
 const THEME_CHROME_COLORS = {
@@ -15,32 +14,19 @@ function getStoredThemePreference() {
   try {
     return sessionStorage.getItem(THEME_SESSION_KEY)
       || localStorage.getItem(THEME_STORAGE_KEY)
-      || readThemePreferenceCookie()
       || document.documentElement.getAttribute('data-theme-preference')
       || 'auto';
   } catch {
-    return (typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(THEME_SESSION_KEY) : null)
-      || readThemePreferenceCookie()
-      || document.documentElement.getAttribute('data-theme-preference')
+    return document.documentElement.getAttribute('data-theme-preference')
       || 'auto';
   }
 }
 
-function readThemePreferenceCookie() {
-  if (typeof document === 'undefined' || typeof document.cookie !== 'string') return null;
-  const prefix = `${THEME_COOKIE_KEY}=`;
-  for (const part of document.cookie.split(';')) {
-    const trimmed = part.trim();
-    if (trimmed.startsWith(prefix)) {
-      return decodeURIComponent(trimmed.slice(prefix.length));
-    }
+// Clean up legacy theme_preference cookie (no longer used)
+function clearLegacyThemeCookie() {
+  if (typeof document !== 'undefined') {
+    document.cookie = 'theme_preference=; Path=/; Max-Age=0; SameSite=Lax';
   }
-  return null;
-}
-
-function writeThemePreferenceCookie(preference) {
-  if (typeof document === 'undefined') return;
-  document.cookie = `${THEME_COOKIE_KEY}=${encodeURIComponent(preference)}; Path=/; Max-Age=31536000; SameSite=Lax`;
 }
 
 function resolveThemePreference(theme) {
@@ -79,7 +65,6 @@ function applyTheme(theme, options = {}) {
     } catch {
       // Ignore storage failures in restricted browsing modes.
     }
-    writeThemePreferenceCookie(preference);
   }
 
   document.querySelectorAll('[data-theme]').forEach(el => {

@@ -4,15 +4,12 @@
   const chrome = { light: '#efe4d0', dark: '#0a1014', ocean: '#0a2230', forest: '#172117' };
   let preference = 'auto';
   try {
-    const themeCookie = document.cookie
-      .split(';')
-      .map(part => part.trim())
-      .find(part => part.startsWith('theme_preference='));
     preference = sessionStorage.getItem('theme_boot_preference')
       || localStorage.getItem('theme')
-      || (themeCookie ? decodeURIComponent(themeCookie.split('=').slice(1).join('=')) : null)
       || 'auto';
   } catch {}
+  // Clean up legacy theme_preference cookie (no longer used)
+  try { document.cookie = 'theme_preference=; Path=/; Max-Age=0; SameSite=Lax'; } catch {}
   const effective = preference === 'auto'
     ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
     : preference;

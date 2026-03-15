@@ -24,6 +24,18 @@
     radial-gradient(circle at top left, rgba(181, 82, 51, 0.12), transparent 30%),
     radial-gradient(circle at 85% 15%, rgba(202, 138, 54, 0.12), transparent 24%),
     linear-gradient(180deg, #f7f1e5 0%, #efe4d0 48%, #eadbc5 100%);
+  --lane-backlog-accent: #6b7280;
+  --lane-backlog-bg: rgba(107, 114, 128, 0.13);
+  --lane-backlog-bg-strong: rgba(107, 114, 128, 0.3);
+  --lane-not-started-accent: #4b5563;
+  --lane-not-started-bg: rgba(75, 85, 99, 0.13);
+  --lane-not-started-bg-strong: rgba(75, 85, 99, 0.3);
+  --lane-in-progress-accent: var(--accent);
+  --lane-in-progress-bg: rgba(var(--accent-rgb), 0.1);
+  --lane-in-progress-bg-strong: rgba(var(--accent-rgb), 0.3);
+  --lane-completed-accent: var(--success);
+  --lane-completed-bg: rgba(63, 138, 90, 0.14);
+  --lane-completed-bg-strong: rgba(63, 138, 90, 0.3);
 }
 
 [data-theme="dark"] {
@@ -49,6 +61,18 @@
     radial-gradient(circle at 20% 0%, rgba(121, 210, 255, 0.16), transparent 28%),
     radial-gradient(circle at 100% 10%, rgba(77, 132, 255, 0.14), transparent 26%),
     linear-gradient(180deg, #0a1014 0%, #081118 42%, #05080b 100%);
+  --lane-backlog-accent: #8b95a3;
+  --lane-backlog-bg: rgba(139, 149, 163, 0.12);
+  --lane-backlog-bg-strong: rgba(139, 149, 163, 0.25);
+  --lane-not-started-accent: #7b8a9c;
+  --lane-not-started-bg: rgba(123, 138, 156, 0.12);
+  --lane-not-started-bg-strong: rgba(123, 138, 156, 0.25);
+  --lane-in-progress-accent: var(--accent);
+  --lane-in-progress-bg: rgba(var(--accent-rgb), 0.1);
+  --lane-in-progress-bg-strong: rgba(var(--accent-rgb), 0.3);
+  --lane-completed-accent: var(--success);
+  --lane-completed-bg: rgba(91, 196, 136, 0.12);
+  --lane-completed-bg-strong: rgba(91, 196, 136, 0.25);
 }
 
 [data-theme="ocean"] {
@@ -74,6 +98,18 @@
     radial-gradient(circle at 18% 14%, rgba(62, 208, 242, 0.18), transparent 25%),
     radial-gradient(circle at 88% 0%, rgba(0, 125, 176, 0.22), transparent 28%),
     linear-gradient(180deg, #0a2230 0%, #081b26 46%, #05131b 100%);
+  --lane-backlog-accent: #6e99ab;
+  --lane-backlog-bg: rgba(110, 153, 171, 0.12);
+  --lane-backlog-bg-strong: rgba(110, 153, 171, 0.25);
+  --lane-not-started-accent: #5a8a9e;
+  --lane-not-started-bg: rgba(90, 138, 158, 0.12);
+  --lane-not-started-bg-strong: rgba(90, 138, 158, 0.25);
+  --lane-in-progress-accent: var(--accent);
+  --lane-in-progress-bg: rgba(var(--accent-rgb), 0.1);
+  --lane-in-progress-bg-strong: rgba(var(--accent-rgb), 0.3);
+  --lane-completed-accent: var(--success);
+  --lane-completed-bg: rgba(93, 217, 163, 0.12);
+  --lane-completed-bg-strong: rgba(93, 217, 163, 0.25);
 }
 
 [data-theme="forest"] {
@@ -99,6 +135,18 @@
     radial-gradient(circle at 15% 12%, rgba(168, 211, 95, 0.18), transparent 24%),
     radial-gradient(circle at 86% 8%, rgba(90, 115, 42, 0.2), transparent 25%),
     linear-gradient(180deg, #172117 0%, #101710 48%, #0a0f0a 100%);
+  --lane-backlog-accent: #7e9476;
+  --lane-backlog-bg: rgba(126, 148, 118, 0.12);
+  --lane-backlog-bg-strong: rgba(126, 148, 118, 0.25);
+  --lane-not-started-accent: #6d8565;
+  --lane-not-started-bg: rgba(109, 133, 101, 0.12);
+  --lane-not-started-bg-strong: rgba(109, 133, 101, 0.25);
+  --lane-in-progress-accent: var(--accent);
+  --lane-in-progress-bg: rgba(var(--accent-rgb), 0.1);
+  --lane-in-progress-bg-strong: rgba(var(--accent-rgb), 0.3);
+  --lane-completed-accent: var(--success);
+  --lane-completed-bg: rgba(98, 201, 133, 0.12);
+  --lane-completed-bg-strong: rgba(98, 201, 133, 0.25);
 }
 
 html {

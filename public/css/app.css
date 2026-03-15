@@ -306,27 +306,27 @@
     }
 
     .kanban-lane.lane-backlog {
-      --lane-accent: #6b7280;
-      --lane-bg: rgba(107, 114, 128, 0.13);
-      --lane-bg-strong: rgba(107, 114, 128, 0.3);
+      --lane-accent: var(--lane-backlog-accent);
+      --lane-bg: var(--lane-backlog-bg);
+      --lane-bg-strong: var(--lane-backlog-bg-strong);
     }
 
     .kanban-lane.lane-not-started {
-      --lane-accent: #4b5563;
-      --lane-bg: rgba(75, 85, 99, 0.13);
-      --lane-bg-strong: rgba(75, 85, 99, 0.3);
+      --lane-accent: var(--lane-not-started-accent);
+      --lane-bg: var(--lane-not-started-bg);
+      --lane-bg-strong: var(--lane-not-started-bg-strong);
     }
 
     .kanban-lane.lane-in-progress {
-      --lane-accent: var(--accent);
-      --lane-bg: rgba(var(--accent-rgb), 0.1);
-      --lane-bg-strong: rgba(var(--accent-rgb), 0.3);
+      --lane-accent: var(--lane-in-progress-accent);
+      --lane-bg: var(--lane-in-progress-bg);
+      --lane-bg-strong: var(--lane-in-progress-bg-strong);
     }
 
     .kanban-lane.lane-completed {
-      --lane-accent: var(--success);
-      --lane-bg: rgba(52, 199, 89, 0.14);
-      --lane-bg-strong: rgba(52, 199, 89, 0.3);
+      --lane-accent: var(--lane-completed-accent);
+      --lane-bg: var(--lane-completed-bg);
+      --lane-bg-strong: var(--lane-completed-bg-strong);
     }
 
     .kanban-lane.drop-zone {

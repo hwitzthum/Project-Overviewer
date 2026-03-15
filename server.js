@@ -744,14 +744,6 @@ function setSessionCookie(res, token, maxAge = SESSION_ABSOLUTE_TIMEOUT_SECONDS)
   );
 }
 
-function setThemePreferenceCookie(res, theme, maxAge = 31536000) {
-  const isProduction = process.env.NODE_ENV === 'production';
-  const secureCookies = isProduction || APP_ORIGIN?.startsWith('https://');
-  appendSetCookie(
-    res,
-    `theme_preference=${encodeURIComponent(theme || 'auto')}; SameSite=Lax; Path=/; Max-Age=${maxAge}${secureCookies ? '; Secure' : ''}`
-  );
-}
 
 function getSafeDocumentMimeType(mimeType) {
   return ALLOWED_MIME_TYPES.has(mimeType) ? mimeType : 'application/octet-stream';
@@ -806,7 +798,6 @@ const authRouter = createAuthRouter({
   bcryptRounds: BCRYPT_ROUNDS,
   requireAuth,
   setSessionCookie,
-  setThemePreferenceCookie,
   logSecurityEvent
 });
 const adminRouter = createAdminRouter({
@@ -837,8 +828,7 @@ const settingsRouter = createSettingsRouter({
   logger,
   requireAuth,
   validSettingsKeys: VALID_SETTINGS_KEYS,
-  isSerializedJsonWithinLimit,
-  setThemePreferenceCookie
+  isSerializedJsonWithinLimit
 });
 const notesRouter = createNotesRouter({ db, logger, schemas, requireAuth });
 const templatesRouter = createTemplatesRouter({ db, logger, requireAuth });

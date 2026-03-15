@@ -60,7 +60,7 @@ test.describe('UI: Login Page', () => {
 
     const cookies = await page.context().cookies();
     const loginContext = await browser.newContext({ baseURL: 'http://localhost:3099' });
-    await loginContext.addCookies(cookies.filter(cookie => cookie.name === 'session_token' || cookie.name === 'theme_preference'));
+    await loginContext.addCookies(cookies.filter(cookie => cookie.name === 'session_token'));
     const loginPage = await loginContext.newPage();
     await loginPage.goto('/login.html');
     await loginPage.waitForURL(/\/(?:index\.html)?$/, { timeout: 5000 });
@@ -169,28 +169,30 @@ test.describe('UI: Theme Switcher', () => {
     await expect(page.locator('h1')).toContainText('Admin');
   });
 
-  test('theme cookie preserves the chosen theme in a fresh browser context', async ({ browser, page }) => {
+  test('theme preference persists via localStorage in a fresh browser context', async ({ browser, page }) => {
     await loginUI(page);
     await page.waitForURL(/\/(?:index\.html)?$/, { timeout: 5000 });
 
     await page.click('#openSettings');
     await page.click('#settingsModal .settings-option[data-theme="ocean"]');
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'ocean');
-    await expect.poll(async () => page.evaluate(() => document.cookie)).toContain('theme_preference=ocean');
+    await expect.poll(async () => page.evaluate(() => localStorage.getItem('theme'))).toBe('ocean');
+
+    // Verify legacy theme_preference cookie is cleaned up (no longer set)
+    const cookieNames = (await page.context().cookies()).map(c => c.name);
+    expect(cookieNames).not.toContain('theme_preference');
 
     const cookies = await page.context().cookies();
-    const freshContext = await browser.newContext({ baseURL: 'http://localhost:3099' });
-    await freshContext.addCookies([
-      ...cookies.filter(cookie => cookie.name === 'session_token'),
-      {
-        name: 'theme_preference',
-        value: 'ocean',
-        url: 'http://localhost:3099',
-        sameSite: 'Lax',
-        httpOnly: false,
-        secure: false
+    const freshContext = await browser.newContext({
+      baseURL: 'http://localhost:3099',
+      storageState: {
+        cookies: cookies.filter(cookie => cookie.name === 'session_token'),
+        origins: [{
+          origin: 'http://localhost:3099',
+          localStorage: [{ name: 'theme', value: 'ocean' }]
+        }]
       }
-    ]);
+    });
     const freshPage = await freshContext.newPage();
 
     await freshPage.goto('/');
@@ -234,7 +236,7 @@ test.describe('UI: Protected App Gate', () => {
 
     const cookies = await page.context().cookies();
     const gatedContext = await browser.newContext({ baseURL: 'http://localhost:3099' });
-    await gatedContext.addCookies(cookies.filter(cookie => cookie.name === 'session_token' || cookie.name === 'theme_preference'));
+    await gatedContext.addCookies(cookies.filter(cookie => cookie.name === 'session_token'));
     const gatedPage = await gatedContext.newPage();
 
     await gatedPage.route('**/api/v1/auth/me', async route => {

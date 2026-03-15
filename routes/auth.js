@@ -13,7 +13,6 @@ module.exports = function createAuthRouter({
   bcryptRounds,
   requireAuth,
   setSessionCookie,
-  setThemePreferenceCookie,
   logSecurityEvent
 }) {
   const GENERIC_LOGIN_ERROR = 'Invalid username or password';
@@ -235,11 +234,7 @@ module.exports = function createAuthRouter({
 
       clearLoginFailures(throttle.key);
       const session = await db.createSession(user.id);
-      const themePreference = await db.getUserSetting(user.id, 'theme')
-        || req.cookies?.theme_preference
-        || 'auto';
       setSessionCookie(res, session.token);
-      setThemePreferenceCookie(res, themePreference);
 
       res.json({
         token: session.token,

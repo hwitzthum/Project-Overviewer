@@ -5,8 +5,7 @@ module.exports = function createSettingsRouter({
   logger,
   requireAuth,
   validSettingsKeys,
-  isSerializedJsonWithinLimit,
-  setThemePreferenceCookie
+  isSerializedJsonWithinLimit
 }) {
   const router = express.Router();
 
@@ -42,9 +41,6 @@ module.exports = function createSettingsRouter({
         return res.status(400).json({ error: 'Setting value is too large' });
       }
       await db.setUserSetting(req.user.userId, req.params.key, req.body.value);
-      if (req.params.key === 'theme') {
-        setThemePreferenceCookie(res, req.body.value || 'auto');
-      }
       res.json({ success: true });
     } catch (error) {
       logger.error({ err: error }, 'Error saving setting');
