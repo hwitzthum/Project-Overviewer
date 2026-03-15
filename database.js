@@ -16,8 +16,7 @@ const VALID_SETTINGS_KEYS = [
 const ALLOWED_DOC_MIME_TYPES = [
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   'application/pdf',
-  'text/plain',
-  'application/octet-stream'
+  'text/plain'
 ];
 
 // ========== DATABASE CONNECTION ==========
@@ -1156,7 +1155,9 @@ async function createDocument(projectId, userId, doc) {
   } else if (docType === 'docx') {
     fileName = doc.fileName || '';
     const requestedMime = doc.mimeType || 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-    mimeType = ALLOWED_DOC_MIME_TYPES.includes(requestedMime) ? requestedMime : 'application/octet-stream';
+    mimeType = ALLOWED_DOC_MIME_TYPES.includes(requestedMime)
+      ? requestedMime
+      : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
     contentBase64 = doc.contentBase64 || '';
     title = title || fileName || 'Document';
   } else {
@@ -1497,8 +1498,10 @@ async function importData(userId, data) {
               });
             } else if (docType === 'docx') {
               fileName = doc.fileName || '';
-              const requestedMime = doc.mimeType || 'application/octet-stream';
-              mimeType = ALLOWED_DOC_MIME_TYPES.includes(requestedMime) ? requestedMime : 'application/octet-stream';
+              const requestedMime = doc.mimeType || 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+              mimeType = ALLOWED_DOC_MIME_TYPES.includes(requestedMime)
+                ? requestedMime
+                : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
               contentBase64 = doc.contentBase64 || '';
             }
 

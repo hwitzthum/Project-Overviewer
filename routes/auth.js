@@ -1,4 +1,9 @@
 const express = require('express');
+const {
+  MAX_PASSWORD_LENGTH,
+  MIN_PASSWORD_LENGTH,
+  validatePasswordPolicy
+} = require('../password-policy');
 
 module.exports = function createAuthRouter({
   db,
@@ -11,6 +16,83 @@ module.exports = function createAuthRouter({
   setThemePreferenceCookie,
   logSecurityEvent
 }) {
+  const GENERIC_LOGIN_ERROR = 'Invalid username or password';
+  const GENERIC_REGISTRATION_ERROR = 'Registration could not be completed.';
+  const LOGIN_TRACK_WINDOW_MS = 15 * 60 * 1000;
+  const LOGIN_DELAY_THRESHOLD = 3;
+  const LOGIN_BLOCK_THRESHOLD = 8;
+  const MAX_LOGIN_DELAY_MS = 1500;
+  const loginAttemptTracker = new Map();
+  const dummyPasswordHash = bcrypt.hashSync('project-overviewer-dummy-password', bcryptRounds);
+
+  function getClientIp(req) {
+    const forwardedFor = req.headers['x-forwarded-for'];
+    if (typeof forwardedFor === 'string' && forwardedFor.trim()) {
+      return forwardedFor.split(',')[0].trim();
+    }
+    return req.ip || req.socket?.remoteAddress || 'unknown';
+  }
+
+  function getThrottleKey(req, username) {
+    return `${String(username || '').trim().toLowerCase()}|${getClientIp(req)}`;
+  }
+
+  function getLoginAttemptState(key) {
+    const now = Date.now();
+    const existing = loginAttemptTracker.get(key);
+    if (!existing) return { failures: 0, blockedUntil: 0, lastFailureAt: 0 };
+
+    if (now - existing.lastFailureAt > LOGIN_TRACK_WINDOW_MS) {
+      loginAttemptTracker.delete(key);
+      return { failures: 0, blockedUntil: 0, lastFailureAt: 0 };
+    }
+
+    return existing;
+  }
+
+  function recordLoginFailure(key) {
+    const now = Date.now();
+    const current = getLoginAttemptState(key);
+    const failures = current.failures + 1;
+    const delayExponent = Math.max(0, failures - LOGIN_DELAY_THRESHOLD);
+    const blockedUntil = now + Math.min(MAX_LOGIN_DELAY_MS, 100 * (2 ** delayExponent));
+    const nextState = { failures, blockedUntil, lastFailureAt: now };
+    loginAttemptTracker.set(key, nextState);
+    return nextState;
+  }
+
+  function clearLoginFailures(key) {
+    loginAttemptTracker.delete(key);
+  }
+
+  async function applyLoginDelay(req, username) {
+    const key = getThrottleKey(req, username);
+    const state = getLoginAttemptState(key);
+    const now = Date.now();
+
+    if (state.failures >= LOGIN_BLOCK_THRESHOLD && state.blockedUntil > now) {
+      logSecurityEvent('auth.login.rate_limited', {
+        req,
+        statusCode: 429,
+        outcome: 'denied',
+        severity: 'medium',
+        attemptedUsername: username,
+        retryAfterMs: state.blockedUntil - now
+      });
+      return {
+        blocked: true,
+        key,
+        retryAfterMs: state.blockedUntil - now
+      };
+    }
+
+    if (state.blockedUntil > now) {
+      await new Promise(resolve => setTimeout(resolve, state.blockedUntil - now));
+    }
+
+    return { blocked: false, key };
+  }
+
   const router = express.Router();
 
   router.post('/register', async (req, res) => {
@@ -28,6 +110,17 @@ module.exports = function createAuthRouter({
       }
 
       const { username, email, password } = req.body;
+      const passwordPolicy = validatePasswordPolicy({ password, username, email, role: 'user' });
+      if (!passwordPolicy.valid) {
+        logSecurityEvent('auth.register.rejected', {
+          req,
+          statusCode: 400,
+          reason: passwordPolicy.reason,
+          attemptedUsername: username
+        });
+        return res.status(400).json({ error: passwordPolicy.message });
+      }
+
       const existingUser = await db.getUserByUsername(username);
       if (existingUser) {
         logSecurityEvent('auth.register.rejected', {
@@ -36,7 +129,7 @@ module.exports = function createAuthRouter({
           reason: 'duplicate_username',
           attemptedUsername: username
         });
-        return res.status(409).json({ error: 'Username already taken' });
+        return res.status(409).json({ error: GENERIC_REGISTRATION_ERROR });
       }
 
       const existingEmail = await db.getUserByEmail(email);
@@ -47,7 +140,7 @@ module.exports = function createAuthRouter({
           reason: 'duplicate_email',
           attemptedUsername: username
         });
-        return res.status(409).json({ error: 'Email already registered' });
+        return res.status(409).json({ error: GENERIC_REGISTRATION_ERROR });
       }
 
       const passwordHash = await bcrypt.hash(password, bcryptRounds);
@@ -94,19 +187,28 @@ module.exports = function createAuthRouter({
       }
 
       const { username, password } = req.body;
+      const throttle = await applyLoginDelay(req, username);
+      if (throttle.blocked) {
+        res.setHeader('Retry-After', Math.max(1, Math.ceil(throttle.retryAfterMs / 1000)));
+        return res.status(429).json({ error: 'Too many authentication attempts, please try again later' });
+      }
+
       const user = await db.getUserByUsername(username);
       if (!user) {
+        await bcrypt.compare(password, dummyPasswordHash);
+        recordLoginFailure(throttle.key);
         logSecurityEvent('auth.login.failed', {
           req,
           statusCode: 401,
           reason: 'unknown_user',
           attemptedUsername: username
         });
-        return res.status(401).json({ error: 'Invalid username or password' });
+        return res.status(401).json({ error: GENERIC_LOGIN_ERROR });
       }
 
       const passwordMatch = await bcrypt.compare(password, user.password_hash);
       if (!passwordMatch) {
+        recordLoginFailure(throttle.key);
         logSecurityEvent('auth.login.failed', {
           req,
           statusCode: 401,
@@ -115,21 +217,23 @@ module.exports = function createAuthRouter({
           actorUserId: user.id,
           actorUsername: user.username
         });
-        return res.status(401).json({ error: 'Invalid username or password' });
+        return res.status(401).json({ error: GENERIC_LOGIN_ERROR });
       }
 
       if (!user.approved) {
+        recordLoginFailure(throttle.key);
         logSecurityEvent('auth.login.denied', {
           req,
-          statusCode: 403,
+          statusCode: 401,
           outcome: 'denied',
           reason: 'pending_approval',
           actorUserId: user.id,
           actorUsername: user.username
         });
-        return res.status(403).json({ error: 'Account pending admin approval' });
+        return res.status(401).json({ error: GENERIC_LOGIN_ERROR });
       }
 
+      clearLoginFailures(throttle.key);
       const session = await db.createSession(user.id);
       const themePreference = await db.getUserSetting(user.id, 'theme')
         || req.cookies?.theme_preference
@@ -226,6 +330,21 @@ module.exports = function createAuthRouter({
           reason: 'incorrect_current_password'
         });
         return res.status(401).json({ error: 'Current password is incorrect' });
+      }
+
+      const passwordPolicy = validatePasswordPolicy({
+        password: newPassword,
+        username: user.username,
+        email: user.email,
+        role: user.role
+      });
+      if (!passwordPolicy.valid) {
+        logSecurityEvent('auth.password_change.failed', {
+          req,
+          statusCode: 400,
+          reason: passwordPolicy.reason
+        });
+        return res.status(400).json({ error: passwordPolicy.message });
       }
 
       const passwordHash = await bcrypt.hash(newPassword, bcryptRounds);

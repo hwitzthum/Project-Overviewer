@@ -420,7 +420,7 @@ test.describe('UI: Workspace Toggle', () => {
     await page.fill('#username', 'testadmin');
     await page.fill('#password', 'SecureTestPass123');
     await page.click('#submitBtn');
-    await page.waitForURL('/', { timeout: 5000 });
+    await page.waitForURL(/\/(?:index\.html)?$/, { timeout: 5000 });
 
     // Toggle should be visible
     await expect(page.locator('#workspaceToggle')).toBeVisible({ timeout: 5000 });
@@ -433,7 +433,7 @@ test.describe('UI: Workspace Toggle', () => {
     await page.fill('#username', 'testadmin');
     await page.fill('#password', 'SecureTestPass123');
     await page.click('#submitBtn');
-    await page.waitForURL('/', { timeout: 5000 });
+    await page.waitForURL(/\/(?:index\.html)?$/, { timeout: 5000 });
 
     // Open settings
     await page.click('#openSettings');
@@ -464,7 +464,7 @@ test.describe('UI: Workspace Toggle', () => {
     });
 
     await loginUI(page, { username: member.username, password: 'SecurePass123' });
-    await page.waitForURL('/', { timeout: 5000 });
+    await page.waitForURL(/\/(?:index\.html)?$/, { timeout: 5000 });
 
     const ownerCard = page.locator('.project-card').filter({
       has: page.locator('input.project-title[value="Owner Label Project"]')

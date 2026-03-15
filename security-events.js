@@ -37,7 +37,21 @@ function writeSecurityLog(entry, level) {
   if (!SECURITY_LOG_PATH) return;
 
   fs.mkdirSync(path.dirname(SECURITY_LOG_PATH), { recursive: true });
-  fs.appendFileSync(SECURITY_LOG_PATH, `${JSON.stringify({ time: new Date().toISOString(), ...entry })}\n`, 'utf8');
+  if (fs.existsSync(SECURITY_LOG_PATH)) {
+    const stats = fs.lstatSync(SECURITY_LOG_PATH);
+    if (stats.isSymbolicLink()) {
+      throw new Error('Refusing to write security log to a symbolic link');
+    }
+    fs.chmodSync(SECURITY_LOG_PATH, 0o600);
+  }
+
+  const handle = fs.openSync(SECURITY_LOG_PATH, 'a', 0o600);
+  try {
+    fs.writeFileSync(handle, `${JSON.stringify({ time: new Date().toISOString(), ...entry })}\n`, 'utf8');
+    fs.fchmodSync(handle, 0o600);
+  } finally {
+    fs.closeSync(handle);
+  }
 }
 
 function logSecurityEvent(eventType, options = {}) {

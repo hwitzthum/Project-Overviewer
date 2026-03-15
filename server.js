@@ -16,6 +16,11 @@ const createTeamsRouter = require('./routes/teams');
 const createTemplatesRouter = require('./routes/templates');
 const { logSecurityEvent, fingerprintToken } = require('./security-events');
 const { SESSION_ABSOLUTE_TIMEOUT_SECONDS } = require('./session-config');
+const {
+  MAX_PASSWORD_LENGTH,
+  MIN_ADMIN_PASSWORD_LENGTH,
+  MIN_PASSWORD_LENGTH
+} = require('./password-policy');
 
 // Load bcryptjs (pure-JS implementation, works in serverless environments)
 let bcrypt;
@@ -41,8 +46,60 @@ const API_BASE_PATHS = ['/api', '/api/v1'];
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const DIST_DIR = path.join(PUBLIC_DIR, 'dist');
 const ASSET_MANIFEST_PATH = path.join(DIST_DIR, 'asset-manifest.json');
+function normalizeOrigin(value) {
+  const normalized = String(value || '').trim().replace(/\/+$/, '');
+  if (!normalized) return null;
+  try {
+    return new URL(normalized).origin;
+  } catch {
+    throw new Error(`Invalid APP_ORIGIN value: ${value}`);
+  }
+}
+
+function getConfiguredAppOrigin() {
+  if (process.env.APP_ORIGIN) {
+    return normalizeOrigin(process.env.APP_ORIGIN);
+  }
+  if (process.env.VERCEL_PROJECT_PRODUCTION_URL) {
+    return normalizeOrigin(`https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`);
+  }
+  return null;
+}
+
+const APP_ORIGIN = getConfiguredAppOrigin();
+
+function parseTrustProxy(value) {
+  if (value === undefined || value === null || value === '') return false;
+  if (value === 'true') return true;
+  if (value === 'false') return false;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) ? parsed : value;
+}
 
 app.disable('x-powered-by');
+
+function getConfiguredTrustProxy() {
+  if (process.env.TRUST_PROXY !== undefined && process.env.TRUST_PROXY !== '') {
+    return parseTrustProxy(process.env.TRUST_PROXY);
+  }
+  if (process.env.VERCEL === '1') {
+    return 1;
+  }
+  return false;
+}
+
+const trustProxy = getConfiguredTrustProxy();
+if (trustProxy !== false) {
+  app.set('trust proxy', trustProxy);
+}
+
+if (process.env.NODE_ENV === 'production' && !APP_ORIGIN) {
+  throw new Error('APP_ORIGIN must be set in production, or VERCEL_PROJECT_PRODUCTION_URL must be available');
+}
+
+if (process.env.NODE_ENV === 'production' && trustProxy === true) {
+  throw new Error('TRUST_PROXY=true is too broad in production; set TRUST_PROXY to the actual proxy hop count or subnet');
+}
 
 // ========== SECURITY MIDDLEWARE ==========
 
@@ -329,8 +386,7 @@ const DATE_INPUT_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 const ALLOWED_MIME_TYPES = new Set([
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   'application/pdf',
-  'text/plain',
-  'application/octet-stream'
+  'text/plain'
 ]);
 
 const VALID_SETTINGS_KEYS = [
@@ -419,17 +475,17 @@ if (z.object && z.string && typeof z.string === 'function') {
     schemas.register = z.object({
       username: z.string().min(3).max(50),
       email: z.string().email().max(255),
-      password: z.string().min(8).max(128)
+      password: z.string().min(MIN_PASSWORD_LENGTH).max(MAX_PASSWORD_LENGTH)
     });
 
     schemas.login = z.object({
       username: z.string().min(1).max(50),
-      password: z.string().min(1).max(128)
+      password: z.string().min(1).max(MAX_PASSWORD_LENGTH)
     });
 
     schemas.changePassword = z.object({
-      currentPassword: z.string().min(1).max(128),
-      newPassword: z.string().min(8).max(128)
+      currentPassword: z.string().min(1).max(MAX_PASSWORD_LENGTH),
+      newPassword: z.string().min(MIN_PASSWORD_LENGTH).max(MAX_PASSWORD_LENGTH)
     }).refine(data => data.currentPassword !== data.newPassword, {
       message: 'New password must be different from the current password',
       path: ['newPassword']
@@ -595,6 +651,7 @@ async function requireAuth(req, res, next) {
 }
 
 function getExpectedOrigin(req) {
+  if (APP_ORIGIN) return APP_ORIGIN;
   const forwardedProto = req.headers['x-forwarded-proto'];
   const protocol = (Array.isArray(forwardedProto) ? forwardedProto[0] : forwardedProto || req.protocol || 'http')
     .split(',')[0]
@@ -680,17 +737,19 @@ function appendSetCookie(res, value) {
 
 function setSessionCookie(res, token, maxAge = SESSION_ABSOLUTE_TIMEOUT_SECONDS) {
   const isProduction = process.env.NODE_ENV === 'production';
+  const secureCookies = isProduction || APP_ORIGIN?.startsWith('https://');
   appendSetCookie(
     res,
-    `session_token=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${maxAge}${isProduction ? '; Secure' : ''}`
+    `session_token=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${maxAge}${secureCookies ? '; Secure' : ''}`
   );
 }
 
 function setThemePreferenceCookie(res, theme, maxAge = 31536000) {
   const isProduction = process.env.NODE_ENV === 'production';
+  const secureCookies = isProduction || APP_ORIGIN?.startsWith('https://');
   appendSetCookie(
     res,
-    `theme_preference=${encodeURIComponent(theme || 'auto')}; SameSite=Lax; Path=/; Max-Age=${maxAge}${isProduction ? '; Secure' : ''}`
+    `theme_preference=${encodeURIComponent(theme || 'auto')}; SameSite=Lax; Path=/; Max-Age=${maxAge}${secureCookies ? '; Secure' : ''}`
   );
 }
 
@@ -755,6 +814,7 @@ const adminRouter = createAdminRouter({
   logger,
   requireAuth,
   requireAdmin,
+  bcrypt,
   validRoles: VALID_ROLES,
   validGlobalSettingsKeys: VALID_GLOBAL_SETTINGS_KEYS,
   isSerializedJsonWithinLimit,
@@ -768,7 +828,8 @@ const { projectDocumentsRouter, documentsRouter } = createDocumentsRouters({
   schemas,
   requireAuth,
   mammoth,
-  allowedMimeTypes: ALLOWED_MIME_TYPES
+  allowedMimeTypes: ALLOWED_MIME_TYPES,
+  logSecurityEvent
 });
 const teamsRouter = createTeamsRouter({ db, logger, schemas, requireAuth });
 const settingsRouter = createSettingsRouter({
@@ -781,7 +842,7 @@ const settingsRouter = createSettingsRouter({
 });
 const notesRouter = createNotesRouter({ db, logger, schemas, requireAuth });
 const templatesRouter = createTemplatesRouter({ db, logger, requireAuth });
-const exportImportRouter = createExportImportRouter({ db, logger, schemas, requireAuth });
+const exportImportRouter = createExportImportRouter({ db, logger, schemas, requireAuth, logSecurityEvent });
 
 function mountApiRoutes(prefix) {
   app.use(`${prefix}/auth`, authRouter);
@@ -846,6 +907,10 @@ async function seedAdminUser() {
 
   const existing = await db.getUserByUsername(adminUser);
   if (existing) return;
+
+  if (adminPass.length < MIN_ADMIN_PASSWORD_LENGTH) {
+    throw new Error(`ADMIN_PASS must be at least ${MIN_ADMIN_PASSWORD_LENGTH} characters for seeded admin accounts`);
+  }
 
   const passwordHash = await bcrypt.hash(adminPass, BCRYPT_ROUNDS);
   await db.createUser(adminUser, `${adminUser}@admin.local`, passwordHash, 'admin', true);

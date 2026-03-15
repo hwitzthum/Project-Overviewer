@@ -103,6 +103,8 @@ ADMIN_USER=admin
 ADMIN_PASS=your-secure-password
 PORT=3001
 NODE_ENV=development
+APP_ORIGIN=http://localhost:3001
+TRUST_PROXY=false
 ```
 
 > The admin account is created automatically on first startup from these values.
@@ -140,9 +142,26 @@ The SQLite database (`projects.db`) is created automatically. That's all there i
 | `ADMIN_PASS` | — | Admin password seeded on first startup |
 | `PORT` | `3001` | HTTP port |
 | `NODE_ENV` | `development` | `development` or `production` |
+| `APP_ORIGIN` | `http://localhost:3001` in local `.env` | Canonical origin used for same-origin checks and secure cookies |
+| `TRUST_PROXY` | `false` locally | Reverse-proxy trust setting. Use the real proxy hop count or trusted subnet list only |
 | `LOG_LEVEL` | `info` | Pino log level: `debug`, `info`, `warn`, `error` |
 
 > In `production`, cookies require HTTPS (`Secure` flag), rate limiting is fully enforced, and logs are JSON. In `development`, HTTP cookies work and logs are pretty-printed.
+
+### Production origin and proxy settings
+
+Set these explicitly in production:
+
+```env
+NODE_ENV=production
+APP_ORIGIN=https://your-real-domain.example
+TRUST_PROXY=1
+```
+
+- Use `TRUST_PROXY=1` only when the app is behind exactly one trusted reverse proxy.
+- If your deployment has multiple proxy hops, set the exact hop count or a specific trusted subnet list instead.
+- On Vercel, the app will fall back to `https://${VERCEL_PROJECT_PRODUCTION_URL}` for `APP_ORIGIN` and `1` for `TRUST_PROXY` if you do not override them.
+- `TRUST_PROXY=true` is intentionally rejected in production because it trusts arbitrary forwarded headers.
 
 ---
 

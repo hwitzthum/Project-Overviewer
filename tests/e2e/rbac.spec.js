@@ -1,5 +1,5 @@
 const { test, expect } = require('@playwright/test');
-const { BASE_URL, ADMIN, loginAPI, loginUI, registerAPI, approveUserAPI, uniqueUser, authHeaders } = require('./helpers');
+const { BASE_URL, ADMIN, loginAPI, loginUI, registerAPI, approveUserAPI, uniqueUser, authHeaders, adminStepUpPayload } = require('./helpers');
 
 test.describe('Role-Based Access Control', () => {
 
@@ -36,6 +36,7 @@ test.describe('Role-Based Access Control', () => {
     const { userToken, userId } = await setupUserAndAdmin(request);
     const res = await request.put(`${BASE_URL}/api/admin/users/${userId}/approve`, {
       headers: authHeaders(userToken),
+      data: adminStepUpPayload(),
     });
     expect(res.status()).toBe(403);
   });
@@ -44,7 +45,7 @@ test.describe('Role-Based Access Control', () => {
     const { userToken, userId } = await setupUserAndAdmin(request);
     const res = await request.put(`${BASE_URL}/api/admin/users/${userId}/role`, {
       headers: authHeaders(userToken),
-      data: { role: 'admin' },
+      data: adminStepUpPayload({ role: 'admin' }),
     });
     expect(res.status()).toBe(403);
   });
@@ -53,6 +54,7 @@ test.describe('Role-Based Access Control', () => {
     const { userToken, userId } = await setupUserAndAdmin(request);
     const res = await request.delete(`${BASE_URL}/api/admin/users/${userId}`, {
       headers: authHeaders(userToken),
+      data: adminStepUpPayload(),
     });
     expect(res.status()).toBe(403);
   });
@@ -97,7 +99,7 @@ test.describe('Role-Based Access Control', () => {
 
     const res = await request.put(`${BASE_URL}/api/admin/users/${body.user.id}/role`, {
       headers: authHeaders(adminToken),
-      data: { role: 'admin' },
+      data: adminStepUpPayload({ role: 'admin' }),
     });
     expect(res.status()).toBe(200);
   });
@@ -111,7 +113,7 @@ test.describe('Role-Based Access Control', () => {
 
     const res = await request.put(`${BASE_URL}/api/admin/users/${adminId}/role`, {
       headers: authHeaders(adminToken),
-      data: { role: 'user' },
+      data: adminStepUpPayload({ role: 'user' }),
     });
     expect(res.status()).toBe(400);
   });
@@ -125,6 +127,7 @@ test.describe('Role-Based Access Control', () => {
 
     const res = await request.delete(`${BASE_URL}/api/admin/users/${adminId}`, {
       headers: authHeaders(adminToken),
+      data: adminStepUpPayload(),
     });
     expect(res.status()).toBe(400);
   });
@@ -138,6 +141,7 @@ test.describe('Role-Based Access Control', () => {
 
     const res = await request.delete(`${BASE_URL}/api/admin/users/${body.user.id}`, {
       headers: authHeaders(adminToken),
+      data: adminStepUpPayload(),
     });
     expect(res.status()).toBe(200);
   });
@@ -151,7 +155,7 @@ test.describe('Role-Based Access Control', () => {
 
     const res = await request.put(`${BASE_URL}/api/admin/users/${body.user.id}/role`, {
       headers: authHeaders(adminToken),
-      data: { role: 'superadmin' },
+      data: adminStepUpPayload({ role: 'superadmin' }),
     });
     expect(res.status()).toBe(400);
   });
@@ -162,6 +166,7 @@ test.describe('Role-Based Access Control', () => {
     const { adminToken } = await setupUserAndAdmin(request);
     const res = await request.put(`${BASE_URL}/api/admin/users/non-existent-id/approve`, {
       headers: authHeaders(adminToken),
+      data: adminStepUpPayload(),
     });
     expect(res.status()).toBe(404);
     const body = await res.json();
@@ -172,7 +177,7 @@ test.describe('Role-Based Access Control', () => {
     const { adminToken } = await setupUserAndAdmin(request);
     const res = await request.put(`${BASE_URL}/api/admin/users/non-existent-id/role`, {
       headers: authHeaders(adminToken),
-      data: { role: 'admin' },
+      data: adminStepUpPayload({ role: 'admin' }),
     });
     expect(res.status()).toBe(404);
     const body = await res.json();
@@ -196,7 +201,7 @@ test.describe('Role-Based Access Control', () => {
     const loginBeforeApproval = await request.post(`${BASE_URL}/api/auth/login`, {
       data: { username: newUser, password: 'WorkflowPass123' },
     });
-    expect(loginBeforeApproval.status()).toBe(403);
+    expect(loginBeforeApproval.status()).toBe(401);
 
     // 4. Admin sees user in pending list
     const usersRes = await request.get(`${BASE_URL}/api/admin/users`, {
@@ -210,6 +215,7 @@ test.describe('Role-Based Access Control', () => {
     // 5. Admin approves user
     const approveRes = await request.put(`${BASE_URL}/api/admin/users/${newUserId}/approve`, {
       headers: authHeaders(adminToken),
+      data: adminStepUpPayload(),
     });
     expect(approveRes.status()).toBe(200);
 
@@ -240,12 +246,22 @@ test.describe('Role-Based Access Control', () => {
     });
     await approveUserAPI(request, adminToken, regBody.user.id);
 
+    const prePromotionLogin = await request.post(`${BASE_URL}/api/auth/login`, {
+      data: { username: newUser, password: 'PromotePass123' },
+    });
+    const { token: prePromotionToken } = await prePromotionLogin.json();
+
     // Promote to admin
     const promoteRes = await request.put(`${BASE_URL}/api/admin/users/${regBody.user.id}/role`, {
       headers: authHeaders(adminToken),
-      data: { role: 'admin' },
+      data: adminStepUpPayload({ role: 'admin' }),
     });
     expect(promoteRes.status()).toBe(200);
+
+    const staleSessionRes = await request.get(`${BASE_URL}/api/auth/me`, {
+      headers: authHeaders(prePromotionToken),
+    });
+    expect(staleSessionRes.status()).toBe(401);
 
     // Login as promoted user and verify admin access
     const loginRes = await request.post(`${BASE_URL}/api/auth/login`, {
@@ -278,6 +294,7 @@ test.describe('Role-Based Access Control', () => {
     // Admin deletes user
     const deleteRes = await request.delete(`${BASE_URL}/api/admin/users/${regBody.user.id}`, {
       headers: authHeaders(adminToken),
+      data: adminStepUpPayload(),
     });
     expect(deleteRes.status()).toBe(200);
 
@@ -299,7 +316,7 @@ test.describe('Role-Based Access Control', () => {
 
     // Login as admin via UI
     await loginUI(page);
-    await page.waitForURL('**/');
+    await page.waitForURL(/\/(?:index\.html)?$/);
 
     // Navigate to admin panel
     await page.goto(`${BASE_URL}/admin.html`);
@@ -313,6 +330,7 @@ test.describe('Role-Based Access Control', () => {
     await expect(userRow).toBeVisible();
     const approveBtn = userRow.locator('button.approve');
     await expect(approveBtn).toBeVisible();
+    page.once('dialog', dialog => dialog.accept(ADMIN.password));
     await approveBtn.click();
 
     // After approval, user should no longer be in pending section
@@ -328,7 +346,7 @@ test.describe('Role-Based Access Control', () => {
 
   test('admin panel: back to app link works', async ({ page }) => {
     await loginUI(page);
-    await page.waitForURL('**/');
+    await page.waitForURL(/\/(?:index\.html)?$/);
 
     await page.goto(`${BASE_URL}/admin.html`);
     await page.waitForSelector('.admin-header');
@@ -336,7 +354,7 @@ test.describe('Role-Based Access Control', () => {
     const backLink = page.locator('.admin-back');
     await expect(backLink).toBeVisible();
     await backLink.click();
-    await page.waitForURL('**/');
+    await page.waitForURL(/\/(?:index\.html)?$/);
     expect(page.url()).not.toContain('admin.html');
   });
 
@@ -348,7 +366,7 @@ test.describe('Role-Based Access Control', () => {
     });
 
     await loginUI(page);
-    await page.waitForURL('**/');
+    await page.waitForURL(/\/(?:index\.html)?$/);
     await page.goto(`${BASE_URL}/admin.html`);
     await page.waitForSelector('.admin-user-row');
 
@@ -357,7 +375,13 @@ test.describe('Role-Based Access Control', () => {
     await expect(userRow).toBeVisible();
 
     // Handle the confirm dialog
-    page.on('dialog', dialog => dialog.accept());
+    page.on('dialog', dialog => {
+      if (dialog.type() === 'confirm') {
+        dialog.accept();
+        return;
+      }
+      dialog.accept(ADMIN.password);
+    });
     const deleteBtn = userRow.locator('button.danger');
     await deleteBtn.click();
 

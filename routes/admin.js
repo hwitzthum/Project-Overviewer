@@ -5,11 +5,43 @@ module.exports = function createAdminRouter({
   logger,
   requireAuth,
   requireAdmin,
+  bcrypt,
   validRoles,
   validGlobalSettingsKeys,
   isSerializedJsonWithinLimit,
   logSecurityEvent
 }) {
+  async function requireAdminStepUp(req, res) {
+    const adminPassword = String(req.body?.adminPassword || '');
+    if (!adminPassword) {
+      logSecurityEvent('admin.reauth.failed', {
+        req,
+        statusCode: 401,
+        reason: 'missing_admin_password',
+        outcome: 'denied',
+        severity: 'high'
+      });
+      res.status(401).json({ error: 'Administrator reauthentication required' });
+      return false;
+    }
+
+    const adminUser = await db.getUserById(req.user.userId);
+    const passwordMatch = adminUser ? await bcrypt.compare(adminPassword, adminUser.password_hash) : false;
+    if (!passwordMatch) {
+      logSecurityEvent('admin.reauth.failed', {
+        req,
+        statusCode: 401,
+        reason: 'invalid_admin_password',
+        outcome: 'denied',
+        severity: 'high'
+      });
+      res.status(401).json({ error: 'Administrator reauthentication required' });
+      return false;
+    }
+
+    return true;
+  }
+
   const router = express.Router();
 
   router.get('/users', requireAuth, requireAdmin, async (req, res) => {
@@ -24,6 +56,7 @@ module.exports = function createAdminRouter({
 
   router.put('/users/:id/approve', requireAuth, requireAdmin, async (req, res) => {
     try {
+      if (!(await requireAdminStepUp(req, res))) return;
       const user = await db.getUserById(req.params.id);
       if (!user) {
         logSecurityEvent('admin.user_approve.failed', {
@@ -35,6 +68,7 @@ module.exports = function createAdminRouter({
         return res.status(404).json({ error: 'User not found' });
       }
       await db.updateUser(req.params.id, { approved: true });
+      await db.deleteUserSessions(req.params.id);
       logSecurityEvent('admin.user_approve.success', {
         req,
         level: 'info',
@@ -53,6 +87,7 @@ module.exports = function createAdminRouter({
 
   router.put('/users/:id/role', requireAuth, requireAdmin, async (req, res) => {
     try {
+      if (!(await requireAdminStepUp(req, res))) return;
       const { role } = req.body;
       if (!validRoles.includes(role)) {
         logSecurityEvent('admin.role_change.failed', {
@@ -89,6 +124,7 @@ module.exports = function createAdminRouter({
         return res.status(404).json({ error: 'User not found' });
       }
       await db.updateUser(req.params.id, { role });
+      await db.deleteUserSessions(req.params.id);
       logSecurityEvent('admin.role_change.success', {
         req,
         level: 'info',
@@ -108,6 +144,7 @@ module.exports = function createAdminRouter({
 
   router.delete('/users/:id', requireAuth, requireAdmin, async (req, res) => {
     try {
+      if (!(await requireAdminStepUp(req, res))) return;
       if (req.params.id === req.user.userId) {
         logSecurityEvent('admin.user_delete.denied', {
           req,

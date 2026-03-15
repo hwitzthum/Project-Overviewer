@@ -1,6 +1,6 @@
 const { test, expect } = require('@playwright/test');
 const fs = require('fs');
-const { BASE_URL, loginAPI, authHeaders, createProjectAPI } = require('./helpers');
+const { BASE_URL, loginAPI, authHeaders, createProjectAPI, adminStepUpPayload, registerAPI, approveUserAPI, uniqueUser } = require('./helpers');
 
 const SECURITY_LOG_PATH = '/tmp/project-overviewer-security.log';
 
@@ -10,6 +10,22 @@ function readSecurityLogEntries() {
     .split('\n')
     .filter(Boolean)
     .map(line => JSON.parse(line));
+}
+
+async function createApprovedUserToken(request, prefix = 'security') {
+  const { token: adminToken } = await loginAPI(request);
+  const username = uniqueUser(prefix);
+  const { body } = await registerAPI(request, {
+    username,
+    email: `${username}@example.com`,
+    password: 'SecurePass123'
+  });
+  await approveUserAPI(request, adminToken, body.user.id);
+  const loginRes = await request.post(`${BASE_URL}/api/auth/login`, {
+    data: { username, password: 'SecurePass123' }
+  });
+  const loginBody = await loginRes.json();
+  return loginBody.token;
 }
 
 test.describe('Security Headers & Input Validation', () => {
@@ -143,6 +159,24 @@ test.describe('Security Headers & Input Validation', () => {
     expect(res.status()).toBe(400);
   });
 
+  test('reject document upload with mismatched allowed mime and file signature', async ({ request }) => {
+    const { token } = await loginAPI(request);
+    const { body: project } = await createProjectAPI(request, token, {
+      title: 'Signature Validation'
+    });
+    const res = await request.post(`${BASE_URL}/api/projects/${project.id}/documents`, {
+      headers: authHeaders(token),
+      data: {
+        type: 'docx',
+        title: 'fake-pdf.docx',
+        fileName: 'fake-pdf.docx',
+        mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        contentBase64: Buffer.from('%PDF-1.7\nnot really a docx', 'utf8').toString('base64')
+      },
+    });
+    expect(res.status()).toBe(400);
+  });
+
   // ─── Settings ──────────────────────────────────────────────
 
   test('user settings CRUD', async ({ request }) => {
@@ -261,6 +295,7 @@ test.describe('Security Headers & Input Validation', () => {
 
     await request.put(`${BASE_URL}/api/admin/users/${userBody.user.id}/approve`, {
       headers: authHeaders(token),
+      data: adminStepUpPayload(),
     });
 
     const loginRes = await request.post(`${BASE_URL}/api/auth/login`, {
@@ -296,7 +331,7 @@ test.describe('Security Headers & Input Validation', () => {
   // ─── Export/Import ─────────────────────────────────────────
 
   test('export returns user data', async ({ request }) => {
-    const { token } = await loginAPI(request);
+    const token = await createApprovedUserToken(request, 'exportOnly');
     const res = await request.get(`${BASE_URL}/api/export`, {
       headers: authHeaders(token),
     });
@@ -306,7 +341,12 @@ test.describe('Security Headers & Input Validation', () => {
   });
 
   test('import and verify data', async ({ request }) => {
-    const { token } = await loginAPI(request);
+    const token = await createApprovedUserToken(request, 'importRoundTrip');
+
+    await createProjectAPI(request, token, {
+      title: 'Import Round Trip',
+      tags: ['backup']
+    });
 
     // Export current data
     const exportRes = await request.get(`${BASE_URL}/api/export`, {
@@ -351,6 +391,26 @@ test.describe('Security Headers & Input Validation', () => {
             fileName: 'evil.docx',
             mimeType: 'text/html',
             contentBase64: 'PGgxPkVWSUw8L2gxPg=='
+          }]
+        }]
+      },
+    });
+    expect(res.status()).toBe(400);
+  });
+
+  test('reject import with mismatched document signature', async ({ request }) => {
+    const { token } = await loginAPI(request);
+    const res = await request.post(`${BASE_URL}/api/import`, {
+      headers: authHeaders(token),
+      data: {
+        projects: [{
+          title: 'Bad Signature Import',
+          documents: [{
+            type: 'docx',
+            title: 'evil',
+            fileName: 'evil.docx',
+            mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            contentBase64: Buffer.from('%PDF-1.7 not really a docx', 'utf8').toString('base64')
           }]
         }]
       },

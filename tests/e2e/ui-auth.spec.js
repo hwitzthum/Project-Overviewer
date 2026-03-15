@@ -22,7 +22,7 @@ test.describe('UI: Login Page', () => {
   test('login with valid admin credentials redirects to app', async ({ page }) => {
     await loginUI(page);
     // Should redirect to / (main app)
-    await page.waitForURL('/', { timeout: 5000 });
+    await page.waitForURL(/\/(?:index\.html)?$/, { timeout: 5000 });
     expect(page.url()).not.toContain('login');
   });
 
@@ -56,14 +56,14 @@ test.describe('UI: Login Page', () => {
 
   test('authenticated users are redirected away from the login page server-side', async ({ browser, page }) => {
     await loginUI(page);
-    await page.waitForURL('/', { timeout: 5000 });
+    await page.waitForURL(/\/(?:index\.html)?$/, { timeout: 5000 });
 
     const cookies = await page.context().cookies();
     const loginContext = await browser.newContext({ baseURL: 'http://localhost:3099' });
     await loginContext.addCookies(cookies.filter(cookie => cookie.name === 'session_token' || cookie.name === 'theme_preference'));
     const loginPage = await loginContext.newPage();
     await loginPage.goto('/login.html');
-    await loginPage.waitForURL('/', { timeout: 5000 });
+    await loginPage.waitForURL(/\/(?:index\.html)?$/, { timeout: 5000 });
 
     await loginContext.close();
   });
@@ -130,7 +130,7 @@ test.describe('UI: Admin Page', () => {
   test('admin page loads for admin user', async ({ page }) => {
     // Login first
     await loginUI(page);
-    await page.waitForURL('/', { timeout: 5000 });
+    await page.waitForURL(/\/(?:index\.html)?$/, { timeout: 5000 });
 
     // Navigate to admin
     await page.goto('/admin.html');
@@ -158,7 +158,7 @@ test.describe('UI: Theme Switcher', () => {
 
   test('selected app theme carries into the admin page', async ({ page }) => {
     await loginUI(page);
-    await page.waitForURL('/', { timeout: 5000 });
+    await page.waitForURL(/\/(?:index\.html)?$/, { timeout: 5000 });
 
     await page.click('#openSettings');
     await page.click('#settingsModal .settings-option[data-theme="forest"]');
@@ -171,7 +171,7 @@ test.describe('UI: Theme Switcher', () => {
 
   test('theme cookie preserves the chosen theme in a fresh browser context', async ({ browser, page }) => {
     await loginUI(page);
-    await page.waitForURL('/', { timeout: 5000 });
+    await page.waitForURL(/\/(?:index\.html)?$/, { timeout: 5000 });
 
     await page.click('#openSettings');
     await page.click('#settingsModal .settings-option[data-theme="ocean"]');
@@ -219,7 +219,7 @@ test.describe('UI: Theme Switcher', () => {
     await themedPage.fill('#username', user);
     await themedPage.fill('#password', password);
     await themedPage.click('#submitBtn');
-    await themedPage.waitForURL('/', { timeout: 5000 });
+    await themedPage.waitForURL(/\/(?:index\.html)?$/, { timeout: 5000 });
     await expect(themedPage.locator('html')).toHaveAttribute('data-theme', 'ocean');
 
     await context.close();
@@ -230,7 +230,7 @@ test.describe('UI: Protected App Gate', () => {
 
   test('protected app stays hidden until session verification completes', async ({ browser, page }) => {
     await loginUI(page);
-    await page.waitForURL('/', { timeout: 5000 });
+    await page.waitForURL(/\/(?:index\.html)?$/, { timeout: 5000 });
 
     const cookies = await page.context().cookies();
     const gatedContext = await browser.newContext({ baseURL: 'http://localhost:3099' });

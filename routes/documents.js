@@ -1,4 +1,5 @@
 const express = require('express');
+const { inspectDocumentPayload } = require('../document-security');
 
 module.exports = function createDocumentsRouters({
   db,
@@ -6,7 +7,8 @@ module.exports = function createDocumentsRouters({
   schemas,
   requireAuth,
   mammoth,
-  allowedMimeTypes
+  allowedMimeTypes,
+  logSecurityEvent
 }) {
   function getSafeDocumentMimeType(mimeType) {
     return allowedMimeTypes.has(mimeType) ? mimeType : 'application/octet-stream';
@@ -40,6 +42,18 @@ module.exports = function createDocumentsRouters({
         const result = schemas.createDocument.safeParse(req.body);
         if (!result.success) {
           return res.status(400).json({ error: 'Invalid input', details: result.error.issues });
+        }
+      }
+      if (req.body?.type === 'docx') {
+        const inspection = inspectDocumentPayload(req.body);
+        if (!inspection.valid) {
+          logSecurityEvent('document.upload.rejected', {
+            req,
+            statusCode: 400,
+            reason: inspection.reason,
+            severity: 'medium'
+          });
+          return res.status(400).json({ error: 'Uploaded file content does not match the declared file type' });
         }
       }
       const documentId = await db.createDocument(req.params.projectId, req.user.userId, req.body);
@@ -87,8 +101,19 @@ module.exports = function createDocumentsRouters({
         return res.status(400).json({ error: 'Document preview is unavailable' });
       }
 
-      const buffer = Buffer.from(document.contentBase64, 'base64');
-      const mimeType = getSafeDocumentMimeType(document.mimeType);
+      const inspection = inspectDocumentPayload(document, { allowMimeInference: true });
+      if (!inspection.valid) {
+        logSecurityEvent('document.preview.rejected', {
+          req,
+          statusCode: 400,
+          reason: inspection.reason,
+          severity: 'medium'
+        });
+        return res.status(400).json({ error: 'Document preview is unavailable' });
+      }
+
+      const buffer = inspection.buffer;
+      const mimeType = getSafeDocumentMimeType(inspection.safeMimeType);
       const fileName = getSafeDocumentFileName(document);
       const downloadUrl = `${req.baseUrl}/${document.id}/download`;
 
@@ -156,15 +181,27 @@ module.exports = function createDocumentsRouters({
         return res.status(400).json({ error: 'Document is not downloadable' });
       }
 
-      const buffer = Buffer.from(document.contentBase64, 'base64');
+      const inspection = inspectDocumentPayload(document, { allowMimeInference: true });
+      if (!inspection.valid) {
+        logSecurityEvent('document.download.rejected', {
+          req,
+          statusCode: 400,
+          reason: inspection.reason,
+          severity: 'medium'
+        });
+        return res.status(400).json({ error: 'Document is not downloadable' });
+      }
+
+      const buffer = inspection.buffer;
       const safeFileName = getSafeDocumentFileName(document);
       const encodedFileName = encodeURIComponent(safeFileName);
-      const mimeType = getSafeDocumentMimeType(document.mimeType);
+      const mimeType = getSafeDocumentMimeType(inspection.safeMimeType);
       const disposition = req.query.disposition === 'inline' ? 'inline' : 'attachment';
 
       res.setHeader('Content-Type', mimeType);
       res.setHeader('Content-Disposition', `${disposition}; filename="${safeFileName}"; filename*=UTF-8''${encodedFileName}`);
       res.setHeader('Content-Length', buffer.length);
+      res.setHeader('X-Content-Type-Options', 'nosniff');
       res.send(buffer);
     } catch (error) {
       logger.error({ err: error }, 'Error downloading document');

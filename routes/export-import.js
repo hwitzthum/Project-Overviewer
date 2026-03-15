@@ -1,6 +1,7 @@
 const express = require('express');
+const { inspectDocumentPayload } = require('../document-security');
 
-module.exports = function createExportImportRouter({ db, logger, schemas, requireAuth }) {
+module.exports = function createExportImportRouter({ db, logger, schemas, requireAuth, logSecurityEvent }) {
   const router = express.Router();
 
   router.get('/export', requireAuth, async (req, res) => {
@@ -18,14 +19,34 @@ module.exports = function createExportImportRouter({ db, logger, schemas, requir
       if (!req.body || typeof req.body !== 'object') {
         return res.status(400).json({ error: 'Invalid import data' });
       }
+
+      const normalizedImport = JSON.parse(JSON.stringify(req.body));
+
+      for (const project of normalizedImport.projects || []) {
+        for (const document of project.documents || []) {
+          if (document?.type !== 'docx') continue;
+          const inspection = inspectDocumentPayload(document, { allowMimeInference: true });
+          if (!inspection.valid) {
+            logSecurityEvent('document.import.rejected', {
+              req,
+              statusCode: 400,
+              reason: inspection.reason,
+              severity: 'medium'
+            });
+            return res.status(400).json({ error: 'Import contains an invalid document payload' });
+          }
+          document.mimeType = inspection.safeMimeType;
+        }
+      }
+
       if (schemas.importData) {
-        const result = schemas.importData.safeParse(req.body);
+        const result = schemas.importData.safeParse(normalizedImport);
         if (!result.success) {
           return res.status(400).json({ error: 'Invalid import data', details: result.error.issues });
         }
         await db.importData(req.user.userId, result.data);
       } else {
-        await db.importData(req.user.userId, req.body);
+        await db.importData(req.user.userId, normalizedImport);
       }
       res.json({ success: true });
     } catch (error) {

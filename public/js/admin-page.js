@@ -135,9 +135,17 @@ async function loadAdminUsers() {
   }
 }
 
+function promptAdminPassword() {
+  const value = window.prompt('Confirm your admin password to continue:');
+  return typeof value === 'string' ? value : null;
+}
+
 async function approveAdminUser(id) {
+  const adminPassword = promptAdminPassword();
+  if (!adminPassword) return;
+
   try {
-    await API.approveUser(id);
+    await API.approveUser(id, adminPassword);
     await loadAdminUsers();
   } catch (error) {
     showAdminToast(`Failed to approve user: ${error.message}`);
@@ -145,8 +153,11 @@ async function approveAdminUser(id) {
 }
 
 async function changeAdminUserRole(id, role) {
+  const adminPassword = promptAdminPassword();
+  if (!adminPassword) return;
+
   try {
-    await API.changeUserRole(id, role);
+    await API.changeUserRole(id, role, adminPassword);
     await loadAdminUsers();
   } catch (error) {
     showAdminToast(`Failed to change role: ${error.message}`);
@@ -158,8 +169,11 @@ async function deleteAdminUser(id, username) {
     return;
   }
 
+  const adminPassword = promptAdminPassword();
+  if (!adminPassword) return;
+
   try {
-    await API.deleteUser(id);
+    await API.deleteUser(id, adminPassword);
     await loadAdminUsers();
   } catch (error) {
     showAdminToast(`Failed to delete user: ${error.message}`);

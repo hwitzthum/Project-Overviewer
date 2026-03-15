@@ -138,19 +138,25 @@ class API {
     return await this.request('/api/admin/users');
   }
 
-  static async approveUser(id) {
-    return await this.request(`/api/admin/users/${id}/approve`, { method: 'PUT' });
-  }
-
-  static async changeUserRole(id, role) {
-    return await this.request(`/api/admin/users/${id}/role`, {
+  static async approveUser(id, adminPassword) {
+    return await this.request(`/api/admin/users/${id}/approve`, {
       method: 'PUT',
-      body: JSON.stringify({ role })
+      body: JSON.stringify({ adminPassword })
     });
   }
 
-  static async deleteUser(id) {
-    return await this.request(`/api/admin/users/${id}`, { method: 'DELETE' });
+  static async changeUserRole(id, role, adminPassword) {
+    return await this.request(`/api/admin/users/${id}/role`, {
+      method: 'PUT',
+      body: JSON.stringify({ role, adminPassword })
+    });
+  }
+
+  static async deleteUser(id, adminPassword) {
+    return await this.request(`/api/admin/users/${id}`, {
+      method: 'DELETE',
+      body: JSON.stringify({ adminPassword })
+    });
   }
 
   static async getGlobalSettings() {

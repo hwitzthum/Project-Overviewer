@@ -53,6 +53,16 @@ test.describe('Authentication', () => {
     expect(response.status()).toBe(400);
   });
 
+  test('reject common password', async ({ request }) => {
+    const { response, body } = await registerAPI(request, {
+      username: uniqueUser(),
+      email: 'common@test.com',
+      password: 'Password1234',
+    });
+    expect(response.status()).toBe(400);
+    expect(body.error).toContain('common');
+  });
+
   // ─── Login ──────────────────────────────────────────────────
 
   test('admin can login', async ({ request }) => {
@@ -83,9 +93,9 @@ test.describe('Authentication', () => {
     const res = await request.post(`${BASE_URL}/api/auth/login`, {
       data: { username: user, password: 'SecurePass123' },
     });
-    expect(res.status()).toBe(403);
+    expect(res.status()).toBe(401);
     const body = await res.json();
-    expect(body.error).toContain('pending');
+    expect(body.error).toBe('Invalid username or password');
   });
 
   test('approved user can login', async ({ request }) => {
@@ -100,6 +110,27 @@ test.describe('Authentication', () => {
     expect(res.status()).toBe(200);
     const body = await res.json();
     expect(body.token).toBeTruthy();
+  });
+
+  test('repeated failed logins for the same account are throttled', async ({ request }) => {
+    const user = uniqueUser('throttle');
+    const { body: regBody } = await registerAPI(request, {
+      username: user,
+      email: `${user}@test.com`,
+      password: 'ThrottlePass123',
+    });
+    const { token: adminToken } = await loginAPI(request);
+    await approveUserAPI(request, adminToken, regBody.user.id);
+
+    let lastStatus = 0;
+    for (let i = 0; i < 9; i += 1) {
+      const res = await request.post(`${BASE_URL}/api/auth/login`, {
+        data: { username: user, password: 'wrong-password-value' },
+      });
+      lastStatus = res.status();
+    }
+
+    expect(lastStatus).toBe(429);
   });
 
   // ─── Session / Me ───────────────────────────────────────────
@@ -237,6 +268,15 @@ test.describe('Authentication', () => {
     const res = await request.put(`${BASE_URL}/api/auth/password`, {
       headers: { Authorization: `Bearer ${token}` },
       data: { currentPassword: 'SecureTestPass123', newPassword: 'SecureTestPass123' },
+    });
+    expect(res.status()).toBe(400);
+  });
+
+  test('reject common password on change', async ({ request }) => {
+    const { token } = await loginAPI(request);
+    const res = await request.put(`${BASE_URL}/api/auth/password`, {
+      headers: { Authorization: `Bearer ${token}` },
+      data: { currentPassword: 'SecureTestPass123', newPassword: 'Password123' },
     });
     expect(res.status()).toBe(400);
   });

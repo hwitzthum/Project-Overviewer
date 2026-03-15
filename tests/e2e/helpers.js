@@ -6,6 +6,10 @@ const BASE_URL = 'http://localhost:3099';
 
 const ADMIN = { username: 'testadmin', password: 'SecureTestPass123' };
 
+function adminStepUpPayload(data = {}) {
+  return { adminPassword: ADMIN.password, ...data };
+}
+
 /**
  * Login via API and return the auth token
  */
@@ -33,6 +37,7 @@ async function registerAPI(request, { username, email, password }) {
 async function approveUserAPI(request, adminToken, userId) {
   return request.put(`${BASE_URL}/api/admin/users/${userId}/approve`, {
     headers: { Authorization: `Bearer ${adminToken}` },
+    data: adminStepUpPayload(),
   });
 }
 
@@ -105,4 +110,5 @@ module.exports = {
   authHeaders,
   loginUI,
   uniqueUser,
+  adminStepUpPayload,
 };
