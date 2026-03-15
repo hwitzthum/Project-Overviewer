@@ -296,12 +296,14 @@ module.exports = function createAuthRouter({
     }
   });
 
-  router.get('/me', requireAuth, (req, res) => {
+  router.get('/me', requireAuth, async (req, res) => {
+    const theme = await db.getUserSetting(req.user.userId, 'theme');
     res.json({
       id: req.user.userId,
       username: req.user.username,
       email: req.user.email,
-      role: req.user.role
+      role: req.user.role,
+      theme: theme || 'auto'
     });
   });
 

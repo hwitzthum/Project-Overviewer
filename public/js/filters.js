@@ -141,64 +141,103 @@ function getFilteredProjects() {
   return sortProjectsList(filtered);
 }
 
+function computeAllCounts(projects) {
+  let activeCount = 0;
+  let archivedCount = 0;
+  const statusCounts = { 'backlog': 0, 'not-started': 0, 'in-progress': 0, 'completed': 0 };
+  let overdueCount = 0;
+  let todayCount = 0;
+  let weekCount = 0;
+  const priorityCounts = { high: 0, medium: 0, low: 0 };
+  const stakeholdersMap = new Map();
+  const tagCounts = new Map();
+  let focusCount = 0;
+  let smartOverdueCount = 0;
+  let smartDueSoonCount = 0;
+  let smartWaitingCount = 0;
+
+  for (let i = 0; i < projects.length; i++) {
+    const p = projects[i];
+    if (p.archived) { archivedCount++; continue; }
+    activeCount++;
+
+    if (statusCounts.hasOwnProperty(p.status)) statusCounts[p.status]++;
+
+    if (p.dueDate) {
+      if (isOverdue(p.dueDate) && p.status !== 'completed') overdueCount++;
+      if (isToday(p.dueDate)) todayCount++;
+      if (isThisWeek(p.dueDate)) weekCount++;
+    }
+
+    if (p.status !== 'backlog') {
+      const pri = p.priority || 'none';
+      if (pri !== 'none' && priorityCounts.hasOwnProperty(pri)) priorityCounts[pri]++;
+    }
+
+    const stakeholder = (p.stakeholder || '').trim();
+    if (stakeholder) stakeholdersMap.set(stakeholder, (stakeholdersMap.get(stakeholder) || 0) + 1);
+
+    const tags = p.tags || [];
+    for (let t = 0; t < tags.length; t++) {
+      tagCounts.set(tags[t], (tagCounts.get(tags[t]) || 0) + 1);
+    }
+
+    const isWaiting = ['backlog', 'not-started'].includes(p.status) && stakeholder;
+    const tasks = p.tasks || [];
+    for (let j = 0; j < tasks.length; j++) {
+      const task = tasks[j];
+      if (task.completed) continue;
+      const taskOverdue = isOverdue(task.dueDate);
+      if (taskOverdue || isToday(task.dueDate) || isThisWeek(task.dueDate)) focusCount++;
+      if (taskOverdue) smartOverdueCount++;
+      if (isDueWithinDays(task.dueDate, 3)) smartDueSoonCount++;
+      if (isWaiting) smartWaitingCount++;
+    }
+  }
+
+  return {
+    activeCount, archivedCount, statusCounts,
+    overdueCount, todayCount, weekCount,
+    priorityCounts, stakeholdersMap, tagCounts,
+    focusCount, smartOverdueCount, smartDueSoonCount, smartWaitingCount
+  };
+}
+
 function updateCounts() {
-  const projects = state.projects;
-  const activeProjects = projects.filter(p => !p.archived);
-  const archivedProjects = projects.filter(p => p.archived);
-  document.getElementById('countAll').textContent = activeProjects.length;
+  const c = computeAllCounts(state.projects);
+
+  document.getElementById('countAll').textContent = c.activeCount;
   const countKanbanEl = document.getElementById('countKanban');
-  if (countKanbanEl) countKanbanEl.textContent = activeProjects.length;
-  const inProgressCount = activeProjects.filter(p => p.status === 'in-progress').length;
-  const notStartedCount = activeProjects.filter(p => p.status === 'not-started').length;
-  const backlogCount = activeProjects.filter(p => p.status === 'backlog').length;
-  const completedCount = activeProjects.filter(p => p.status === 'completed').length;
-
+  if (countKanbanEl) countKanbanEl.textContent = c.activeCount;
   const countInProgressEl = document.getElementById('countInProgress');
-  if (countInProgressEl) countInProgressEl.textContent = inProgressCount;
+  if (countInProgressEl) countInProgressEl.textContent = c.statusCounts['in-progress'];
   const countNotStartedEl = document.getElementById('countNotStarted');
-  if (countNotStartedEl) countNotStartedEl.textContent = notStartedCount;
-  document.getElementById('countBacklog').textContent = backlogCount;
-  document.getElementById('countCompleted').textContent = completedCount;
-  document.getElementById('countOverdue').textContent = activeProjects.filter(p => isOverdue(p.dueDate) && p.status !== 'completed').length;
-  document.getElementById('countToday').textContent = activeProjects.filter(p => isToday(p.dueDate)).length;
-  document.getElementById('countWeek').textContent = activeProjects.filter(p => isThisWeek(p.dueDate)).length;
-  document.getElementById('countHigh').textContent = activeProjects.filter(p => p.status !== 'backlog' && p.priority === 'high').length;
-  document.getElementById('countMedium').textContent = activeProjects.filter(p => p.status !== 'backlog' && p.priority === 'medium').length;
-  document.getElementById('countLow').textContent = activeProjects.filter(p => p.status !== 'backlog' && p.priority === 'low').length;
+  if (countNotStartedEl) countNotStartedEl.textContent = c.statusCounts['not-started'];
+  document.getElementById('countBacklog').textContent = c.statusCounts['backlog'];
+  document.getElementById('countCompleted').textContent = c.statusCounts['completed'];
+  document.getElementById('countOverdue').textContent = c.overdueCount;
+  document.getElementById('countToday').textContent = c.todayCount;
+  document.getElementById('countWeek').textContent = c.weekCount;
+  document.getElementById('countHigh').textContent = c.priorityCounts.high;
+  document.getElementById('countMedium').textContent = c.priorityCounts.medium;
+  document.getElementById('countLow').textContent = c.priorityCounts.low;
   const countArchivedEl = document.getElementById('countArchived');
-  if (countArchivedEl) countArchivedEl.textContent = archivedProjects.length;
-
-  const allTasks = getAllTasksWithProjects().filter(({ task }) => !task.completed);
-  const focusCount = allTasks.filter(({ task }) =>
-    isOverdue(task.dueDate) || isToday(task.dueDate) || isThisWeek(task.dueDate)
-  ).length;
-  const smartOverdueCount = allTasks.filter(({ task }) => isOverdue(task.dueDate)).length;
-  const smartDueSoonCount = allTasks.filter(({ task }) => isDueWithinDays(task.dueDate, 3)).length;
-  const smartWaitingCount = allTasks.filter(({ task, project }) =>
-    !task.completed && ['backlog', 'not-started'].includes(project.status) && (project.stakeholder || '').trim()
-  ).length;
+  if (countArchivedEl) countArchivedEl.textContent = c.archivedCount;
 
   const focusEl = document.getElementById('countFocus');
-  if (focusEl) focusEl.textContent = focusCount;
+  if (focusEl) focusEl.textContent = c.focusCount;
   const smartOverdueEl = document.getElementById('countSmartOverdue');
-  if (smartOverdueEl) smartOverdueEl.textContent = smartOverdueCount;
+  if (smartOverdueEl) smartOverdueEl.textContent = c.smartOverdueCount;
   const smartDueSoonEl = document.getElementById('countSmartDueSoon');
-  if (smartDueSoonEl) smartDueSoonEl.textContent = smartDueSoonCount;
+  if (smartDueSoonEl) smartDueSoonEl.textContent = c.smartDueSoonCount;
   const smartWaitingEl = document.getElementById('countSmartWaiting');
-  if (smartWaitingEl) smartWaitingEl.textContent = smartWaitingCount;
-
-  const stakeholdersMap = new Map();
-  activeProjects.forEach(project => {
-    const stakeholder = (project.stakeholder || '').trim();
-    if (!stakeholder) return;
-    stakeholdersMap.set(stakeholder, (stakeholdersMap.get(stakeholder) || 0) + 1);
-  });
+  if (smartWaitingEl) smartWaitingEl.textContent = c.smartWaitingCount;
 
   const stakeholdersSection = document.getElementById('stakeholdersSection');
   const stakeholdersList = document.getElementById('stakeholdersList');
-  if (stakeholdersMap.size > 0) {
+  if (c.stakeholdersMap.size > 0) {
     stakeholdersSection.style.display = 'block';
-    const sortedStakeholders = [...stakeholdersMap.entries()]
+    const sortedStakeholders = [...c.stakeholdersMap.entries()]
       .sort((a, b) => a[0].localeCompare(b[0], undefined, { sensitivity: 'base' }));
 
     stakeholdersList.innerHTML = sortedStakeholders.map(([stakeholder, count]) => {
@@ -216,16 +255,15 @@ function updateCounts() {
     stakeholdersList.innerHTML = '';
   }
 
-  const allTags = [...new Set(activeProjects.flatMap(p => p.tags || []))];
   const tagsSection = document.getElementById('tagsSection');
   const tagsList = document.getElementById('tagsList');
-  if (allTags.length > 0) {
+  if (c.tagCounts.size > 0) {
     tagsSection.style.display = 'block';
-    tagsList.innerHTML = allTags.map(tag => `
+    tagsList.innerHTML = [...c.tagCounts.entries()].map(([tag, count]) => `
       <div class="nav-item${currentView === 'tag-' + tag ? ' active' : ''}" data-view="tag-${escapeHtml(tag)}" tabindex="0" role="button">
         <span class="nav-item-icon">\u{1F3F7}\uFE0F</span>
         <span>${escapeHtml(tag)}</span>
-        <span class="nav-item-count">${activeProjects.filter(p => p.tags?.includes(tag)).length}</span>
+        <span class="nav-item-count">${count}</span>
       </div>
     `).join('');
   } else {

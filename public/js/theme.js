@@ -2,6 +2,7 @@
 
 const THEME_STORAGE_KEY = 'theme';
 const THEME_SESSION_KEY = 'theme_boot_preference';
+const VALID_THEMES = new Set(['light', 'dark', 'ocean', 'forest', 'auto']);
 const DARK_FAMILY_THEMES = new Set(['dark', 'ocean', 'forest']);
 const THEME_CHROME_COLORS = {
   light: '#efe4d0',
@@ -30,7 +31,11 @@ function clearLegacyThemeCookie() {
 }
 
 function resolveThemePreference(theme) {
-  const preference = theme || 'auto';
+  let preference = theme || 'auto';
+  if (!VALID_THEMES.has(preference)) {
+    console.warn(`Invalid theme "${preference}", falling back to auto`);
+    preference = 'auto';
+  }
   if (preference === 'auto') {
     return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
   }

@@ -3,11 +3,14 @@ async function init() {
   // Load data from API
   await loadFromStorage();
 
-  // Apply theme
+  // Apply theme — prefer server-side theme from /api/auth/me, then local storage, then settings
+  const serverTheme = window.__authenticatedUser?.theme;
   const bootThemePreference = getStoredThemePreference();
-  const activeThemePreference = state.settings.theme && state.settings.theme !== 'auto'
-    ? state.settings.theme
-    : bootThemePreference;
+  const activeThemePreference = (serverTheme && serverTheme !== 'auto')
+    ? serverTheme
+    : (state.settings.theme && state.settings.theme !== 'auto')
+      ? state.settings.theme
+      : bootThemePreference;
   applyTheme(activeThemePreference, { persist: false });
   markThemeReady();
 
@@ -223,10 +226,12 @@ async function init() {
     if (e.target.id === 'commandPalette') closeCommandPalette();
   });
 
-  // Listen for system theme changes
+  // Listen for system theme changes (use AbortController to prevent duplicate listeners)
+  if (window.__themeMediaAbort) window.__themeMediaAbort.abort();
+  window.__themeMediaAbort = new AbortController();
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
     if (state.settings.theme === 'auto') applyTheme('auto');
-  });
+  }, { signal: window.__themeMediaAbort.signal });
 
   // User menu
   initUserMenu();

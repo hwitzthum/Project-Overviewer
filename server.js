@@ -211,6 +211,7 @@ function readCookieValue(cookieHeader, name) {
 
 let cachedAssetManifest = null;
 let cachedAssetManifestMtime = null;
+const htmlTemplateCache = new Map();
 
 function getAssetManifest() {
   try {
@@ -266,8 +267,16 @@ function sendHtmlPage(res, fileName, options = {}) {
   if (protectedPage) {
     res.setHeader('Vary', 'Cookie');
   }
-  const htmlTemplate = fs.readFileSync(path.join(PUBLIC_DIR, fileName), 'utf8');
-  res.type('html').send(injectAssetUrls(htmlTemplate));
+  const useCache = process.env.NODE_ENV === 'production';
+  if (useCache && htmlTemplateCache.has(fileName)) {
+    return res.type('html').send(htmlTemplateCache.get(fileName));
+  }
+  const rawHtml = fs.readFileSync(path.join(PUBLIC_DIR, fileName), 'utf8');
+  const processedHtml = injectAssetUrls(rawHtml);
+  if (useCache) {
+    htmlTemplateCache.set(fileName, processedHtml);
+  }
+  res.type('html').send(processedHtml);
 }
 
 async function getPageSession(req) {

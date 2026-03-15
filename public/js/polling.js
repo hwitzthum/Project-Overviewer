@@ -13,13 +13,36 @@ let adminPollingTimer = null;
 let adminPollingInFlight = false;
 let adminUsersMutationVersion = 0;
 
-function serializeForComparison(value) {
-  try {
-    return JSON.stringify(value ?? null);
-  } catch (error) {
-    console.error('Failed to serialize polling payload:', error);
-    return String(Date.now());
+let lastProjectFingerprint = '';
+let lastTeamFingerprint = '';
+let lastAdminUsersFingerprint = '';
+
+function computeProjectFingerprint(projects) {
+  if (!projects || !projects.length) return '0';
+  const parts = [];
+  for (const p of projects) {
+    const tc = p.tasks ? p.tasks.length : 0;
+    const dc = p.documents ? p.documents.length : 0;
+    parts.push(`${p.id}:${p.updated_at}:${p.status}:${tc}:${dc}`);
   }
+  parts.sort();
+  return `${projects.length}|${parts.join('|')}`;
+}
+
+function computeTeamFingerprint(team) {
+  if (!team) return '';
+  const members = (team.members || []).map(m => m.user_id || m.id).sort().join(',');
+  return `${team.id}:${team.name}:${members}`;
+}
+
+function computeAdminUsersFingerprint(users) {
+  if (!users || !users.length) return '0';
+  const parts = [];
+  for (const u of users) {
+    parts.push(`${u.id}:${u.role}:${u.approved}:${u.updated_at || ''}`);
+  }
+  parts.sort();
+  return `${users.length}|${parts.join('|')}`;
 }
 
 function isEditableElement(element) {
@@ -51,10 +74,13 @@ function scheduleNextAdminPoll(delay = SHARED_DATA_POLL_INTERVAL_MS) {
 
 function markSharedDataMutation() {
   sharedDataMutationVersion += 1;
+  lastProjectFingerprint = '';
+  lastTeamFingerprint = '';
 }
 
 function markAdminUsersMutation() {
   adminUsersMutationVersion += 1;
+  lastAdminUsersFingerprint = '';
 }
 
 function applyPendingProjectRender() {
@@ -123,9 +149,11 @@ function flushPendingAppRefreshes() {
 async function pollProjects() {
   try {
     const nextProjects = await API.getAllProjects();
-    if (serializeForComparison(state.projects) === serializeForComparison(nextProjects)) {
+    const fingerprint = computeProjectFingerprint(nextProjects);
+    if (fingerprint === lastProjectFingerprint) {
       return { changed: false, nextProjects: null };
     }
+    lastProjectFingerprint = fingerprint;
     return { changed: true, nextProjects };
   } catch (error) {
     console.error('Shared project polling failed:', error);
@@ -141,9 +169,11 @@ async function pollTeamInfo() {
   try {
     const payload = await API.getMyTeam();
     const nextTeam = normalizeTeamPayload(payload);
-    if (serializeForComparison(currentTeam) === serializeForComparison(nextTeam)) {
+    const fingerprint = computeTeamFingerprint(nextTeam);
+    if (fingerprint === lastTeamFingerprint) {
       return { changed: false, nextTeam: null };
     }
+    lastTeamFingerprint = fingerprint;
     return { changed: true, nextTeam };
   } catch (error) {
     console.error('Team polling failed:', error);
@@ -203,6 +233,9 @@ function startAppPolling() {
   if (appPollingStarted) return;
   appPollingStarted = true;
 
+  lastProjectFingerprint = computeProjectFingerprint(state.projects);
+  lastTeamFingerprint = computeTeamFingerprint(currentTeam);
+
   document.addEventListener('visibilitychange', handleAppVisibilityChange);
   document.addEventListener('focusout', handleAppFocusOut, true);
 
@@ -210,9 +243,11 @@ function startAppPolling() {
 }
 
 function syncAdminUsers(users) {
-  if (serializeForComparison(adminUsers) === serializeForComparison(users)) {
+  const fingerprint = computeAdminUsersFingerprint(users);
+  if (fingerprint === lastAdminUsersFingerprint) {
     return false;
   }
+  lastAdminUsersFingerprint = fingerprint;
 
   adminUsers = users;
   renderAdminStats();

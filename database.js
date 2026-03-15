@@ -1111,8 +1111,11 @@ async function getProjectDocuments(projectId, userId, options = {}) {
   const project = await get('SELECT id FROM projects WHERE id = ? AND user_id = ?', [projectId, userId]);
   if (!project) return null;
 
+  const select = includeContent
+    ? 'SELECT * FROM documents'
+    : 'SELECT id, project_id, doc_type, title, payload, file_name, mime_type, created_at FROM documents';
   const rows = await all(
-    'SELECT * FROM documents WHERE project_id = ? ORDER BY created_at ASC',
+    `${select} WHERE project_id = ? ORDER BY created_at ASC`,
     [projectId]
   );
   return rows.map(row => mapDocument(row, includeContent));
