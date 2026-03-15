@@ -1,4 +1,5 @@
 const express = require('express');
+const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const logger = require('./logger');
@@ -38,6 +39,8 @@ const BCRYPT_ROUNDS = 12;
 const SAFE_HTTP_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 const API_BASE_PATHS = ['/api', '/api/v1'];
 const PUBLIC_DIR = path.join(__dirname, 'public');
+const DIST_DIR = path.join(PUBLIC_DIR, 'dist');
+const ASSET_MANIFEST_PATH = path.join(DIST_DIR, 'asset-manifest.json');
 
 app.disable('x-powered-by');
 
@@ -149,6 +152,51 @@ function readCookieValue(cookieHeader, name) {
   return null;
 }
 
+let cachedAssetManifest = null;
+let cachedAssetManifestMtime = null;
+
+function getAssetManifest() {
+  try {
+    const stats = fs.statSync(ASSET_MANIFEST_PATH);
+    const mtime = stats.mtimeMs;
+    if (cachedAssetManifest && cachedAssetManifestMtime === mtime) {
+      return cachedAssetManifest;
+    }
+
+    const manifest = JSON.parse(fs.readFileSync(ASSET_MANIFEST_PATH, 'utf8'));
+    cachedAssetManifest = manifest;
+    cachedAssetManifestMtime = mtime;
+    return manifest;
+  } catch {
+    return {
+      buildId: 'dev',
+      bundles: {
+        'app-shell.bundle.js': 'app-shell.bundle.js',
+        'app.bundle.js': 'app.bundle.js',
+        'admin.bundle.js': 'admin.bundle.js',
+        'login.bundle.js': 'login.bundle.js',
+        'register.bundle.js': 'register.bundle.js'
+      }
+    };
+  }
+}
+
+function injectAssetUrls(html) {
+  const manifest = getAssetManifest();
+  const buildVersion = encodeURIComponent(manifest.buildId || 'dev');
+  const bundleMap = manifest.bundles || {};
+
+  return html
+    .replaceAll('/css/theme.css', `/css/theme.css?v=${buildVersion}`)
+    .replaceAll('/css/app.css', `/css/app.css?v=${buildVersion}`)
+    .replaceAll('/css/auth.css', `/css/auth.css?v=${buildVersion}`)
+    .replaceAll('/dist/app-shell.bundle.js', `/dist/${bundleMap['app-shell.bundle.js'] || 'app-shell.bundle.js'}`)
+    .replaceAll('/dist/app.bundle.js', `/dist/${bundleMap['app.bundle.js'] || 'app.bundle.js'}`)
+    .replaceAll('/dist/admin.bundle.js', `/dist/${bundleMap['admin.bundle.js'] || 'admin.bundle.js'}`)
+    .replaceAll('/dist/login.bundle.js', `/dist/${bundleMap['login.bundle.js'] || 'login.bundle.js'}`)
+    .replaceAll('/dist/register.bundle.js', `/dist/${bundleMap['register.bundle.js'] || 'register.bundle.js'}`);
+}
+
 function sendHtmlPage(res, fileName, options = {}) {
   const { protectedPage = false } = options;
   res.setHeader(
@@ -159,7 +207,8 @@ function sendHtmlPage(res, fileName, options = {}) {
   if (protectedPage) {
     res.setHeader('Vary', 'Cookie');
   }
-  res.sendFile(path.join(PUBLIC_DIR, fileName));
+  const htmlTemplate = fs.readFileSync(path.join(PUBLIC_DIR, fileName), 'utf8');
+  res.type('html').send(injectAssetUrls(htmlTemplate));
 }
 
 async function getPageSession(req) {
@@ -231,12 +280,12 @@ app.use(express.static(PUBLIC_DIR, {
   lastModified: true,
   setHeaders(res, filePath) {
     if (filePath.includes(`${path.sep}dist${path.sep}`)) {
-      res.setHeader('Cache-Control', 'public, max-age=3600, stale-while-revalidate=86400');
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
       return;
     }
 
     if (filePath.includes(`${path.sep}css${path.sep}`)) {
-      res.setHeader('Cache-Control', 'public, max-age=900, stale-while-revalidate=86400');
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
       return;
     }
 

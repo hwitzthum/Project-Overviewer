@@ -2,10 +2,24 @@ const { test, expect } = require('@playwright/test');
 const { BASE_URL, loginAPI, authHeaders } = require('./helpers');
 
 test.describe('HTTP Caching', () => {
-  test('bundled frontend assets send cache headers', async ({ request }) => {
-    const res = await request.get(`${BASE_URL}/dist/app.bundle.js`);
-    expect(res.ok()).toBeTruthy();
-    expect(res.headers()['cache-control']).toBe('public, max-age=3600, stale-while-revalidate=86400');
+  test('frontend HTML emits versioned assets that can be cached immutably', async ({ request }) => {
+    const htmlRes = await request.get(`${BASE_URL}/login.html`);
+    expect(htmlRes.ok()).toBeTruthy();
+
+    const html = await htmlRes.text();
+    const scriptMatch = html.match(/src="(\/dist\/login\.bundle\.[a-f0-9]{10}\.js)"/);
+    const cssMatch = html.match(/href="(\/css\/theme\.css\?v=[a-f0-9]{10})"/);
+
+    expect(scriptMatch).toBeTruthy();
+    expect(cssMatch).toBeTruthy();
+
+    const scriptRes = await request.get(`${BASE_URL}${scriptMatch[1]}`);
+    expect(scriptRes.ok()).toBeTruthy();
+    expect(scriptRes.headers()['cache-control']).toBe('public, max-age=31536000, immutable');
+
+    const cssRes = await request.get(`${BASE_URL}${cssMatch[1]}`);
+    expect(cssRes.ok()).toBeTruthy();
+    expect(cssRes.headers()['cache-control']).toBe('public, max-age=31536000, immutable');
   });
 
   test('versioned API reads send revalidation headers', async ({ request }) => {
