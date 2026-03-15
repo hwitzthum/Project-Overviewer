@@ -25,8 +25,9 @@ pino.log*
 
 # ─── Build / Cache ───────────────────────────────────────────────────────────
 .cache/
-dist/
+/dist/
 build/
+# Note: public/dist/ is NOT ignored — Vercel needs it in the serverless bundle
 .parcel-cache/
 .vercel/
 
