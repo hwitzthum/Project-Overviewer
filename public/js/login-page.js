@@ -2,18 +2,8 @@ const LOGIN_ERROR_ICON = '<circle cx="8" cy="8" r="7" fill="none" stroke="curren
 const LOGIN_SUCCESS_ICON = '<circle cx="8" cy="8" r="7" fill="none" stroke="currentColor" stroke-width="1.5"/><polyline points="5.5 8.5 7.5 10.5 11 6.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>';
 
 function initLoginThemePicker() {
-  const savedTheme = localStorage.getItem('theme') || 'light';
-  document.documentElement.setAttribute('data-theme', savedTheme);
-  document.querySelectorAll('.theme-dot').forEach(dot => {
-    dot.classList.toggle('active', dot.dataset.theme === savedTheme);
-    dot.addEventListener('click', () => {
-      const theme = dot.dataset.theme;
-      document.documentElement.setAttribute('data-theme', theme);
-      localStorage.setItem('theme', theme);
-      document.querySelectorAll('.theme-dot').forEach(item => item.classList.remove('active'));
-      dot.classList.add('active');
-    });
-  });
+  applyTheme(getStoredThemePreference(), { persist: false });
+  bindThemeControls({ selector: '.theme-dot' });
 }
 
 function showLoginMessage(type, text) {
@@ -38,6 +28,7 @@ function initLoginPage() {
   });
 
   initLoginThemePicker();
+  markThemeReady();
 
   document.getElementById('togglePwd').addEventListener('click', function() {
     const input = document.getElementById('password');

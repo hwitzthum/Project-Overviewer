@@ -1,0 +1,138 @@
+:root {
+  --bg-primary: #fffaf1;
+  --bg-secondary: #f2eadb;
+  --bg-tertiary: #e4d6bf;
+  --bg-hover: #ecdcc2;
+  --text-primary: #231c16;
+  --text-secondary: #5d5046;
+  --text-tertiary: #8b7b6b;
+  --border-color: #cdb99d;
+  --border-light: #dfcfbb;
+  --accent: #b55233;
+  --accent-hover: #8f3f26;
+  --accent-rgb: 181, 82, 51;
+  --success: #3f8a5a;
+  --warning: #c88a1d;
+  --danger: #b93f3a;
+  --shadow-sm: 0 1px 2px rgba(43, 29, 16, 0.08);
+  --shadow-md: 0 14px 40px rgba(88, 57, 24, 0.12);
+  --shadow-lg: 0 24px 80px rgba(88, 57, 24, 0.16);
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --page-background:
+    radial-gradient(circle at top left, rgba(181, 82, 51, 0.12), transparent 30%),
+    radial-gradient(circle at 85% 15%, rgba(202, 138, 54, 0.12), transparent 24%),
+    linear-gradient(180deg, #f7f1e5 0%, #efe4d0 48%, #eadbc5 100%);
+}
+
+[data-theme="dark"] {
+  --bg-primary: #11161a;
+  --bg-secondary: #090d10;
+  --bg-tertiary: #18222b;
+  --bg-hover: #1c2934;
+  --text-primary: #e8f2f6;
+  --text-secondary: #9fb2bd;
+  --text-tertiary: #6d838f;
+  --border-color: #22323c;
+  --border-light: #1a262f;
+  --accent: #79d2ff;
+  --accent-hover: #9be0ff;
+  --accent-rgb: 121, 210, 255;
+  --success: #5bc488;
+  --warning: #ffb34d;
+  --danger: #ff7676;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.32);
+  --shadow-md: 0 18px 48px rgba(0, 0, 0, 0.42);
+  --shadow-lg: 0 28px 90px rgba(0, 0, 0, 0.5);
+  --page-background:
+    radial-gradient(circle at 20% 0%, rgba(121, 210, 255, 0.16), transparent 28%),
+    radial-gradient(circle at 100% 10%, rgba(77, 132, 255, 0.14), transparent 26%),
+    linear-gradient(180deg, #0a1014 0%, #081118 42%, #05080b 100%);
+}
+
+[data-theme="ocean"] {
+  --bg-primary: #0d202a;
+  --bg-secondary: #07171f;
+  --bg-tertiary: #12313d;
+  --bg-hover: #173b49;
+  --text-primary: #def6ff;
+  --text-secondary: #8db6c7;
+  --text-tertiary: #5e8898;
+  --border-color: #1f4656;
+  --border-light: #173745;
+  --accent: #3ed0f2;
+  --accent-hover: #6fe6ff;
+  --accent-rgb: 62, 208, 242;
+  --success: #5dd9a3;
+  --warning: #ffbf52;
+  --danger: #ff8d7b;
+  --shadow-sm: 0 1px 2px rgba(1, 15, 20, 0.34);
+  --shadow-md: 0 18px 52px rgba(1, 15, 20, 0.45);
+  --shadow-lg: 0 30px 96px rgba(1, 15, 20, 0.55);
+  --page-background:
+    radial-gradient(circle at 18% 14%, rgba(62, 208, 242, 0.18), transparent 25%),
+    radial-gradient(circle at 88% 0%, rgba(0, 125, 176, 0.22), transparent 28%),
+    linear-gradient(180deg, #0a2230 0%, #081b26 46%, #05131b 100%);
+}
+
+[data-theme="forest"] {
+  --bg-primary: #151d16;
+  --bg-secondary: #0c120d;
+  --bg-tertiary: #202b1f;
+  --bg-hover: #293729;
+  --text-primary: #edf5e6;
+  --text-secondary: #a4b89a;
+  --text-tertiary: #768b6d;
+  --border-color: #344433;
+  --border-light: #283428;
+  --accent: #a8d35f;
+  --accent-hover: #c4ea80;
+  --accent-rgb: 168, 211, 95;
+  --success: #62c985;
+  --warning: #f1b04c;
+  --danger: #ee8574;
+  --shadow-sm: 0 1px 2px rgba(7, 12, 8, 0.34);
+  --shadow-md: 0 18px 52px rgba(7, 12, 8, 0.45);
+  --shadow-lg: 0 30px 96px rgba(7, 12, 8, 0.55);
+  --page-background:
+    radial-gradient(circle at 15% 12%, rgba(168, 211, 95, 0.18), transparent 24%),
+    radial-gradient(circle at 86% 8%, rgba(90, 115, 42, 0.2), transparent 25%),
+    linear-gradient(180deg, #172117 0%, #101710 48%, #0a0f0a 100%);
+}
+
+html {
+  background: var(--bg-secondary);
+}
+
+body {
+  background: var(--page-background);
+  color: var(--text-primary);
+}
+
+html[data-theme-ready="false"] *,
+html[data-theme-ready="false"] *::before,
+html[data-theme-ready="false"] *::after {
+  transition: none !important;
+}
+
+.theme-dot[data-theme="light"] {
+  background:
+    linear-gradient(135deg, #fff9ef 0%, #f2dcc7 52%, #ba5a38 100%);
+  box-shadow: inset 0 0 0 1px rgba(90, 45, 20, 0.14);
+}
+
+.theme-dot[data-theme="dark"] {
+  background:
+    linear-gradient(135deg, #0a1114 0%, #173142 55%, #79d2ff 100%);
+}
+
+.theme-dot[data-theme="ocean"] {
+  background:
+    linear-gradient(135deg, #081b25 0%, #0f5064 52%, #42d6ff 100%);
+}
+
+.theme-dot[data-theme="forest"] {
+  background:
+    linear-gradient(135deg, #0d120c 0%, #355230 52%, #b4de68 100%);
+}

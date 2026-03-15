@@ -39,6 +39,7 @@ const bundles = [
     output: 'admin.bundle.js',
     files: [
       'js/api-client.js',
+      'js/theme.js',
       'js/polling.js',
       'js/admin-page.js'
     ]
@@ -47,6 +48,7 @@ const bundles = [
     output: 'login.bundle.js',
     files: [
       'js/api-client.js',
+      'js/theme.js',
       'js/login-page.js'
     ]
   },
@@ -54,6 +56,7 @@ const bundles = [
     output: 'register.bundle.js',
     files: [
       'js/api-client.js',
+      'js/theme.js',
       'js/register-page.js'
     ]
   }

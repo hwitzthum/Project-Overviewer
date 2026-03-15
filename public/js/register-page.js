@@ -1,16 +1,6 @@
 function initRegisterThemePicker() {
-  const savedTheme = localStorage.getItem('theme') || 'light';
-  document.documentElement.setAttribute('data-theme', savedTheme);
-  document.querySelectorAll('.theme-dot').forEach(dot => {
-    dot.classList.toggle('active', dot.dataset.theme === savedTheme);
-    dot.addEventListener('click', () => {
-      const theme = dot.dataset.theme;
-      document.documentElement.setAttribute('data-theme', theme);
-      localStorage.setItem('theme', theme);
-      document.querySelectorAll('.theme-dot').forEach(item => item.classList.remove('active'));
-      dot.classList.add('active');
-    });
-  });
+  applyTheme(getStoredThemePreference(), { persist: false });
+  bindThemeControls({ selector: '.theme-dot' });
 }
 
 function createRegisterIcon(type) {
@@ -85,6 +75,7 @@ function getPasswordStrength(password) {
 
 function initRegisterPage() {
   initRegisterThemePicker();
+  markThemeReady();
   const hints = ['', 'Weak', 'Fair', 'Good', 'Strong'];
 
   document.getElementById('togglePwd1').addEventListener('click', function() {

@@ -3,8 +3,30 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#efe4d0">
   <title>Create Account — Project Overviewer</title>
+  <script>
+    (() => {
+      const darkFamily = new Set(['dark', 'ocean', 'forest']);
+      const chrome = { light: '#efe4d0', dark: '#0a1014', ocean: '#0a2230', forest: '#172117' };
+      let preference = 'auto';
+      try {
+        preference = localStorage.getItem('theme') || 'auto';
+      } catch {}
+      const effective = preference === 'auto'
+        ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+        : preference;
+      document.documentElement.setAttribute('data-theme', effective);
+      document.documentElement.setAttribute('data-theme-preference', preference);
+      document.documentElement.setAttribute('data-theme-ready', 'false');
+      document.documentElement.style.colorScheme = darkFamily.has(effective) ? 'dark' : 'light';
+      const themeColorMeta = document.querySelector('meta[name="theme-color"]');
+      if (themeColorMeta) themeColorMeta.setAttribute('content', chrome[effective] || chrome.light);
+    })();
+  </script>
   <link rel="stylesheet" href="/css/auth.css">
+  <link rel="stylesheet" href="/css/theme.css">
 </head>
 <body>
 

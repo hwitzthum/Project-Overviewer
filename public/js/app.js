@@ -5,6 +5,7 @@ async function init() {
 
   // Apply theme
   applyTheme(state.settings.theme);
+  markThemeReady();
 
   // Apply sidebar state
   if (state.settings.sidebarCollapsed) {

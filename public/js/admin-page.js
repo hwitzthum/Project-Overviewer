@@ -2,17 +2,16 @@ let adminToastTimer;
 let adminUsers = [];
 
 function initAdminThemePicker() {
-  const savedTheme = localStorage.getItem('theme') || 'light';
-  document.documentElement.setAttribute('data-theme', savedTheme);
-  document.querySelectorAll('.theme-dot').forEach(dot => {
-    dot.classList.toggle('active', dot.dataset.theme === savedTheme);
-    dot.addEventListener('click', () => {
-      const theme = dot.dataset.theme;
-      document.documentElement.setAttribute('data-theme', theme);
-      localStorage.setItem('theme', theme);
-      document.querySelectorAll('.theme-dot').forEach(item => item.classList.remove('active'));
-      dot.classList.add('active');
-    });
+  applyTheme(getStoredThemePreference(), { persist: false });
+  bindThemeControls({
+    selector: '.theme-dot',
+    onThemeChange: async theme => {
+      try {
+        await API.setSetting('theme', theme);
+      } catch (error) {
+        showAdminToast(`Failed to save theme: ${error.message}`);
+      }
+    }
   });
 }
 
@@ -175,6 +174,23 @@ function initAdminPage() {
       window.location.href = '/';
       return;
     }
+    let hasLocalTheme = false;
+    try {
+      hasLocalTheme = Boolean(localStorage.getItem('theme'));
+    } catch {
+      hasLocalTheme = false;
+    }
+    if (!hasLocalTheme) {
+      try {
+        const theme = await API.getSetting('theme');
+        if (theme) {
+          applyTheme(theme);
+        }
+      } catch {
+        // Local preference is already applied as a fallback.
+      }
+    }
+    markThemeReady();
     await loadAdminUsers();
     startAdminPolling();
   }).catch(() => {

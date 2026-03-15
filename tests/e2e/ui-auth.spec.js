@@ -3,6 +3,13 @@ const { ADMIN, loginUI, uniqueUser } = require('./helpers');
 
 test.describe('UI: Login Page', () => {
 
+  test('root redirects unauthenticated users to login before app shell renders', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForURL('**/login.html', { timeout: 5000 });
+    await expect(page.locator('#username')).toBeVisible();
+    await expect(page.locator('#app')).toHaveCount(0);
+  });
+
   test('login page loads correctly', async ({ page }) => {
     await page.goto('/login.html');
     await expect(page.locator('h1')).toContainText('Project Overviewer');
@@ -132,5 +139,18 @@ test.describe('UI: Theme Switcher', () => {
     await page.click('.theme-dot[data-theme="ocean"]');
     const theme2 = await page.getAttribute('html', 'data-theme');
     expect(theme2).toBe('ocean');
+  });
+
+  test('selected app theme carries into the admin page', async ({ page }) => {
+    await loginUI(page);
+    await page.waitForURL('/', { timeout: 5000 });
+
+    await page.click('#openSettings');
+    await page.click('#settingsModal .settings-option[data-theme="forest"]');
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'forest');
+
+    await page.goto('/admin.html');
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'forest');
+    await expect(page.locator('h1')).toContainText('Admin');
   });
 });

@@ -37,6 +37,7 @@ const PORT = process.env.PORT || 3001;
 const BCRYPT_ROUNDS = 12;
 const SAFE_HTTP_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 const API_BASE_PATHS = ['/api', '/api/v1'];
+const PUBLIC_DIR = path.join(__dirname, 'public');
 
 app.disable('x-powered-by');
 
@@ -136,8 +137,87 @@ app.use('/api/projects/:projectId/documents', express.json({ limit: '10mb' }));
 app.use('/api/v1/projects/:projectId/documents', express.json({ limit: '10mb' }));
 app.use(express.json({ limit: '2mb' }));
 
+function readCookieValue(cookieHeader, name) {
+  if (!cookieHeader || typeof cookieHeader !== 'string') return null;
+  const prefix = `${name}=`;
+  for (const part of cookieHeader.split(';')) {
+    const trimmed = part.trim();
+    if (trimmed.startsWith(prefix)) {
+      return decodeURIComponent(trimmed.slice(prefix.length));
+    }
+  }
+  return null;
+}
+
+function sendPublicPage(res, fileName) {
+  res.setHeader('Cache-Control', 'no-cache, max-age=0, must-revalidate');
+  res.sendFile(path.join(PUBLIC_DIR, fileName));
+}
+
+async function getPageSession(req) {
+  const token = readCookieValue(req.headers.cookie, 'session_token');
+  if (!token) {
+    return { token: null, status: 'missing', session: null };
+  }
+
+  const lookup = await db.getSessionByToken(token);
+  return {
+    token,
+    status: lookup.status,
+    session: lookup.session
+  };
+}
+
+app.get(['/', '/index.html'], async (req, res, next) => {
+  try {
+    await initPromise;
+    const pageSession = await getPageSession(req);
+    if (pageSession.status !== 'ok' || !pageSession.session) {
+      if (pageSession.token) {
+        setSessionCookie(res, '', 0);
+      }
+      return res.redirect(302, '/login.html');
+    }
+    return sendPublicPage(res, 'index.html');
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.get('/admin.html', async (req, res, next) => {
+  try {
+    await initPromise;
+    const pageSession = await getPageSession(req);
+    if (pageSession.status !== 'ok' || !pageSession.session) {
+      if (pageSession.token) {
+        setSessionCookie(res, '', 0);
+      }
+      return res.redirect(302, '/login.html');
+    }
+    if (pageSession.session.role !== 'admin') {
+      return res.redirect(302, '/');
+    }
+    return sendPublicPage(res, 'admin.html');
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.get(['/login.html', '/register.html'], async (req, res, next) => {
+  try {
+    await initPromise;
+    const pageSession = await getPageSession(req);
+    if (pageSession.status === 'ok' && pageSession.session) {
+      return res.redirect(302, '/');
+    }
+    return sendPublicPage(res, path.basename(req.path));
+  } catch (err) {
+    next(err);
+  }
+});
+
 // Serve only the public directory
-app.use(express.static(path.join(__dirname, 'public'), {
+app.use(express.static(PUBLIC_DIR, {
   maxAge: 0,
   etag: true,
   lastModified: true,
