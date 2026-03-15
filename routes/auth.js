@@ -131,7 +131,9 @@ module.exports = function createAuthRouter({
       }
 
       const session = await db.createSession(user.id);
-      const themePreference = await db.getUserSetting(user.id, 'theme') || 'auto';
+      const themePreference = await db.getUserSetting(user.id, 'theme')
+        || req.cookies?.theme_preference
+        || 'auto';
       setSessionCookie(res, session.token);
       setThemePreferenceCookie(res, themePreference);
 

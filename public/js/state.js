@@ -2,12 +2,17 @@
 
 var APP_VERSION = '1.0';
 
+function getInitialThemePreference() {
+  if (typeof document === 'undefined') return 'auto';
+  return document.documentElement.getAttribute('data-theme-preference') || 'auto';
+}
+
 function getDefaultState() {
   return {
     version: APP_VERSION,
     projects: [],
     settings: {
-      theme: 'auto',
+      theme: getInitialThemePreference(),
       lastView: 'all',
       sidebarCollapsed: false,
       sortBy: 'manual',

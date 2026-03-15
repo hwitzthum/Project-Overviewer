@@ -1,5 +1,5 @@
 const { test, expect } = require('@playwright/test');
-const { ADMIN, loginUI, uniqueUser } = require('./helpers');
+const { ADMIN, loginAPI, loginUI, registerAPI, approveUserAPI, uniqueUser } = require('./helpers');
 
 test.describe('UI: Login Page', () => {
 
@@ -182,5 +182,57 @@ test.describe('UI: Theme Switcher', () => {
     await expect(freshPage.locator('html')).toHaveAttribute('data-theme', 'ocean');
 
     await freshContext.close();
+  });
+
+  test('login page theme survives the redirect into the app for a user without a saved server theme', async ({ browser, request }) => {
+    const user = uniqueUser('themeboot');
+    const password = 'SecurePass123!';
+    const email = `${user}@test.com`;
+
+    const adminLogin = await loginAPI(request);
+    const registration = await registerAPI(request, { username: user, email, password });
+    await approveUserAPI(request, adminLogin.token, registration.body.user.id);
+
+    const context = await browser.newContext({
+      baseURL: 'http://localhost:3099'
+    });
+    const themedPage = await context.newPage();
+
+    await themedPage.goto('/login.html');
+    await themedPage.click('.theme-dot[data-theme="ocean"]');
+    await expect(themedPage.locator('html')).toHaveAttribute('data-theme', 'ocean');
+    await themedPage.fill('#username', user);
+    await themedPage.fill('#password', password);
+    await themedPage.click('#submitBtn');
+    await themedPage.waitForURL('/', { timeout: 5000 });
+    await expect(themedPage.locator('html')).toHaveAttribute('data-theme', 'ocean');
+
+    await context.close();
+  });
+});
+
+test.describe('UI: Protected App Gate', () => {
+
+  test('protected app stays hidden until session verification completes', async ({ browser, page }) => {
+    await loginUI(page);
+    await page.waitForURL('/', { timeout: 5000 });
+
+    const cookies = await page.context().cookies();
+    const gatedContext = await browser.newContext({ baseURL: 'http://localhost:3099' });
+    await gatedContext.addCookies(cookies.filter(cookie => cookie.name === 'session_token' || cookie.name === 'theme_preference'));
+    const gatedPage = await gatedContext.newPage();
+
+    await gatedPage.route('**/api/v1/auth/me', async route => {
+      await new Promise(resolve => setTimeout(resolve, 1200));
+      await route.continue();
+    });
+
+    await gatedPage.goto('/', { waitUntil: 'domcontentloaded' });
+    await expect(gatedPage.locator('html')).toHaveAttribute('data-auth-state', 'pending');
+    await expect.poll(async () => gatedPage.evaluate(() => getComputedStyle(document.body).visibility)).toBe('hidden');
+    await expect(gatedPage.locator('html')).toHaveAttribute('data-auth-state', 'authorized');
+    await expect.poll(async () => gatedPage.evaluate(() => getComputedStyle(document.body).visibility)).toBe('visible');
+
+    await gatedContext.close();
   });
 });

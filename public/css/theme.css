@@ -110,6 +110,11 @@ body {
   color: var(--text-primary);
 }
 
+html[data-auth-state="pending"] body,
+html[data-auth-state="redirecting"] body {
+  visibility: hidden;
+}
+
 html[data-theme-ready="false"] *,
 html[data-theme-ready="false"] *::before,
 html[data-theme-ready="false"] *::after {

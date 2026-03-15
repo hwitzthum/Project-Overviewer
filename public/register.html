@@ -16,7 +16,8 @@
           .split(';')
           .map(part => part.trim())
           .find(part => part.startsWith('theme_preference='));
-        preference = localStorage.getItem('theme')
+        preference = sessionStorage.getItem('theme_boot_preference')
+          || localStorage.getItem('theme')
           || (themeCookie ? decodeURIComponent(themeCookie.split('=').slice(1).join('=')) : null)
           || 'auto';
       } catch {}
@@ -31,8 +32,8 @@
       if (themeColorMeta) themeColorMeta.setAttribute('content', chrome[effective] || chrome.light);
     })();
   </script>
-  <link rel="stylesheet" href="/css/auth.css">
   <link rel="stylesheet" href="/css/theme.css">
+  <link rel="stylesheet" href="/css/auth.css">
 </head>
 <body>
 

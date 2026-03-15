@@ -149,8 +149,16 @@ function readCookieValue(cookieHeader, name) {
   return null;
 }
 
-function sendPublicPage(res, fileName) {
-  res.setHeader('Cache-Control', 'no-cache, max-age=0, must-revalidate');
+function sendHtmlPage(res, fileName, options = {}) {
+  const { protectedPage = false } = options;
+  res.setHeader(
+    'Cache-Control',
+    protectedPage ? 'private, no-store, max-age=0, must-revalidate' : 'no-store, max-age=0, must-revalidate'
+  );
+  res.setHeader('Pragma', 'no-cache');
+  if (protectedPage) {
+    res.setHeader('Vary', 'Cookie');
+  }
   res.sendFile(path.join(PUBLIC_DIR, fileName));
 }
 
@@ -178,7 +186,7 @@ app.get(['/', '/index.html'], async (req, res, next) => {
       }
       return res.redirect(302, '/login.html');
     }
-    return sendPublicPage(res, 'index.html');
+    return sendHtmlPage(res, 'index.html', { protectedPage: true });
   } catch (err) {
     next(err);
   }
@@ -197,7 +205,7 @@ app.get('/admin.html', async (req, res, next) => {
     if (pageSession.session.role !== 'admin') {
       return res.redirect(302, '/');
     }
-    return sendPublicPage(res, 'admin.html');
+    return sendHtmlPage(res, 'admin.html', { protectedPage: true });
   } catch (err) {
     next(err);
   }
@@ -210,7 +218,7 @@ app.get(['/login.html', '/register.html'], async (req, res, next) => {
     if (pageSession.status === 'ok' && pageSession.session) {
       return res.redirect(302, '/');
     }
-    return sendPublicPage(res, path.basename(req.path));
+    return sendHtmlPage(res, path.basename(req.path));
   } catch (err) {
     next(err);
   }
@@ -753,12 +761,25 @@ app.get(['/api/health', '/api/v1/health'], async (req, res) => {
 // ========== SERVE FRONTEND ==========
 
 // SPA fallback — serve index.html for non-API routes
-app.get('*', (req, res) => {
+app.get('*', async (req, res, next) => {
   if (req.path.startsWith('/api/')) {
     return res.status(404).json({ error: 'Not found' });
   }
-  res.setHeader('Cache-Control', 'no-cache, max-age=0, must-revalidate');
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+
+  try {
+    await initPromise;
+    const pageSession = await getPageSession(req);
+    if (pageSession.status !== 'ok' || !pageSession.session) {
+      if (pageSession.token) {
+        setSessionCookie(res, '', 0);
+      }
+      return res.redirect(302, '/login.html');
+    }
+
+    return sendHtmlPage(res, 'index.html', { protectedPage: true });
+  } catch (err) {
+    next(err);
+  }
 });
 
 // ========== START SERVER ==========

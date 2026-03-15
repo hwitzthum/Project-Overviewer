@@ -174,6 +174,7 @@ function initAdminPage() {
       window.location.href = '/';
       return;
     }
+    document.documentElement.setAttribute('data-auth-state', 'authorized');
     let hasLocalTheme = false;
     try {
       hasLocalTheme = Boolean(localStorage.getItem('theme'));

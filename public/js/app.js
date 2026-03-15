@@ -4,7 +4,11 @@ async function init() {
   await loadFromStorage();
 
   // Apply theme
-  applyTheme(state.settings.theme);
+  const bootThemePreference = getStoredThemePreference();
+  const activeThemePreference = state.settings.theme && state.settings.theme !== 'auto'
+    ? state.settings.theme
+    : bootThemePreference;
+  applyTheme(activeThemePreference, { persist: false });
   markThemeReady();
 
   // Apply sidebar state
@@ -232,4 +236,15 @@ async function init() {
 }
 
 // Start the app
-init();
+async function bootApp() {
+  try {
+    if (typeof window.ensureProtectedPageAuth === 'function') {
+      await window.ensureProtectedPageAuth();
+    }
+    await init();
+  } catch {
+    // Redirect handled by the auth guard.
+  }
+}
+
+bootApp();

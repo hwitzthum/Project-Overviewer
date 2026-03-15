@@ -2,6 +2,7 @@
 
 const THEME_STORAGE_KEY = 'theme';
 const THEME_COOKIE_KEY = 'theme_preference';
+const THEME_SESSION_KEY = 'theme_boot_preference';
 const DARK_FAMILY_THEMES = new Set(['dark', 'ocean', 'forest']);
 const THEME_CHROME_COLORS = {
   light: '#efe4d0',
@@ -12,12 +13,14 @@ const THEME_CHROME_COLORS = {
 
 function getStoredThemePreference() {
   try {
-    return localStorage.getItem(THEME_STORAGE_KEY)
+    return sessionStorage.getItem(THEME_SESSION_KEY)
+      || localStorage.getItem(THEME_STORAGE_KEY)
       || readThemePreferenceCookie()
       || document.documentElement.getAttribute('data-theme-preference')
       || 'auto';
   } catch {
-    return readThemePreferenceCookie()
+    return (typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(THEME_SESSION_KEY) : null)
+      || readThemePreferenceCookie()
       || document.documentElement.getAttribute('data-theme-preference')
       || 'auto';
   }
@@ -66,6 +69,11 @@ function applyTheme(theme, options = {}) {
   updateThemeChrome(effectiveTheme);
 
   if (persist) {
+    try {
+      sessionStorage.setItem(THEME_SESSION_KEY, preference);
+    } catch {
+      // Ignore storage failures in restricted browsing modes.
+    }
     try {
       localStorage.setItem(THEME_STORAGE_KEY, preference);
     } catch {

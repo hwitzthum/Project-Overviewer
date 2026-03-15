@@ -57,7 +57,14 @@ function initLoginPage() {
     btn.disabled = true;
 
     try {
+      const themePreference = document.documentElement.getAttribute('data-theme-preference') || getStoredThemePreference();
+      try {
+        sessionStorage.setItem('theme_boot_preference', themePreference);
+      } catch {
+        // Ignore storage failures in restricted browsing modes.
+      }
       await API.login(username, password);
+      applyTheme(themePreference);
       showLoginMessage('success', 'Signed in successfully. Redirecting...');
       setTimeout(() => {
         window.location.href = '/';
