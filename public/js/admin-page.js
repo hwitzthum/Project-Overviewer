@@ -170,12 +170,13 @@ async function deleteAdminUser(id, username) {
 function initAdminPage() {
   initAdminThemePicker();
 
-  API.getMe().then(user => {
+  API.getMe().then(async user => {
     if (user.role !== 'admin') {
       window.location.href = '/';
       return;
     }
-    loadAdminUsers();
+    await loadAdminUsers();
+    startAdminPolling();
   }).catch(() => {
     window.location.href = '/login.html';
   });

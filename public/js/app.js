@@ -227,6 +227,7 @@ async function init() {
   initUserMenu();
 
   // API saves immediately, no need for beforeunload handler
+  startAppPolling();
 }
 
 // Start the app
