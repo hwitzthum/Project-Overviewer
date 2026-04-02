@@ -417,13 +417,10 @@ function isSerializedJsonWithinLimit(value, maxBytes) {
 }
 
 function validate(schema, data) {
-  if (!z.object) return { success: true, data };
-  try {
-    const result = schema.safeParse(data);
-    return result;
-  } catch {
-    return { success: true, data };
+  if (!schema || typeof schema.safeParse !== 'function') {
+    throw new Error('Invalid validation schema');
   }
+  return schema.safeParse(data);
 }
 
 // Real schemas (only if zod is available)
@@ -666,7 +663,8 @@ function getExpectedOrigin(req) {
     .split(',')[0]
     .trim();
   const forwardedHost = req.headers['x-forwarded-host'];
-  const host = (Array.isArray(forwardedHost) ? forwardedHost[0] : forwardedHost || req.headers.host || '')
+  const rawHost = forwardedHost || req.headers.host || '';
+  const host = (Array.isArray(rawHost) ? rawHost[0] : rawHost)
     .split(',')[0]
     .trim();
   return host ? `${protocol}://${host}` : null;
@@ -683,7 +681,14 @@ function parseHeaderOrigin(value) {
 
 function requireSameOriginCookieWrite(req, res, next) {
   if (SAFE_HTTP_METHODS.has(req.method)) return next();
-  if (req.path.endsWith('/auth/login') || req.path.endsWith('/auth/register')) return next();
+  if (
+    req.path === '/auth/login'
+    || req.path === '/auth/register'
+    || req.path === '/v1/auth/login'
+    || req.path === '/v1/auth/register'
+  ) {
+    return next();
+  }
 
   const authHeader = req.headers.authorization;
   const hasBearerAuth = typeof authHeader === 'string' && authHeader.startsWith('Bearer ');
@@ -753,6 +758,36 @@ function setSessionCookie(res, token, maxAge = SESSION_ABSOLUTE_TIMEOUT_SECONDS)
   );
 }
 
+function isMaintenanceBypassedPath(req) {
+  const requestPath = req.path || req.originalUrl || '';
+  return requestPath === '/api/health'
+    || requestPath === '/api/v1/health'
+    || requestPath === '/admin.html'
+    || requestPath === '/api/admin'
+    || requestPath.startsWith('/api/admin/')
+    || requestPath === '/api/v1/admin'
+    || requestPath.startsWith('/api/v1/admin/');
+}
+
+async function enforceMaintenanceMode(req, res) {
+  const requestPath = req.path || req.originalUrl || '';
+  if (isMaintenanceBypassedPath(req)) {
+    return false;
+  }
+
+  const maintenanceMode = await db.getGlobalSetting('maintenanceMode');
+  if (maintenanceMode !== true) {
+    return false;
+  }
+
+  if (requestPath.startsWith('/api/')) {
+    res.status(503).json({ error: 'Service unavailable for maintenance' });
+  } else {
+    res.status(503).type('text/plain').send('Service unavailable for maintenance');
+  }
+  return true;
+}
+
 
 function getSafeDocumentMimeType(mimeType) {
   return ALLOWED_MIME_TYPES.has(mimeType) ? mimeType : 'application/octet-stream';
@@ -796,6 +831,18 @@ app.use(async (req, res, next) => {
   } catch (err) {
     logger.error({ err }, 'Initialization failed');
     res.status(503).json({ error: 'Service unavailable — initialization failed' });
+  }
+});
+
+app.use(async (req, res, next) => {
+  try {
+    if (await enforceMaintenanceMode(req, res)) {
+      return;
+    }
+    next();
+  } catch (err) {
+    logger.error({ err }, 'Maintenance mode check failed');
+    res.status(503).json({ error: 'Service unavailable' });
   }
 });
 

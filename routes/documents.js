@@ -10,6 +10,15 @@ module.exports = function createDocumentsRouters({
   allowedMimeTypes,
   logSecurityEvent
 }) {
+  async function resolveTeamScope(userId) {
+    const workspaceMode = await db.getUserSetting(userId, 'workspaceMode');
+    let teamUserIds = null;
+    if (workspaceMode === 'team' || workspaceMode === null) {
+      teamUserIds = await db.getTeamUserIds(userId);
+    }
+    return teamUserIds;
+  }
+
   function getSafeDocumentMimeType(mimeType) {
     return allowedMimeTypes.has(mimeType) ? mimeType : 'application/octet-stream';
   }
@@ -25,7 +34,11 @@ module.exports = function createDocumentsRouters({
 
   projectDocumentsRouter.get('/', requireAuth, async (req, res) => {
     try {
-      const documents = await db.getProjectDocuments(req.params.projectId, req.user.userId, { includeContent: false });
+      const teamUserIds = await resolveTeamScope(req.user.userId);
+      const documents = await db.getProjectDocuments(req.params.projectId, req.user.userId, {
+        includeContent: false,
+        teamUserIds
+      });
       if (documents === null) {
         return res.status(404).json({ error: 'Project not found' });
       }
@@ -82,7 +95,8 @@ module.exports = function createDocumentsRouters({
 
   documentsRouter.get('/:id/preview', requireAuth, async (req, res) => {
     try {
-      const document = await db.getDocumentById(req.params.id, req.user.userId);
+      const teamUserIds = await resolveTeamScope(req.user.userId);
+      const document = await db.getDocumentById(req.params.id, req.user.userId, { teamUserIds });
       if (!document) {
         return res.status(404).json({ error: 'Document not found' });
       }
@@ -173,7 +187,8 @@ module.exports = function createDocumentsRouters({
 
   documentsRouter.get('/:id/download', requireAuth, async (req, res) => {
     try {
-      const document = await db.getDocumentById(req.params.id, req.user.userId);
+      const teamUserIds = await resolveTeamScope(req.user.userId);
+      const document = await db.getDocumentById(req.params.id, req.user.userId, { teamUserIds });
       if (!document) {
         return res.status(404).json({ error: 'Document not found' });
       }

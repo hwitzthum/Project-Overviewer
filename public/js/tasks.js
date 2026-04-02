@@ -311,6 +311,7 @@ function renderDocumentPreviewContent(preview) {
       <iframe
         class="doc-preview-frame"
         src="${escapeAttribute(preview.inlineUrl)}"
+        sandbox="allow-downloads allow-same-origin"
         title="${escapeAttribute(preview.title || preview.fileName || 'Document preview')}"></iframe>
     `;
   }

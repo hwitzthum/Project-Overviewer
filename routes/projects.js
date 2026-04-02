@@ -46,6 +46,14 @@ module.exports = function createProjectsRouter({ db, logger, schemas, requireAut
         }
       }
 
+      const maxProjectsPerUser = await db.getGlobalSetting('maxProjectsPerUser');
+      if (Number.isInteger(maxProjectsPerUser) && maxProjectsPerUser >= 0) {
+        const projectCount = await db.countProjectsByUser(req.user.userId);
+        if (projectCount >= maxProjectsPerUser) {
+          return res.status(403).json({ error: 'Project limit reached' });
+        }
+      }
+
       const project = await db.createProject(req.user.userId, req.body);
       res.status(201).json(project);
     } catch (error) {

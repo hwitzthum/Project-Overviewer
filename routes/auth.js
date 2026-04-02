@@ -21,6 +21,8 @@ module.exports = function createAuthRouter({
   const LOGIN_DELAY_THRESHOLD = 3;
   const LOGIN_BLOCK_THRESHOLD = 8;
   const MAX_LOGIN_DELAY_MS = 1500;
+  const LOGIN_TRACK_CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
+  const MAX_LOGIN_TRACKER_SIZE = 10000;
   const loginAttemptTracker = new Map();
   const dummyPasswordHash = bcrypt.hashSync('project-overviewer-dummy-password', bcryptRounds);
 
@@ -36,8 +38,36 @@ module.exports = function createAuthRouter({
     return `${String(username || '').trim().toLowerCase()}|${getClientIp(req)}`;
   }
 
+  function pruneLoginAttemptTracker(now = Date.now()) {
+    for (const [key, value] of loginAttemptTracker.entries()) {
+      if (!value?.lastFailureAt || now - value.lastFailureAt > LOGIN_TRACK_WINDOW_MS) {
+        loginAttemptTracker.delete(key);
+      }
+    }
+
+    if (loginAttemptTracker.size <= MAX_LOGIN_TRACKER_SIZE) {
+      return;
+    }
+
+    const overflow = loginAttemptTracker.size - MAX_LOGIN_TRACKER_SIZE;
+    const oldestKeys = [...loginAttemptTracker.entries()]
+      .sort((left, right) => (left[1]?.lastFailureAt || 0) - (right[1]?.lastFailureAt || 0))
+      .slice(0, overflow)
+      .map(([key]) => key);
+
+    for (const key of oldestKeys) {
+      loginAttemptTracker.delete(key);
+    }
+  }
+
+  const loginAttemptCleanupInterval = setInterval(() => {
+    pruneLoginAttemptTracker();
+  }, LOGIN_TRACK_CLEANUP_INTERVAL_MS);
+  loginAttemptCleanupInterval.unref?.();
+
   function getLoginAttemptState(key) {
     const now = Date.now();
+    pruneLoginAttemptTracker(now);
     const existing = loginAttemptTracker.get(key);
     if (!existing) return { failures: 0, blockedUntil: 0, lastFailureAt: 0 };
 
@@ -57,6 +87,9 @@ module.exports = function createAuthRouter({
     const blockedUntil = now + Math.min(MAX_LOGIN_DELAY_MS, 100 * (2 ** delayExponent));
     const nextState = { failures, blockedUntil, lastFailureAt: now };
     loginAttemptTracker.set(key, nextState);
+    if (loginAttemptTracker.size > MAX_LOGIN_TRACKER_SIZE) {
+      pruneLoginAttemptTracker(now);
+    }
     return nextState;
   }
 
@@ -96,6 +129,11 @@ module.exports = function createAuthRouter({
 
   router.post('/register', async (req, res) => {
     try {
+      const registrationEnabled = await db.getGlobalSetting('registrationEnabled');
+      if (registrationEnabled === false) {
+        return res.status(403).json({ error: 'Registration is currently disabled' });
+      }
+
       if (schemas.register) {
         const result = schemas.register.safeParse(req.body);
         if (!result.success) {

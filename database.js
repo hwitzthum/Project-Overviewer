@@ -608,8 +608,8 @@ async function getSessionByToken(token) {
     SELECT s.*, u.id as uid, u.username, u.email, u.role, u.approved
     FROM sessions s
     JOIN users u ON s.user_id = u.id
-    WHERE s.token IN (?, ?)
-  `, [tokenHash, token]);
+    WHERE s.token = ?
+  `, [tokenHash]);
 
   if (!session) {
     return { status: 'not_found', session: null };
@@ -652,7 +652,7 @@ async function getSessionByToken(token) {
 
 async function deleteSession(token) {
   await waitForDb();
-  await run('DELETE FROM sessions WHERE token IN (?, ?)', [hashSessionToken(token), token]);
+  await run('DELETE FROM sessions WHERE token = ?', [hashSessionToken(token)]);
 }
 
 async function deleteUserSessions(userId) {
@@ -865,6 +865,12 @@ async function createProject(userId, project) {
   };
 }
 
+async function countProjectsByUser(userId) {
+  await waitForDb();
+  const row = await get('SELECT COUNT(*) AS count FROM projects WHERE user_id = ?', [userId]);
+  return Number(row?.count || 0);
+}
+
 async function updateProject(id, userId, updates) {
   await waitForDb();
   const fields = [];
@@ -990,6 +996,20 @@ async function getProjectTasks(projectId, userId) {
   return tasks.map(mapTask);
 }
 
+async function countTasksByProject(projectId, userId) {
+  await waitForDb();
+  const row = await get(`
+    SELECT p.id AS project_id, COUNT(t.id) AS count
+    FROM projects p
+    LEFT JOIN tasks t ON t.project_id = p.id
+    WHERE p.id = ? AND p.user_id = ?
+    GROUP BY p.id
+  `, [projectId, userId]);
+
+  if (!row) return null;
+  return Number(row.count || 0);
+}
+
 async function createTask(projectId, userId, task) {
   await waitForDb();
   // Verify project ownership
@@ -1104,11 +1124,19 @@ async function reorderTasks(projectId, userId, taskOrders) {
 // ========== DOCUMENT QUERIES ==========
 
 async function getProjectDocuments(projectId, userId, options = {}) {
-  const { includeContent = false } = options;
+  const { includeContent = false, teamUserIds = null } = options;
   await waitForDb();
 
-  // Verify project ownership
-  const project = await get('SELECT id FROM projects WHERE id = ? AND user_id = ?', [projectId, userId]);
+  let project;
+  if (teamUserIds && teamUserIds.length > 1) {
+    const userPlaceholders = teamUserIds.map(() => '?').join(',');
+    project = await get(
+      `SELECT id FROM projects WHERE id = ? AND user_id IN (${userPlaceholders})`,
+      [projectId, ...teamUserIds]
+    );
+  } else {
+    project = await get('SELECT id FROM projects WHERE id = ? AND user_id = ?', [projectId, userId]);
+  }
   if (!project) return null;
 
   const select = includeContent
@@ -1121,13 +1149,24 @@ async function getProjectDocuments(projectId, userId, options = {}) {
   return rows.map(row => mapDocument(row, includeContent));
 }
 
-async function getDocumentById(id, userId) {
+async function getDocumentById(id, userId, options = {}) {
+  const { teamUserIds = null } = options;
   await waitForDb();
-  const row = await get(`
-    SELECT d.* FROM documents d
-    JOIN projects p ON d.project_id = p.id
-    WHERE d.id = ? AND p.user_id = ?
-  `, [id, userId]);
+  let row;
+  if (teamUserIds && teamUserIds.length > 1) {
+    const userPlaceholders = teamUserIds.map(() => '?').join(',');
+    row = await get(`
+      SELECT d.* FROM documents d
+      JOIN projects p ON d.project_id = p.id
+      WHERE d.id = ? AND p.user_id IN (${userPlaceholders})
+    `, [id, ...teamUserIds]);
+  } else {
+    row = await get(`
+      SELECT d.* FROM documents d
+      JOIN projects p ON d.project_id = p.id
+      WHERE d.id = ? AND p.user_id = ?
+    `, [id, userId]);
+  }
 
   if (!row) return null;
   return mapDocument(row, true);
@@ -1589,11 +1628,13 @@ module.exports = {
   getAllProjects,
   getProjectById,
   createProject,
+  countProjectsByUser,
   updateProject,
   deleteProject,
   reorderProjects,
   // Tasks
   getProjectTasks,
+  countTasksByProject,
   createTask,
   updateTask,
   deleteTask,

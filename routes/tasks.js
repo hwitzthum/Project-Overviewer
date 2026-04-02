@@ -26,6 +26,17 @@ module.exports = function createTasksRouters({ db, logger, schemas, requireAuth 
         }
       }
 
+      const maxTasksPerProject = await db.getGlobalSetting('maxTasksPerProject');
+      if (Number.isInteger(maxTasksPerProject) && maxTasksPerProject >= 0) {
+        const taskCount = await db.countTasksByProject(req.params.projectId, req.user.userId);
+        if (taskCount === null) {
+          return res.status(404).json({ error: 'Project not found' });
+        }
+        if (taskCount >= maxTasksPerProject) {
+          return res.status(403).json({ error: 'Task limit reached' });
+        }
+      }
+
       const taskId = await db.createTask(req.params.projectId, req.user.userId, req.body);
       if (taskId === null) {
         return res.status(404).json({ error: 'Project not found' });
@@ -39,6 +50,18 @@ module.exports = function createTasksRouters({ db, logger, schemas, requireAuth 
 
   projectTasksRouter.post('/reorder', requireAuth, async (req, res) => {
     try {
+      if (Array.isArray(req.body) && req.body.length > 1000) {
+        return res.status(400).json({ error: 'Too many items to reorder' });
+      }
+      if (schemas.reorderItem && Array.isArray(req.body)) {
+        for (const item of req.body) {
+          const result = schemas.reorderItem.safeParse(item);
+          if (!result.success) {
+            return res.status(400).json({ error: 'Invalid reorder data' });
+          }
+        }
+      }
+
       const success = await db.reorderTasks(req.params.projectId, req.user.userId, req.body);
       if (!success) {
         return res.status(404).json({ error: 'Project not found' });
