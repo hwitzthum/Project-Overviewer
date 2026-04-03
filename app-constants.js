@@ -7,7 +7,8 @@ const VALID_SETTINGS_KEYS = [
   'wipLimits',
   'kanbanColumns',
   'sidebarCollapsed',
-  'workspaceMode'
+  'workspaceMode',
+  'swimlaneBy'
 ];
 
 const MAX_DOCUMENTS_PER_USER = 500;

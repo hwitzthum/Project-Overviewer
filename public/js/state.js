@@ -21,7 +21,8 @@ function getDefaultState() {
         'not-started': null,
         'in-progress': null,
         completed: null
-      }
+      },
+      swimlaneBy: null
     },
     quickNotes: '',
     templates: [
@@ -325,7 +326,7 @@ async function loadFromStorage() {
 
     if (settings.status === 'fulfilled' && Object.keys(settings.value).length > 0) {
       var ALLOWED_SETTING_KEYS = ['theme', 'defaultView', 'sortBy', 'showCompleted',
-        'showArchived', 'wipLimits', 'kanbanColumns', 'sidebarCollapsed', 'workspaceMode'];
+        'showArchived', 'wipLimits', 'kanbanColumns', 'sidebarCollapsed', 'workspaceMode', 'swimlaneBy'];
       var safeSettings = {};
       for (var i = 0; i < ALLOWED_SETTING_KEYS.length; i++) {
         var k = ALLOWED_SETTING_KEYS[i];

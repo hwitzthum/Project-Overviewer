@@ -209,6 +209,12 @@ function initEventDelegation() {
     if (e.target.classList.contains('quick-status')) {
       const projectId = e.target.dataset.projectId;
       const nextStatus = e.target.value;
+      const wipCheck = canAssignProjectToStatus(nextStatus, projectId);
+      if (!wipCheck.allowed) {
+        showToast(`WIP limit reached for "${nextStatus}" (${wipCheck.limit}/${wipCheck.limit}). Move blocked.`, 'warning');
+        e.target.value = state.projects.find(p => p.id === projectId)?.status || e.target.value;
+        return;
+      }
       const updates = nextStatus === 'backlog'
         ? { status: nextStatus, priority: 'none' }
         : { status: nextStatus };
@@ -257,6 +263,14 @@ function initEventDelegation() {
 
   // Task checkboxes - click event
   content.addEventListener('click', e => {
+    // Swimlane toggle button
+    if (e.target.classList.contains('kanban-swimlane-toggle') || e.target.closest('.kanban-swimlane-toggle')) {
+      const currentMode = state.settings.swimlaneBy;
+      setState(s => ({ settings: { ...s.settings, swimlaneBy: currentMode === 'priority' ? null : 'priority' } }));
+      render();
+      return;
+    }
+
     if (e.target.id === 'emptyStateCreateProject') {
       createProject();
       return;

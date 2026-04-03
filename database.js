@@ -375,6 +375,7 @@ async function initDatabase() {
         project_order INTEGER DEFAULT 0,
         archived INTEGER DEFAULT 0,
         archived_at TEXT,
+        status_changed_at TEXT,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP,
         updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
@@ -514,6 +515,12 @@ async function initDatabase() {
 
   await ensureSessionSchema();
   await ensureTaskSubtaskColumn();
+
+  // Idempotent migrations for new columns
+  try {
+    await run('ALTER TABLE projects ADD COLUMN status_changed_at TEXT');
+  } catch (_) { /* column already exists */ }
+
   await repairTeamMembershipIntegrity();
   await ensureSingleTeamMembershipIndex();
 
@@ -698,7 +705,8 @@ function mapProject(project) {
     archived: project.archived === 1,
     archivedAt: project.archived_at || null,
     tags: safeJsonParse(project.tags, []),
-    dueDate: project.due_date
+    dueDate: project.due_date,
+    statusChangedAt: project.status_changed_at || null
   };
 }
 
@@ -959,6 +967,9 @@ async function updateProject(id, userId, updates) {
   if (updates.status !== undefined) {
     fields.push('status = ?');
     values.push(updates.status);
+    // Track when status last changed for cycle time calculation
+    fields.push('status_changed_at = ?');
+    values.push(new Date().toISOString());
   }
   if (updates.priority !== undefined) {
     fields.push('priority = ?');
