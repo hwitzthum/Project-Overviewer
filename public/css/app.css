@@ -302,7 +302,7 @@
       border-radius: var(--radius-lg);
       padding: 12px;
       min-height: 280px;
-      transition: border-color var(--transition-fast), background var(--transition-fast);
+      transition: border-color var(--transition-fast), background var(--transition-fast), box-shadow var(--transition-fast);
     }
 
     .kanban-lane.lane-backlog {
@@ -331,7 +331,12 @@
 
     .kanban-lane.drop-zone {
       border-color: var(--lane-accent);
-      background: var(--lane-bg);
+      background: var(--lane-bg-strong);
+      box-shadow: inset 0 0 0 2px var(--lane-accent);
+    }
+
+    .kanban-dragging .kanban-lane:not(.drop-zone) {
+      opacity: 0.7;
     }
 
     .kanban-lane-header {
@@ -450,6 +455,82 @@
     .project-card.dragging {
       opacity: 0.5;
       transform: scale(1.02);
+    }
+
+    /* Compact Kanban Card */
+    .project-card-compact {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 12px;
+      flex-wrap: wrap;
+    }
+
+    .project-card-compact .project-priority {
+      width: 4px;
+      height: 20px;
+      flex-shrink: 0;
+    }
+
+    .project-card-compact-title {
+      flex: 1;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-primary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      min-width: 0;
+    }
+
+    .project-card-compact .project-status {
+      font-size: 11px;
+    }
+
+    .project-card-compact .project-meta-item {
+      font-size: 11px;
+      color: var(--text-secondary);
+    }
+
+    .project-card-compact .project-owner-badge {
+      font-size: 11px;
+    }
+
+    /* Project Drag Handle */
+    .project-drag-handle {
+      cursor: grab;
+      color: var(--text-tertiary);
+      user-select: none;
+      font-size: 12px;
+      padding: 2px 4px;
+      border-radius: var(--radius-sm);
+      flex-shrink: 0;
+      transition: color var(--transition-fast), background var(--transition-fast);
+    }
+
+    .project-drag-handle:hover {
+      color: var(--text-secondary);
+      background: var(--bg-hover);
+    }
+
+    .project-drag-handle:active {
+      cursor: grabbing;
+    }
+
+    .project-card:not(.project-card-compact) {
+      position: relative;
+    }
+
+    .project-card:not(.project-card-compact) .project-drag-handle {
+      position: absolute;
+      top: 8px;
+      left: 8px;
+      opacity: 0;
+      transition: opacity var(--transition-fast);
+    }
+
+    .project-card:not(.project-card-compact):hover .project-drag-handle {
+      opacity: 1;
     }
 
     .project-card-header {
@@ -1639,6 +1720,7 @@
     .toast-success { border-left: 3px solid var(--success); }
     .toast-error { border-left: 3px solid var(--danger); }
     .toast-info { border-left: 3px solid var(--accent); }
+    .toast-warning { border-left: 3px solid var(--warning); }
 
     /* ========== Focus Mode ========== */
     .app.focus-mode .sidebar {

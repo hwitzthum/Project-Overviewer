@@ -189,12 +189,11 @@ async function applyProjectQuickUpdate(projectId, updates, successMessage = 'Pro
   if (changedEntries.length === 0) return;
 
   const normalizedUpdates = Object.fromEntries(changedEntries);
+  var wipWarning = null;
   if (normalizedUpdates.status && normalizedUpdates.status !== project.status) {
     const wipCheck = canAssignProjectToStatus(normalizedUpdates.status, projectId);
     if (!wipCheck.allowed) {
-      showToast(`WIP limit reached for ${normalizedUpdates.status} (${wipCheck.count}/${wipCheck.limit})`, 'error');
-      render();
-      return;
+      wipWarning = `WIP limit exceeded for ${normalizedUpdates.status} (${wipCheck.count + 1}/${wipCheck.limit})`;
     }
   }
   const undoSnapshot = buildUndoSnapshot(project, normalizedUpdates);
@@ -204,6 +203,9 @@ async function applyProjectQuickUpdate(projectId, updates, successMessage = 'Pro
 
   setRenderHint({ type: 'project-update', projectId, prevStatus });
   render();
+  if (wipWarning) {
+    showToast(wipWarning, 'warning', { duration: 5000 });
+  }
   showToast(successMessage, 'success', {
     actionLabel: 'Undo',
     duration: 7000,

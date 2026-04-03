@@ -56,8 +56,7 @@ async function submitCreateProject() {
   }
 
   if (!wipCheck.allowed) {
-    showToast(`WIP limit reached for ${status} (${wipCheck.count}/${wipCheck.limit})`, 'error');
-    return;
+    showToast(`WIP limit exceeded for ${status} (${wipCheck.count + 1}/${wipCheck.limit})`, 'warning', { duration: 5000 });
   }
 
   try {

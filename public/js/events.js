@@ -410,7 +410,8 @@ function initEventDelegation() {
       !e.target.closest('button') &&
       !e.target.closest('.task-checkbox') &&
       !e.target.closest('.doc-add') &&
-      !e.target.closest('.task-drag-handle')) {
+      !e.target.closest('.task-drag-handle') &&
+      !e.target.closest('.project-drag-handle')) {
       openProjectHome(card.dataset.id);
       return;
     }
@@ -419,7 +420,7 @@ function initEventDelegation() {
   // Project card double-click (open modal)
   content.addEventListener('dblclick', e => {
     const card = e.target.closest('.project-card');
-    if (card && !e.target.closest('input') && !e.target.closest('select') && !e.target.closest('.task-checkbox')) {
+    if (card && !e.target.closest('input') && !e.target.closest('select') && !e.target.closest('.task-checkbox') && !e.target.closest('.project-drag-handle')) {
       openProjectModal(card.dataset.id);
     }
   });

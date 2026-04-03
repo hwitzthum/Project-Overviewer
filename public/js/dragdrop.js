@@ -19,11 +19,15 @@ function initDragDrop() {
       return;
     }
 
-    if (e.target.classList.contains('project-card')) {
-      draggedElement = e.target;
-      draggedProjectId = e.target.dataset.id;
-      e.target.classList.add('dragging');
+    const card = e.target.closest('.project-card');
+    if (card && !card.classList.contains('archived')) {
+      draggedElement = card;
+      draggedProjectId = card.dataset.id;
+      card.classList.add('dragging');
       e.dataTransfer.effectAllowed = 'move';
+      if (currentView === 'kanban') {
+        document.body.classList.add('kanban-dragging');
+      }
     }
   });
 
@@ -39,6 +43,7 @@ function initDragDrop() {
       draggedElement.classList.remove('dragging');
       draggedElement = null;
       draggedProjectId = null;
+      document.body.classList.remove('kanban-dragging');
       document.querySelectorAll('.drop-zone').forEach(el => el.classList.remove('drop-zone'));
     }
   });
