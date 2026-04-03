@@ -999,16 +999,8 @@ async function updateProject(id, userId, updates) {
 
   if (result.changes === 0) return null;
 
-  // Return updated fields directly instead of re-fetching
-  const updatedProject = await get(
-    `SELECT p.*, u.username AS owner_name
-     FROM projects p
-     JOIN users u ON p.user_id = u.id
-     WHERE p.id = ? AND p.user_id = ?`,
-    [id, userId]
-  );
-  if (!updatedProject) return null;
-  return mapProject(updatedProject);
+  // Return full project including tasks and documents so callers always get complete data
+  return getProjectById(id, userId);
 }
 
 async function deleteProject(id, userId) {
