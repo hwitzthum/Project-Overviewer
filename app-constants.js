@@ -1,13 +1,15 @@
 const VALID_SETTINGS_KEYS = [
   'theme',
   'defaultView',
+  'lastView',
   'sortBy',
   'showCompleted',
   'showArchived',
   'wipLimits',
   'kanbanColumns',
   'sidebarCollapsed',
-  'workspaceMode'
+  'workspaceMode',
+  'swimlaneBy'
 ];
 
 const MAX_DOCUMENTS_PER_USER = 500;

@@ -45,6 +45,7 @@ function initDragDrop() {
       draggedProjectId = null;
       document.body.classList.remove('kanban-dragging');
       document.querySelectorAll('.drop-zone').forEach(el => el.classList.remove('drop-zone'));
+      document.querySelectorAll('.project-card-compact.drop-above').forEach(el => el.classList.remove('drop-above'));
     }
   });
 
@@ -61,8 +62,12 @@ function initDragDrop() {
 
     if (currentView === 'kanban') {
       const lane = e.target.closest('.kanban-lane');
-      if (lane) {
-        lane.classList.add('drop-zone');
+      if (lane) lane.classList.add('drop-zone');
+      // Per-lane card reorder indicator
+      const hoverCard = e.target.closest('.project-card-compact');
+      document.querySelectorAll('.project-card-compact.drop-above').forEach(el => el.classList.remove('drop-above'));
+      if (hoverCard && hoverCard.dataset.id !== draggedProjectId) {
+        hoverCard.classList.add('drop-above');
       }
       return;
     }
@@ -124,7 +129,47 @@ function initDragDrop() {
       if (targetLane && draggedProjectId) {
         const nextStatus = targetLane.dataset.status;
         const project = state.projects.find(p => p.id === draggedProjectId);
-        if (project && nextStatus && project.status !== nextStatus) {
+
+        // Check if dropping onto a specific card (within-lane reorder)
+        const targetCard = e.target.closest('.project-card-compact');
+        const targetProjectId = targetCard ? targetCard.dataset.id : null;
+        const isSameLane = project && nextStatus === project.status;
+
+        if (isSameLane && targetProjectId && targetProjectId !== draggedProjectId) {
+          // Within-lane reorder
+          const laneProjects = state.projects
+            .filter(p => p.status === nextStatus)
+            .sort((a, b) => (a.project_order || 0) - (b.project_order || 0));
+          const fromIndex = laneProjects.findIndex(p => p.id === draggedProjectId);
+          const toIndex = laneProjects.findIndex(p => p.id === targetProjectId);
+          if (fromIndex !== -1 && toIndex !== -1 && fromIndex !== toIndex) {
+            const reordered = [...laneProjects];
+            const [moved] = reordered.splice(fromIndex, 1);
+            reordered.splice(toIndex, 0, moved);
+            const projectOrders = reordered.map((p, i) => ({ id: p.id, order: i * 10 }));
+            try {
+              await API.reorderProjects(projectOrders);
+              setState(s => ({
+                projects: s.projects.map(p => {
+                  const found = projectOrders.find(o => o.id === p.id);
+                  return found ? { ...p, project_order: found.order } : p;
+                })
+              }));
+              setRenderHint({ type: 'full' });
+              render();
+            } catch (err) {
+              console.error('Failed to reorder within lane:', err);
+              showToast('Failed to reorder', 'error');
+            }
+          }
+        } else if (project && nextStatus && project.status !== nextStatus) {
+          // Cross-lane move: WIP check then status update
+          const wipCheck = canAssignProjectToStatus(nextStatus, draggedProjectId);
+          if (!wipCheck.allowed) {
+            showToast(`WIP limit reached for "${nextStatus}" (${wipCheck.limit}/${wipCheck.limit}). Move blocked.`, 'warning');
+            document.querySelectorAll('.drop-zone').forEach(el => el.classList.remove('drop-zone'));
+            return;
+          }
           const updates = nextStatus === 'backlog'
             ? { status: nextStatus, priority: 'none' }
             : { status: nextStatus };
@@ -132,6 +177,7 @@ function initDragDrop() {
         }
       }
       document.querySelectorAll('.drop-zone').forEach(el => el.classList.remove('drop-zone'));
+      document.querySelectorAll('.project-card-compact.drop-above').forEach(el => el.classList.remove('drop-above'));
       return;
     }
 

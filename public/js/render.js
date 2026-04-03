@@ -25,19 +25,32 @@ function renderProjectCard(project, options) {
   const disabledAttr = isArchived ? 'disabled' : '';
 
   if (compact) {
+    const daysSinceUpdate = Math.floor((Date.now() - new Date(project.updated_at || project.created_at || 0)) / 86400000);
+    const agingClass = daysSinceUpdate >= 14 ? ' card-aging-stale' : daysSinceUpdate >= 7 ? ' card-aging-mild' : '';
+    const hasBlockedTask = flattenAllTasks(project.tasks || []).some(t => t.blockedBy);
+    const daysInStatus = project.statusChangedAt
+      ? Math.floor((Date.now() - new Date(project.statusChangedAt)) / 86400000)
+      : null;
+    const cycleClass = daysInStatus !== null && daysInStatus >= 14 ? ' cycle-danger'
+      : daysInStatus !== null && daysInStatus >= 7 ? ' cycle-warn' : '';
     return `
-      <div class="project-card project-card-compact${selectedProjectId === project.id ? ' selected' : ''}" data-id="${project.id}" draggable="true">
+      <div class="project-card project-card-compact${agingClass}${selectedProjectId === project.id ? ' selected' : ''}" data-id="${project.id}" draggable="true">
         <span class="project-drag-handle" title="Drag to move">⋮⋮</span>
         <div class="project-priority priority-${effectivePriority}"></div>
         <span class="project-card-compact-title">${escapeHtml(project.title)}</span>
         <span class="project-status status-${project.status}">${formatStatus(project.status)}</span>
         ${totalTasks > 0 ? `<span class="project-meta-item">✓ ${completedTasks}/${totalTasks}</span>` : ''}
         ${project.dueDate ? `<span class="project-meta-item project-due${dueInfo.overdue ? ' overdue' : ''}">📅 ${dueInfo.text}</span>` : ''}
-        ${currentWorkspaceMode === 'team' && project.user_id && currentUserId ? `
-          <span class="project-owner-badge ${project.user_id === currentUserId ? 'is-mine' : ''}">
-            ● ${escapeHtml(project.ownerName || 'Unknown')}
-          </span>
-        ` : ''}
+        ${hasBlockedTask ? `<span class="card-blocked-badge" title="Has blocked tasks">⛔ blocked</span>` : ''}
+        ${daysInStatus !== null && daysInStatus > 0
+          ? `<span class="card-cycle-time${cycleClass}" title="Days in current status">${daysInStatus}d</span>`
+          : ''}
+        ${currentWorkspaceMode === 'team' && project.user_id && currentUserId ? (() => {
+          const ownerName = project.ownerName || 'Unknown';
+          const initials = ownerName.split(' ').map(w => w[0] || '').slice(0, 2).join('').toUpperCase() || '?';
+          const isMine = project.user_id === currentUserId;
+          return `<span class="owner-avatar${isMine ? ' is-mine' : ''}" title="${escapeHtml(ownerName)}">${escapeHtml(initials)}</span>`;
+        })() : ''}
       </div>
     `;
   }
@@ -565,6 +578,60 @@ function renderEmptyState() {
   `;
 }
 
+function renderKanbanSwimlanes(projects) {
+  const lanes = [
+    { status: 'backlog', label: 'backlog' },
+    { status: 'not-started', label: 'not-started' },
+    { status: 'in-progress', label: 'in-progress' },
+    { status: 'completed', label: 'completed' }
+  ];
+  const priorityGroups = [
+    { priority: 'high', label: 'High' },
+    { priority: 'medium', label: 'Medium' },
+    { priority: 'low', label: 'Low' },
+    { priority: 'none', label: 'None' }
+  ];
+
+  function effectivePriority(p) {
+    return p.status === 'backlog' ? 'none' : (p.priority || 'none');
+  }
+
+  const laneHeadersHtml = lanes.map(lane => `
+    <div class="swimlane-col-header lane-${lane.status}">
+      <span>${lane.label}</span>
+    </div>
+  `).join('');
+
+  const rowsHtml = priorityGroups.map(group => {
+    const cellsHtml = lanes.map(lane => {
+      const cellProjects = projects.filter(p => p.status === lane.status && effectivePriority(p) === group.priority);
+      return `
+        <div class="swimlane-cell kanban-lane lane-${lane.status}" data-status="${lane.status}">
+          ${cellProjects.length > 0
+            ? cellProjects.map(p => renderProjectCard(p, { compact: true })).join('')
+            : '<div class="kanban-empty">Drop here</div>'}
+        </div>
+      `;
+    }).join('');
+    return `
+      <div class="swimlane-row">
+        <div class="swimlane-row-label priority-${group.priority}">${group.label}</div>
+        ${cellsHtml}
+      </div>
+    `;
+  }).join('');
+
+  return `
+    <div class="kanban-board kanban-swimlanes">
+      <div class="swimlane-header-row">
+        <div class="swimlane-row-label"></div>
+        ${laneHeadersHtml}
+      </div>
+      ${rowsHtml}
+    </div>
+  `;
+}
+
 function renderKanbanBoard(projects) {
   const lanes = [
     { status: 'backlog', label: 'backlog' },
@@ -573,46 +640,73 @@ function renderKanbanBoard(projects) {
     { status: 'completed', label: 'completed' }
   ];
   const wipLimits = getWipLimits();
+  const completedThisWeek = projects.filter(p =>
+    p.status === 'completed' &&
+    Date.now() - new Date(p.updated_at || 0) < 7 * 86400000
+  ).length;
+
+  if (state.settings.swimlaneBy === 'priority') {
+    return `
+      <div class="kanban-wrapper">
+        <div class="kanban-toolbar">
+          <button class="kanban-swimlane-toggle active" type="button" title="Toggle priority swimlanes">
+            ⊞ Swimlanes (on)
+          </button>
+        </div>
+        ${renderKanbanSwimlanes(projects)}
+      </div>
+    `;
+  }
 
   return `
-    <div class="kanban-board">
-      ${lanes.map(lane => {
-        const laneProjects = projects.filter(p => p.status === lane.status);
-        const laneTotalCount = getLaneProjectCount(lane.status);
-        const limit = wipLimits[lane.status];
-        const countClass = limit
-          ? (laneTotalCount > limit ? ' limit-exceeded' : (laneTotalCount === limit ? ' limit-reached' : ''))
-          : '';
-        const countLabel = limit ? `${laneTotalCount}/${limit}` : `${laneTotalCount}`;
-        return `
-          <section class="kanban-lane lane-${lane.status}" data-status="${lane.status}">
-            <div class="kanban-lane-header">
-              <span class="kanban-lane-title">${lane.label}</span>
-              <div class="kanban-lane-meta">
-                <span class="kanban-lane-count${countClass}">${countLabel}</span>
-                <label class="kanban-lane-limit">
-                  WIP
-                  <input
-                    type="number"
-                    min="1"
-                    step="1"
-                    inputmode="numeric"
-                    class="kanban-limit-input"
-                    data-lane-limit-status="${lane.status}"
-                    value="${limit ?? ''}"
-                    placeholder="∞"
-                    aria-label="WIP limit for ${lane.label}">
-                </label>
+    <div class="kanban-wrapper">
+      <div class="kanban-toolbar">
+        <button class="kanban-swimlane-toggle" type="button" title="Toggle priority swimlanes">
+          ⊞ Swimlanes (off)
+        </button>
+      </div>
+      <div class="kanban-board">
+        ${lanes.map(lane => {
+          const laneProjects = projects.filter(p => p.status === lane.status);
+          const laneTotalCount = getLaneProjectCount(lane.status);
+          const limit = wipLimits[lane.status];
+          const countClass = limit
+            ? (laneTotalCount > limit ? ' limit-exceeded' : (laneTotalCount === limit ? ' limit-reached' : ''))
+            : '';
+          const countLabel = limit ? `${laneTotalCount}/${limit}` : `${laneTotalCount}`;
+          return `
+            <section class="kanban-lane lane-${lane.status}" data-status="${lane.status}">
+              <div class="kanban-lane-header">
+                <span class="kanban-lane-title">${lane.label}</span>
+                <div class="kanban-lane-meta">
+                  <span class="kanban-lane-count${countClass}">${countLabel}</span>
+                  <label class="kanban-lane-limit">
+                    WIP
+                    <input
+                      type="number"
+                      min="1"
+                      step="1"
+                      inputmode="numeric"
+                      class="kanban-limit-input"
+                      data-lane-limit-status="${lane.status}"
+                      value="${limit ?? ''}"
+                      placeholder="∞"
+                      aria-label="WIP limit for ${lane.label}">
+                  </label>
+                </div>
               </div>
-            </div>
-            <div class="kanban-lane-body">
-              ${laneProjects.length > 0
-                ? laneProjects.map(function(p) { return renderProjectCard(p, { compact: true }); }).join('')
-                : '<div class="kanban-empty">Drop a project here</div>'}
-            </div>
-          </section>
-        `;
-      }).join('')}
+              ${lane.status === 'completed' && completedThisWeek > 0
+                ? `<div class="lane-throughput">${completedThisWeek} completed this week</div>`
+                : ''}
+              <div class="kanban-lane-body">
+                ${laneProjects.length > 0
+                  ? laneProjects.map(function(p) { return renderProjectCard(p, { compact: true }); }).join('')
+                  : '<div class="kanban-empty">Drop a project here</div>'}
+              </div>
+            </section>
+          `;
+        }).join('')}
+      </div>
     </div>
   `;
 }
