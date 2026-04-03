@@ -386,6 +386,21 @@ Open settings with `Cmd+,` (Mac) or `Ctrl+,` (Windows/Linux).
 **Step 3: Done**
 - Tell your team: "Toggle Personal / Team in the top nav bar"
 
+### Solo to Team Transition
+
+**Starting solo? You can upgrade to a team at any time.** There's no separate account type — any solo user can instantly become a team account:
+
+1. **Create a team** — Settings → Team → enter a team name → click "Create Team"
+2. **Invite teammates** — Click "Add Member" and enter usernames (they must be registered and admin-approved)
+3. **Start collaborating** — Toggle Team mode and see all team members' projects
+4. **Existing projects carry over** — Your solo work stays in the same place; teammates just gain visibility
+
+**Key points:**
+- No data migration needed — your projects don't move
+- You stay in Personal mode for focused work; toggle to Team mode for standups
+- You can only belong to one team (leave/delete the current team to create a new one)
+- Team owner is the person who created the team (can delete or add/remove members)
+
 ### Workspace Toggle: Personal vs. Team
 
 Each user controls their own view independently:
