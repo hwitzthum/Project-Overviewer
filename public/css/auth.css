@@ -129,7 +129,7 @@ body {
   width: 26px;
   height: 26px;
   fill: none;
-  stroke: #fff;
+  stroke: var(--text-on-accent);
   stroke-width: 2;
   stroke-linecap: round;
   stroke-linejoin: round;
@@ -257,7 +257,7 @@ body {
   width: 100%;
   padding: 13px 20px;
   background: var(--accent);
-  color: #fff;
+  color: var(--text-on-accent);
   border: none;
   border-radius: var(--radius-sm);
   font-family: 'DM Sans', sans-serif;
@@ -320,14 +320,14 @@ body {
 }
 
 .auth-message.error {
-  background: rgba(255, 59, 48, 0.08);
-  border: 1px solid rgba(255, 59, 48, 0.15);
+  background: rgba(var(--danger-rgb), 0.08);
+  border: 1px solid rgba(var(--danger-rgb), 0.15);
   color: var(--danger);
 }
 
 .auth-message.success {
-  background: rgba(52, 199, 89, 0.08);
-  border: 1px solid rgba(52, 199, 89, 0.15);
+  background: rgba(var(--success-rgb), 0.08);
+  border: 1px solid rgba(var(--success-rgb), 0.15);
   color: var(--success);
 }
 

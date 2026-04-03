@@ -336,13 +336,13 @@
     }
 
     .kanban-lane .card-aging-mild {
-      border-left: 3px solid rgba(255, 149, 0, 0.6);
-      background: rgba(255, 149, 0, 0.04);
+      border-left: 3px solid rgba(var(--warning-rgb), 0.6);
+      background: rgba(var(--warning-rgb), 0.04);
     }
 
     .kanban-lane .card-aging-stale {
-      border-left: 3px solid rgba(255, 59, 48, 0.6);
-      background: rgba(255, 59, 48, 0.04);
+      border-left: 3px solid rgba(var(--danger-rgb), 0.6);
+      background: rgba(var(--danger-rgb), 0.04);
     }
 
     .card-blocked-badge {
@@ -350,9 +350,9 @@
       align-items: center;
       gap: 3px;
       font-size: 0.65rem;
-      background: rgba(255, 59, 48, 0.12);
+      background: rgba(var(--danger-rgb), 0.12);
       color: var(--danger);
-      border: 1px solid rgba(255, 59, 48, 0.25);
+      border: 1px solid rgba(var(--danger-rgb), 0.25);
       border-radius: 10px;
       padding: 1px 6px;
       white-space: nowrap;
@@ -373,15 +373,15 @@
     }
 
     .card-cycle-time.cycle-warn {
-      background: rgba(255, 149, 0, 0.1);
+      background: rgba(var(--warning-rgb), 0.1);
       color: var(--warning);
-      border-color: rgba(255, 149, 0, 0.3);
+      border-color: rgba(var(--warning-rgb), 0.3);
     }
 
     .card-cycle-time.cycle-danger {
-      background: rgba(255, 59, 48, 0.1);
+      background: rgba(var(--danger-rgb), 0.1);
       color: var(--danger);
-      border-color: rgba(255, 59, 48, 0.3);
+      border-color: rgba(var(--danger-rgb), 0.3);
     }
 
     .kanban-dragging .kanban-lane:not(.drop-zone) {
@@ -419,14 +419,14 @@
 
     .kanban-lane-count.limit-reached {
       color: var(--warning);
-      border-color: rgba(255, 149, 0, 0.4);
-      background: rgba(255, 149, 0, 0.14);
+      border-color: rgba(var(--warning-rgb), 0.4);
+      background: rgba(var(--warning-rgb), 0.14);
     }
 
     .kanban-lane-count.limit-exceeded {
       color: var(--danger);
-      border-color: rgba(255, 59, 48, 0.4);
-      background: rgba(255, 59, 48, 0.14);
+      border-color: rgba(var(--danger-rgb), 0.4);
+      background: rgba(var(--danger-rgb), 0.14);
     }
 
     .kanban-lane-meta {
@@ -477,7 +477,7 @@
       text-align: center;
       padding: 4px 8px;
       margin-bottom: 6px;
-      background: rgba(52, 199, 89, 0.08);
+      background: rgba(var(--success-rgb), 0.08);
       border-radius: var(--radius-sm);
       font-weight: 500;
     }
@@ -577,7 +577,7 @@
     }
 
     .owner-avatar.is-mine {
-      background: rgba(52, 199, 89, 0.8);
+      background: rgba(var(--success-rgb), 0.8);
     }
 
     /* Project Drag Handle */
@@ -660,7 +660,7 @@
       outline: none;
       background: var(--bg-primary);
       border-color: var(--accent);
-      box-shadow: 0 0 0 2px rgba(0, 122, 255, 0.2);
+      box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.2);
     }
 
     .project-status {
@@ -677,12 +677,12 @@
     }
 
     .status-in-progress {
-      background: rgba(0, 122, 255, 0.15);
+      background: rgba(var(--accent-rgb), 0.15);
       color: var(--accent);
     }
 
     .status-completed {
-      background: rgba(52, 199, 89, 0.15);
+      background: rgba(var(--success-rgb), 0.15);
       color: var(--success);
     }
 
@@ -692,7 +692,7 @@
     }
 
     .status-archived {
-      background: rgba(120, 120, 120, 0.15);
+      background: rgba(var(--text-tertiary-rgb), 0.15);
       color: var(--text-secondary);
     }
 
@@ -718,7 +718,7 @@
     }
 
     .project-delete-btn:hover {
-      background: rgba(255, 59, 48, 0.1);
+      background: rgba(var(--danger-rgb), 0.1);
       color: var(--danger);
     }
 
@@ -1542,7 +1542,7 @@
     .modal-overlay {
       position: fixed;
       inset: 0;
-      background: rgba(0, 0, 0, 0.5);
+      background: var(--overlay);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -1909,7 +1909,7 @@
     .drop-zone {
       border: 2px dashed var(--accent);
       border-radius: var(--radius-md);
-      background: rgba(0, 122, 255, 0.05);
+      background: rgba(var(--accent-rgb), 0.05);
     }
 
     /* ========== Accessibility ========== */
@@ -1977,7 +1977,7 @@
       height: 28px;
       border-radius: 50%;
       background: var(--accent);
-      color: #fff;
+      color: var(--text-on-accent);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -2059,7 +2059,7 @@
 
     .workspace-toggle-btn.active {
       background: var(--accent);
-      color: #fff;
+      color: var(--text-on-accent);
     }
 
     .workspace-toggle-btn:hover:not(.active) {
@@ -2080,7 +2080,7 @@
     }
 
     .project-owner-badge.is-mine {
-      background: rgba(52, 199, 89, 0.1);
+      background: rgba(var(--success-rgb), 0.1);
       color: var(--success);
     }
 
@@ -2112,7 +2112,7 @@
       height: 28px;
       border-radius: 50%;
       background: var(--accent);
-      color: #fff;
+      color: var(--text-on-accent);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -2140,7 +2140,7 @@
 
     .team-member-remove {
       padding: 4px 8px;
-      border: 1px solid rgba(255,59,48,0.3);
+      border: 1px solid rgba(var(--danger-rgb), 0.3);
       border-radius: var(--radius-sm);
       background: transparent;
       color: var(--danger);
@@ -2149,7 +2149,7 @@
     }
 
     .team-member-remove:hover {
-      background: rgba(255,59,48,0.08);
+      background: rgba(var(--danger-rgb), 0.08);
     }
 
     .team-invite-row {
@@ -2173,7 +2173,7 @@
       border: none;
       border-radius: var(--radius-sm);
       background: var(--accent);
-      color: #fff;
+      color: var(--text-on-accent);
       font-size: 13px;
       cursor: pointer;
     }
