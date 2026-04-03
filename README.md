@@ -49,6 +49,7 @@ If you're tired of subscription-based project management tools that:
 - Full-text search across titles and descriptions
 - Tags for flexible organization
 - Drag-and-drop reordering
+- **Hierarchical tasks** with subtask support
 
 🎯 **Kanban Board with WIP Limits** *(New)*
 - Visual pipeline with four drag-and-drop lanes
@@ -69,6 +70,11 @@ If you're tired of subscription-based project management tools that:
 - Email documents with rich metadata
 - `.docx` file uploads and downloads
 - Per-project document library
+
+🔗 **Webhooks & Real-Time Collaboration** *(New)*
+- Outgoing webhooks for external integrations (events: created, updated, deleted)
+- Real-time updates via WebSocket (multiplayer editing, live project sync)
+- Event-driven architecture with pub/sub messaging
 
 ⚙️ **Personalization**
 - Five themes (Light, Dark, Ocean, Forest, Auto)
@@ -164,7 +170,7 @@ Open **http://localhost:3001** and log in with your admin credentials.
 - ✅ **Tests**: 93 Playwright E2E tests (auth, CRUD, RBAC, security)
 - 📖 **Documentation**: Fully documented codebase + architecture guide
 
-**Total lines of code:** ~2500 (frontend + backend). Understand it in an afternoon.
+**Total lines of code:** ~6000 across modular routes and utilities. Still understand it in a day or two.
 
 ---
 
@@ -201,10 +207,20 @@ TRUST_PROXY=1  # If behind a reverse proxy
 
 **Important:** In production, cookies require HTTPS (`Secure` flag) and rate limiting is fully enforced.
 
+### Building & Development
+
+The frontend is bundled with esbuild for optimization. A build runs automatically before start/test:
+
+```bash
+npm run build                               # Build frontend bundles
+npm start                                   # Start server (runs build first)
+npm run dev                                 # Development mode (same as start)
+```
+
 ### Running Tests
 
 ```bash
-npm test                                    # Run all 93 E2E tests
+npm test                                    # Run all E2E tests (builds first)
 npm run test:ui                             # Interactive Playwright UI
 npx playwright test --headed                # Watch tests in browser
 npx playwright test tests/e2e/auth.spec.js  # Single test file
@@ -410,12 +426,14 @@ Project Overviewer is **intentionally simple**. It prioritizes:
 
 | Layer | Technology | Why |
 |-------|-----------|-----|
-| **Frontend** | Vanilla JavaScript (16 modules, no bundler) | No build overhead; explicit dependency graph |
-| **Backend** | Express.js (one organized file) | Simple; easy to trace; no DI/IoC magic |
+| **Frontend** | Vanilla JavaScript (16 modules, esbuild) | No framework overhead; explicit dependency graph; bundled for optimization |
+| **Backend** | Express.js (modular routes) | Clean separation by domain (auth, projects, tasks, etc.); easy to extend |
 | **Database** | SQLite with WAL mode | Reliable, concurrent, zero setup |
-| **Auth** | Session tokens (Bearer + HttpOnly) | Stateful; simple; compatible with browsers |
+| **Auth** | Session tokens (Bearer + HttpOnly) | Stateful; simple; compatible with browsers; security event logging |
+| **Real-time** | WebSocket + event bus | Multiplayer editing, live project sync |
+| **Webhooks** | Outgoing event dispatch | External integrations, automation |
 | **Validation** | Zod | Runtime type safety on all inputs |
-| **Security** | Helmet, rate limiting, bcrypt | Defense-in-depth at every layer |
+| **Security** | Helmet, rate limiting, bcrypt, password policy | Defense-in-depth at every layer |
 
 ### System Architecture
 
@@ -464,15 +482,38 @@ No bundler. No build step. Just plain `<script>` tags in dependency order:
 
 **Total: ~2500 lines of code across frontend + backend.**
 
-### Backend: Single Organized File
+### Backend: Modular Route Structure
 
-**server.js** contains:
+**server.js** orchestrates the application:
 - Middleware stack (Helmet, rate limiting, auth, Zod validation)
-- All REST API endpoints (auth, projects, tasks, teams, settings)
-- Session management
-- Error handling
+- Express app initialization and route registration
+- WebSocket server setup
+- Webhook dispatcher initialization
 
-**Why one file?** At this scale, it's faster to navigate than a split router/controller structure. If the app grows significantly, split by domain (auth, projects, teams) naturally.
+**Routes** (separated by domain):
+- `routes/auth.js` — authentication and session management
+- `routes/admin.js` — admin panel, user management, global settings
+- `routes/projects.js` — project CRUD and reordering
+- `routes/tasks.js` — task CRUD, subtasks, dependencies
+- `routes/teams.js` — team creation, membership, workspace mode
+- `routes/documents.js` — document attachments, downloads
+- `routes/settings.js` — per-user settings (theme, view, sort)
+- `routes/export-import.js` — data portability
+- `routes/notes.js` — quick notes (scratch pad)
+- `routes/templates.js` — project templates
+- `routes/webhooks.js` — webhook management and delivery
+
+**Utilities:**
+- `database.js` — SQLite abstraction with `waitForDb()` pattern
+- `logger.js` — Pino structured logging
+- `password-policy.js` — password validation rules
+- `security-events.js` — security event logging and token fingerprinting
+- `session-config.js` — session timeout configuration
+- `event-bus.js` — pub/sub for real-time updates
+- `webhook-dispatcher.js` — event-driven webhook delivery
+- `app-constants.js` — allowlisted settings, webhook events
+
+**Why modular routes?** Easier to navigate, extend, and test. Each domain is self-contained.
 
 ### Database: 10 Tables, User-Scoped Queries
 
@@ -562,6 +603,26 @@ PUT /api/admin/users/:id/role           Change user role
 DELETE /api/admin/users/:id             Delete user
 ```
 
+### Documents
+
+```
+GET /api/projects/:projectId/documents        List documents for project
+POST /api/projects/:projectId/documents       Create document (email or docx)
+DELETE /api/documents/:id                     Delete document
+GET /api/documents/:id/download               Download document file
+```
+
+### Webhooks
+
+```
+GET /api/webhooks                             List all webhooks (auth required)
+POST /api/webhooks                            Create webhook (auth required)
+PUT /api/webhooks/:id                         Update webhook
+DELETE /api/webhooks/:id                      Delete webhook
+
+Events: project.created, project.updated, project.deleted, task.created, task.updated, task.deleted
+```
+
 ### Health
 
 ```
@@ -648,14 +709,16 @@ We welcome contributions! Here's how:
 
 ## Roadmap
 
-- [ ] Real-time collaboration (WebSocket + operational transform)
+- [x] Real-time collaboration (WebSocket + event bus)
+- [x] Webhooks for external integrations
+- [x] Hierarchical tasks (subtasks)
+- [x] Project templates
 - [ ] Recurring projects and tasks
-- [ ] Project templates (advanced)
 - [ ] Custom fields per project
-- [ ] Webhooks for external integrations
 - [ ] Mobile app (React Native)
-- [ ] Dark mode enhancements
+- [ ] Advanced automation (IFTTT-style rules)
 - [ ] Bulk import/export tools
+- [ ] Team roles and permissions (beyond owner/member)
 
 ---
 
