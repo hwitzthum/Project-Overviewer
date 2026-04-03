@@ -2253,19 +2253,23 @@
     .swimlane-row-label {
       display: flex;
       align-items: center;
-      justify-content: flex-end;
-      padding-right: 8px;
-      font-size: 11px;
-      font-weight: 600;
+      justify-content: center;
+      font-size: 10px;
+      font-weight: 700;
       text-transform: uppercase;
-      letter-spacing: 0.3px;
+      letter-spacing: 0.5px;
+      writing-mode: vertical-rl;
+      transform: rotate(180deg);
       color: var(--text-tertiary);
+      background: transparent;
+      border-radius: var(--radius-sm);
+      padding: 4px 0;
     }
 
-    .swimlane-row-label.priority-high { color: var(--danger); }
-    .swimlane-row-label.priority-medium { color: var(--warning); }
-    .swimlane-row-label.priority-low { color: var(--success); }
-    .swimlane-row-label.priority-none { color: var(--text-tertiary); }
+    .swimlane-row-label.priority-high { color: var(--danger); background: transparent; }
+    .swimlane-row-label.priority-medium { color: var(--warning); background: transparent; }
+    .swimlane-row-label.priority-low { color: var(--success); background: transparent; }
+    .swimlane-row-label.priority-none { color: var(--text-tertiary); background: transparent; }
 
     .swimlane-cell {
       border-radius: var(--radius-md);

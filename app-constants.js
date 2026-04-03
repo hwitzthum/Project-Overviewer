@@ -1,6 +1,7 @@
 const VALID_SETTINGS_KEYS = [
   'theme',
   'defaultView',
+  'lastView',
   'sortBy',
   'showCompleted',
   'showArchived',
