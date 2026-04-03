@@ -13,7 +13,8 @@ function flattenAllTasks(tasks) {
   return result;
 }
 
-function renderProjectCard(project) {
+function renderProjectCard(project, options) {
+  var compact = options && options.compact;
   const dueInfo = formatDate(project.dueDate);
   const effectivePriority = project.status === 'backlog' ? 'none' : (project.priority || 'none');
   const allTasks = flattenAllTasks(project.tasks || []);
@@ -23,8 +24,27 @@ function renderProjectCard(project) {
   const isArchived = project.archived;
   const disabledAttr = isArchived ? 'disabled' : '';
 
+  if (compact) {
+    return `
+      <div class="project-card project-card-compact${selectedProjectId === project.id ? ' selected' : ''}" data-id="${project.id}" draggable="true">
+        <span class="project-drag-handle" title="Drag to move">⋮⋮</span>
+        <div class="project-priority priority-${effectivePriority}"></div>
+        <span class="project-card-compact-title">${escapeHtml(project.title)}</span>
+        <span class="project-status status-${project.status}">${formatStatus(project.status)}</span>
+        ${totalTasks > 0 ? `<span class="project-meta-item">✓ ${completedTasks}/${totalTasks}</span>` : ''}
+        ${project.dueDate ? `<span class="project-meta-item project-due${dueInfo.overdue ? ' overdue' : ''}">📅 ${dueInfo.text}</span>` : ''}
+        ${currentWorkspaceMode === 'team' && project.user_id && currentUserId ? `
+          <span class="project-owner-badge ${project.user_id === currentUserId ? 'is-mine' : ''}">
+            ● ${escapeHtml(project.ownerName || 'Unknown')}
+          </span>
+        ` : ''}
+      </div>
+    `;
+  }
+
   return `
     <div class="project-card${isArchived ? ' archived' : ''}${selectedProjectId === project.id ? ' selected' : ''}" data-id="${project.id}" draggable="${isArchived ? 'false' : 'true'}">
+      <span class="project-drag-handle" title="Drag to reorder">⋮⋮</span>
       <div class="project-card-header">
         <div class="project-priority priority-${effectivePriority}"></div>
         <input type="text" class="project-title" value="${escapeHtml(project.title)}"
@@ -587,7 +607,7 @@ function renderKanbanBoard(projects) {
             </div>
             <div class="kanban-lane-body">
               ${laneProjects.length > 0
-                ? laneProjects.map(renderProjectCard).join('')
+                ? laneProjects.map(function(p) { return renderProjectCard(p, { compact: true }); }).join('')
                 : '<div class="kanban-empty">Drop a project here</div>'}
             </div>
           </section>
@@ -618,7 +638,8 @@ function patchProjectCard(projectId) {
   var existingCard = document.querySelector('.project-card[data-id="' + projectId + '"]');
   if (!existingCard) return false;
 
-  var newCard = htmlToElement(renderProjectCard(project));
+  var opts = currentView === 'kanban' ? { compact: true } : undefined;
+  var newCard = htmlToElement(renderProjectCard(project, opts));
   existingCard.replaceWith(newCard);
   return true;
 }
@@ -631,7 +652,7 @@ function moveKanbanCard(projectId, prevStatus) {
   var existingCard = document.querySelector('.project-card[data-id="' + projectId + '"]');
   if (!existingCard) return false;
 
-  var newCard = htmlToElement(renderProjectCard(project));
+  var newCard = htmlToElement(renderProjectCard(project, { compact: true }));
 
   if (prevStatus === newStatus) {
     existingCard.replaceWith(newCard);
@@ -686,7 +707,8 @@ function addProjectCardToDOM(projectId) {
   var isVisible = filteredProjects.some(function(p) { return p.id === projectId; });
   if (!isVisible) return true;
 
-  var newCard = htmlToElement(renderProjectCard(project));
+  var opts = currentView === 'kanban' ? { compact: true } : undefined;
+  var newCard = htmlToElement(renderProjectCard(project, opts));
 
   if (currentView === 'kanban') {
     var lane = document.querySelector('.kanban-lane[data-status="' + project.status + '"] .kanban-lane-body');

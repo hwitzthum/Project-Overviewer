@@ -178,77 +178,169 @@ npx playwright test tests/e2e/auth.spec.js    # Single spec file
 
 ---
 
-## Using Project Overviewer
+## User Guide
 
-### Solo Use
+### Solo Use: Personal Task Management
 
-**Day one setup:**
+Project Overviewer works perfectly for an individual managing their own projects and tasks. Here's how to get started and stay organized.
 
-1. Log in with your admin account at `http://localhost:3001`
-2. Press `N` or click **+ New Project** to create your first project
-3. Open it and fill in the details: status, priority, due date, description, tags
-4. Add tasks at the bottom of the project modal — press Enter after each one
+#### Getting Started
 
-**Staying on top of your work:**
+1. **Log in** with your admin credentials at `http://localhost:3001`
+2. Press `N` (or click **+ New Project**) to create your first project
+3. Fill in the project details:
+   - **Title** — what you're working on
+   - **Status** — backlog, not-started, in-progress, or completed
+   - **Priority** — high, medium, low, or none (color-coded for quick scanning)
+   - **Due Date** — optional, used for smart filters and sorting
+   - **Description** — any notes, context, or acceptance criteria
+   - **Tags** — free-form labels for organization (e.g., `urgent`, `research`, `cleanup`)
+4. Add tasks directly in the project modal — press Enter after each one
 
-- Use the **Overdue** and **Due Today** sidebar filters each morning to see what needs attention
-- The **Kanban view** gives a visual pipeline — drag a project card from `not-started` across to `completed` as it progresses
-- **Archive** projects when they're done so your active list stays clean (use "Show Archived" to revisit them)
-- Press `Cmd+K` to open the command palette for fast navigation without switching hands from the keyboard
-- The **Statistics** view (`Cmd+I`) shows an instant health check of your project portfolio
+#### Daily Workflow
 
-**Keyboard shortcuts:**
+**Every morning:**
+- Check the **Overdue** and **Due Today** sidebar filters to see what needs immediate attention
+- Mark completed tasks and projects as you finish them
+
+**During the day:**
+- Use the **Kanban view** to see your work pipeline at a glance — drag projects across lanes as status changes
+- Press `/` to quickly search for a project by name or description
+- Use **Focus view** to see your highest-priority in-progress work
+
+**During planning:**
+- Switch to **Kanban** or **All Projects** view and sort by **due date** or **priority** to plan your week
+- Filter by **Due This Week** to see your commitments
+- Tag related projects so you can filter them together (e.g., all sprint tasks, all Q1 goals)
+
+**When projects are done:**
+- Mark them as completed
+- **Archive** them (Settings → show archived projects) to keep your active list focused
+- Your statistics dashboard (`Cmd+I`) updates automatically
+
+#### Keyboard Shortcuts
+
+For faster navigation without reaching for the mouse:
 
 | Shortcut | Action |
 |----------|--------|
 | `N` | New project |
-| `Cmd+K` / `Ctrl+K` | Command palette |
-| `/` | Focus search |
-| `Cmd+I` / `Ctrl+I` | Statistics |
-| `Cmd+,` / `Ctrl+,` | Settings |
-| `Esc` | Close modal |
+| `Cmd+K` / `Ctrl+K` | Command palette (search, navigate, change theme) |
+| `/` | Focus search bar |
+| `Cmd+I` / `Ctrl+I` | Show statistics |
+| `Cmd+,` / `Ctrl+,` | Open settings |
+| `Esc` | Close modal or dialog |
 | `?` | Show all shortcuts |
 
-**Backing up your data:**
+#### Data Backup and Portability
 
-Open Settings and click **Export Data** to download a full JSON backup. Store it somewhere safe. You can import it at any time to restore your workspace.
+Your data is yours. Back it up anytime:
+
+1. Go to **Settings → Export Data**
+2. Download a full JSON export of all your projects, tasks, and settings
+3. Store it in a safe place (external drive, cloud storage, etc.)
+4. To restore: go to **Settings → Import Data** and upload the JSON file
+
+This also makes it easy to migrate your workspace to a different machine or share a snapshot with a colleague.
 
 ---
 
-### Team Use
+### Team Use: Collaboration & Shared Visibility
 
-**Step 1 — Register your teammates**
+Project Overviewer supports teams of any size. Each team member creates and manages their own projects, but everyone can see all work when they want to — perfect for stand-ups, planning sessions, and cross-functional visibility.
 
-Have each team member go to `/register` and create an account. You (the admin) approve them from the **Admin Panel** at `/admin.html`.
+#### Team Setup (Admin)
 
-**Step 2 — Create and populate a team**
+As the admin, set up your team once:
 
+**Step 1: Register teammates**
+1. Each team member goes to **http://localhost:3001/register** and creates an account
+2. You receive a notification of pending users (check Admin Panel at `/admin.html`)
+3. Click **Approve** next to each username to allow them to log in
+   - Optionally promote a team member to `admin` if needed for management duties
+
+**Step 2: Create a team**
 1. Log in and go to **Settings → Team**
-2. Click **Create Team** and give it a name
-3. Click **Add Member** and enter each teammate's username
+2. Click **Create Team** and name it (e.g., "Product Team", "Backend Squad")
+3. Click **Add Member** and enter each approved user's username
+4. Repeat for each team member you want to include
 
-**Step 3 — Switch to Team view**
+**Step 3: Notify your team**
+Send each member a message saying:
+> "You're added to the team! Toggle the Personal / Team button in the top nav bar to switch between your own projects and everyone's."
 
-Each user has a **Personal / Team** toggle in the top navigation bar.
+#### Team Workflow
 
-- **Team mode**: shows all projects owned by every team member — great for stand-ups, planning, and shared visibility
-- **Personal mode**: shows only your own projects — great for focused individual work
+**For individual contributors:**
+- Each person creates their own projects in **Personal mode** — you own them, you're accountable
+- Set the **Stakeholder** field to indicate who needs the work (requestor, consumer, etc.)
+- Use **Tags** to label by initiative, sprint, or domain (e.g., `Q2-roadmap`, `backend`, `security`)
+- When you toggle to **Team mode**, you see all projects from all team members — great for awareness and blockers
 
-The toggle is per-user and persisted as a setting, so everyone controls their own view independently.
+**For team leads / managers:**
+1. During daily standups or planning, everyone toggles **Team mode**
+2. The **Kanban view** shows all work across the team in a single pipeline
+3. Filter by:
+   - **Status**: see everything blocked, in-progress, or completed
+   - **Priority**: focus on high-priority work
+   - **Tags**: see a specific initiative (e.g., filter `sprint-12` to see all sprint work)
+   - **Stakeholder**: see work owned by specific people
+4. The **Statistics dashboard** shows:
+   - Total projects across the team
+   - Breakdown by status (how much is in progress vs. done)
+   - Task completion percentage
+   - Distribution across team members
 
-**A practical team workflow:**
+**For visibility and cross-functional work:**
+- Marketing can see engineering projects (and their status) to plan launch timelines
+- Backend can see frontend blockers and adjust priorities
+- Everyone can see upcoming deadlines and spot conflicts early
 
-1. Each person creates and owns their own projects — they are the accountable party
-2. Set the **Stakeholder** field to identify who requested or depends on each project
-3. Tag projects by initiative, quarter, or sprint: `Q2-2025`, `backend`, `sprint-12`
-4. During stand-ups, everyone switches to Team view — the Kanban shows all work in one pipeline
-5. Use tag and stakeholder filters to focus the view: "show me everything tagged `backend` owned by anyone"
-6. The admin configures global limits (max projects per user) in the Admin Panel to keep the workspace manageable
+#### Workspace Toggle: Personal vs. Team
 
-**Admin responsibilities during team operation:**
-- Check the Admin Panel weekly for pending user registrations
-- Use **Global Settings** to pause new registrations once the team is fully onboarded
-- Remove users from the admin panel if they leave — their projects remain and can be reassigned
+Each user has a **Personal / Team** button in the top navigation bar. This toggle is **per-user and independent**:
+
+| Mode | What You See | Best For |
+|------|--------------|----------|
+| **Personal** | Only your own projects | Focused individual work, avoiding distractions |
+| **Team** | All team members' projects | Stand-ups, planning, dependency identification, cross-functional awareness |
+
+When you change your workspace mode, only *your* view changes — it doesn't affect your teammates.
+
+#### Best Practices for Team Success
+
+1. **Naming**: Use consistent naming so projects are searchable
+   - ✅ "Fix widget rendering perf"
+   - ❌ "Thing"
+
+2. **Tags**: Create a team tagging convention and stick to it
+   - Examples: `Q2-2025`, `backend`, `frontend`, `devops`, `blocked`, `waiting-on-external`
+   - Filter by multiple tags to slice views (e.g., all Q2 backend work)
+
+3. **Stakeholders**: Use this field to route visibility
+   - "Who cares about this project?" — set them as stakeholder
+   - During team view, filter by stakeholder to see your slice of work
+
+4. **Status updates**: Encourage daily or weekly updates during team mode
+   - Moving a project from `in-progress` to `completed` is instant feedback to the whole team
+   - The **recently updated** sort shows activity at a glance
+
+5. **Project limits**: The admin can set global limits in the Admin Panel
+   - Prevents one person from creating 100 half-finished projects
+   - Encourages focus and prioritization
+
+#### Admin Responsibilities
+
+During team operation, stay on top of:
+
+1. **User approvals**: Check the Admin Panel (`/admin.html`) weekly for pending registrations
+2. **Global settings** (`/admin.html → Global Settings`):
+   - Toggle `registrationEnabled` off once your team is fully onboarded (prevents random signups)
+   - Set `maxProjectsPerUser` to encourage focus (e.g., 50 per person)
+   - Customize `siteName` to show your team or org name
+3. **User offboarding**: If someone leaves, delete them from Admin Panel
+   - Their projects remain and can be reassigned if needed
+4. **Role management**: Promote trusted team members to `admin` if you need help managing users
 
 ---
 

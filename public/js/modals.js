@@ -218,10 +218,7 @@ function saveProjectEdits(projectId) {
   if (existingProject && status !== existingProject.status) {
     const wipCheck = canAssignProjectToStatus(status, projectId);
     if (!wipCheck.allowed) {
-      showToast(`WIP limit reached for ${status} (${wipCheck.count}/${wipCheck.limit})`, 'error');
-      document.getElementById('editStatus').value = existingProject.status;
-      updatePriorityControls('editStatus', 'editPriority', 'editPriorityGroup');
-      return;
+      showToast(`WIP limit exceeded for ${status} (${wipCheck.count + 1}/${wipCheck.limit})`, 'warning', { duration: 5000 });
     }
   }
 
@@ -274,9 +271,7 @@ async function updateProjectHomeField(projectId, field, rawValue) {
     if (status !== project.status) {
       const wipCheck = canAssignProjectToStatus(status, projectId);
       if (!wipCheck.allowed) {
-        showToast(`WIP limit reached for ${status} (${wipCheck.count}/${wipCheck.limit})`, 'error');
-        render();
-        return;
+        showToast(`WIP limit exceeded for ${status} (${wipCheck.count + 1}/${wipCheck.limit})`, 'warning', { duration: 5000 });
       }
     }
     updates.status = status;

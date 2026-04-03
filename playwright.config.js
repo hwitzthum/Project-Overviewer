@@ -21,7 +21,7 @@ module.exports = defineConfig({
     screenshot: 'only-on-failure',
   },
   webServer: {
-    command: 'rm -f /tmp/project-overviewer-e2e.db /tmp/project-overviewer-e2e.db-wal /tmp/project-overviewer-e2e.db-shm && env -u NO_COLOR NODE_ENV=test ADMIN_USER=testadmin ADMIN_PASS=SecureTestPass123 PORT=3099 TURSO_DATABASE_URL=file:/tmp/project-overviewer-e2e.db SECURITY_LOG_PATH=/tmp/project-overviewer-security.log node server.js',
+    command: 'rm -f /tmp/project-overviewer-e2e.db /tmp/project-overviewer-e2e.db-wal /tmp/project-overviewer-e2e.db-shm && env -u NO_COLOR NODE_ENV=test ADMIN_USER=testadmin ADMIN_PASS=SecureTestPass123 PORT=3099 APP_ORIGIN=http://localhost:3099 TURSO_DATABASE_URL=file:/tmp/project-overviewer-e2e.db SECURITY_LOG_PATH=/tmp/project-overviewer-security.log node server.js',
     port: 3099,
     timeout: 15000,
     reuseExistingServer: false,
@@ -30,6 +30,7 @@ module.exports = defineConfig({
       ADMIN_USER: 'testadmin',
       ADMIN_PASS: 'SecureTestPass123',
       PORT: '3099',
+      APP_ORIGIN: 'http://localhost:3099',
       TURSO_DATABASE_URL: 'file:/tmp/project-overviewer-e2e.db',
       SECURITY_LOG_PATH: '/tmp/project-overviewer-security.log',
     },
