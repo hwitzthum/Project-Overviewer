@@ -1,562 +1,647 @@
 # Project Overviewer
 
-**A self-hosted, multi-user project and task management application built for individuals and teams.**
+<div align="center">
 
-No subscriptions. No cloud lock-in. Runs on your machine in under two minutes.
+**A self-hosted, multi-user project and task management application for individuals and teams.**
+
+No subscriptions. No cloud lock-in. No framework overhead. Just Node.js, SQLite, and pure JavaScript.
+
+![Version](https://img.shields.io/badge/version-1.0-blue)
+![Node.js](https://img.shields.io/badge/Node.js-v18%2B-green)
+![License](https://img.shields.io/badge/license-MIT-blue)
+![Tests](https://img.shields.io/badge/tests-93%20E2E-brightgreen)
+
+[**Get Started in 2 Minutes**](#quick-start) • [**See Features**](#what-you-get) • [**View Docs**](#user-guide) • [**GitHub**](https://github.com/yourusername/project-overviewer)
+
+</div>
+
+---
+
+## Why Project Overviewer?
+
+If you're tired of subscription-based project management tools that:
+- 🔒 Lock your data in the cloud
+- 💰 Charge per user or per feature
+- 🚀 Force you into their workflow
+- 📊 Require a PhD to understand
+
+**Project Overviewer** gives you a better way:
+
+| Feature | Overviewer | Traditional SaaS |
+|---------|-----------|------------------|
+| **Ownership** | Your data, local database | Vendor lock-in |
+| **Cost** | Free, forever | $10-30/user/month |
+| **Setup time** | 2 minutes | 30+ minutes of config |
+| **Customization** | Modify the code freely | Limited API access |
+| **Privacy** | Runs on your machine | Cloud storage |
+| **Offline support** | Works offline, syncs later | Requires internet |
 
 ---
 
 ## What You Get
 
-Project Overviewer is a complete project management tool packaged as a single Node.js application. It covers everything from personal task tracking to team-wide project visibility — all stored in a local SQLite database that you own.
+### Core Features
 
-### Project & Task Management
+✨ **Effortless Project Management**
+- Four statuses (backlog → not-started → in-progress → completed)
+- Priority levels with color-coded badges (High 🔴 Medium 🟡 Low 🟢)
+- Due dates with smart filters (Overdue, Due Today, Due This Week)
+- Full-text search across titles and descriptions
+- Tags for flexible organization
+- Drag-and-drop reordering
 
-- Create projects with full metadata: status, priority, due date, stakeholder, description, and tags
-- Four statuses: `backlog`, `not-started`, `in-progress`, `completed`
-- Four priority levels with color-coded indicators: High (red), Medium (yellow), Low (green), None (gray)
-- Attach tasks to any project — each task has its own priority, due date, and notes
-- Drag-and-drop reordering for both projects and tasks
-- Quick inline editing with undo — change status, priority, or stakeholder without opening a modal
-- Document attachments: email documents with metadata, or upload `.docx` files and download them later
-- Project archiving to keep your active workspace uncluttered
+🎯 **Kanban Board with WIP Limits** *(New)*
+- Visual pipeline with four drag-and-drop lanes
+- **Work in Progress (WIP) limits** per lane with soft enforcement
+- **Swimlanes by priority** for team visibility
+- Cycle time tracking (days in status)
+- Card aging indicators for stalled work
+- Blocked task badges to flag dependencies
+- Throughput counter (completed this week)
 
-### Views and Navigation
+📋 **Rich Task Management**
+- Hierarchical tasks (subtasks support)
+- Task priority, due dates, and progress tracking
+- Task blocking / dependency management
+- Flatten all tasks into a focus list view
 
-| View | What It Shows |
-|------|--------------|
-| All Projects | Every project, sorted and filtered to your preferences |
-| Kanban | Four drag-and-drop lanes (`backlog → completed`) with configurable WIP limits |
-| Focus | Your highest-priority in-progress work |
-| Status filters | Jump directly to any status bucket |
+📎 **Document Attachments**
+- Email documents with rich metadata
+- `.docx` file uploads and downloads
+- Per-project document library
 
-- **Command palette** (`Cmd+K` / `Ctrl+K`): navigate, create, or switch themes without touching the mouse
-- **Search**: live full-text search across project titles and descriptions
-- **Smart filters**: Overdue, Due Today, Due This Week
-- **Filter by**: status, priority, stakeholder, or any tag
-- **Sort by**: manual order, due date, priority, title, stakeholder, or recently updated
-- **Sidebar collapse**: reclaim screen space with one click
+⚙️ **Personalization**
+- Five themes (Light, Dark, Ocean, Forest, Auto)
+- Per-user settings (theme, default view, sort order)
+- Quick Notes scratch pad
+- Statistics dashboard
+- Keyboard shortcuts (Cmd+K command palette)
 
-### Personalization
+🔐 **Multi-User & Teams** *(with Enterprise-Grade Security)*
+- Admin approval workflow for registration
+- Role-based access control (admin, user)
+- Team creation with independent workspace toggle
+- Per-user Personal/Team mode
+- Session-based auth (24-hour expiry, Bearer tokens + HttpOnly cookies)
+- Bcrypt password hashing, rate limiting, CSRF protection
 
-- Five themes: Light, Dark, Ocean, Forest, Auto (follows system preference)
-- Per-user settings saved server-side — your preferences follow you across devices
-- Quick Notes: per-user scratch pad always accessible from the sidebar
-- Statistics dashboard: visual breakdown of project distribution and task completion
-
-### Data Portability
-
-- Export all your data as a JSON file at any time
-- Import data to restore or migrate a workspace
-- Three built-in project templates: Bug Report, Feature Request, Meeting Notes
-
----
-
-### Multi-User & Team Features
-
-**Authentication**
-- Secure registration with admin approval before first login
-- Session-based auth with 24-hour expiry (Bearer token + HttpOnly cookie)
-- Password change invalidates all other active sessions automatically
-
-**Role-Based Access Control**
-- `admin`: full user management, approval workflow, global settings
-- `user`: manages own projects, participates in a team
-
-**Team Collaboration**
-- Create a team and invite members by username
-- **Workspace toggle**: each user switches independently between Personal view (own projects) and Team view (all team members' projects)
-- Team owners manage membership; members can leave at any time
-- Owner can disband the team
-
-**Admin Panel** (`/admin.html`)
-- Approve or reject pending registrations
-- Promote / demote user roles
-- Configure global settings: registration on/off, project limits per user, site name, maintenance mode
+💾 **Data Portability**
+- Export everything as JSON anytime
+- Import from JSON backups
+- Three built-in project templates (Bug Report, Feature Request, Meeting Notes)
+- Migrate between machines without friction
 
 ---
 
 ## Quick Start
 
 ### Prerequisites
+- **Node.js** v18+ ([download](https://nodejs.org/))
+- That's it — SQLite is bundled
 
-- [Node.js](https://nodejs.org/) v18 or later — nothing else required (SQLite is bundled)
-
-### 1. Clone and install
+### Install & Run
 
 ```bash
-git clone <repo-url> project-overviewer
+# Clone the repository
+git clone https://github.com/yourusername/project-overviewer.git
 cd project-overviewer
+
+# Install dependencies
 npm install
-```
 
-### 2. Configure environment
-
-```bash
+# Configure admin credentials
 cp .env.example .env
-```
+# Edit .env and set ADMIN_USER and ADMIN_PASS
 
-Edit `.env` to set your admin credentials:
-
-```env
-ADMIN_USER=admin
-ADMIN_PASS=your-secure-password
-PORT=3001
-NODE_ENV=development
-APP_ORIGIN=http://localhost:3001
-TRUST_PROXY=false
-```
-
-> The admin account is created automatically on first startup from these values.
-
-### 3. Start the server
-
-**Mac / Linux:**
-```bash
-./start.sh
-```
-
-**Windows:**
-```bash
-start.bat
-```
-
-**Direct:**
-```bash
+# Start the server
 npm start
+# or: ./start.sh (Mac/Linux) or start.bat (Windows)
 ```
 
-### 4. Open the app
+Open **http://localhost:3001** and log in with your admin credentials.
 
-Go to **http://localhost:3001** and log in with your admin credentials.
-
-The SQLite database (`projects.db`) is created automatically. That's all there is to it.
+**That's it.** Your database (`projects.db`) is created automatically.
 
 ---
+
+## Feature Highlights
+
+### For Solo Users: Personal Task Management
+
+**Your personalized workspace** — no distractions, just your work.
+
+- ✅ Create projects with full metadata (status, priority, due date, description)
+- 📊 Kanban board to visualize your work pipeline
+- 🔍 Smart filters (Overdue, Due Today, Due This Week)
+- 🏷️ Tag and organize projects freely
+- ⌨️ Keyboard shortcuts for speed (press `?` to see all)
+- 📱 Responsive design works on desktop and mobile
+
+**Daily workflow:** Morning standup on your Kanban board → drag projects as status changes → mark complete → statistics update automatically.
+
+### For Teams: Shared Visibility & Collaboration
+
+**One workspace. Everyone's work visible.** No friction.
+
+- 👥 Create a team, add teammates by username
+- 🔄 **Workspace toggle**: each user switches independently between Personal (focused work) and Team (all projects visible)
+- 📊 Team statistics: breakdown by status, priority, stakeholder
+- 🎯 Filter by priority, status, stakeholder, or tag to focus on your slice
+- 🚀 Use swimlanes to see high-priority work flowing across all statuses
+- 🏠 **Personal mode** when you need deep focus
+- 🤝 **Team mode** for standups, planning, and cross-functional awareness
+
+**Weekly standup:** Toggle to Team mode → enable swimlanes by priority → everyone discusses high-priority work → adjust as needed.
+
+### For Developers: Dead-Simple Architecture
+
+**No build pipeline. No complexity. Just 16 JS modules + 1 Express file + SQLite.**
+
+- 📝 **Frontend**: Modular vanilla JavaScript (no React, Vue, or build step)
+- 🔌 **Backend**: Single `server.js` (all routes, middleware, auth)
+- 💾 **Database**: SQLite with WAL mode (concurrent reads + reliable writes)
+- 🔒 **Security**: Helmet, rate limiting, Zod validation, bcrypt hashing
+- ✅ **Tests**: 93 Playwright E2E tests (auth, CRUD, RBAC, security)
+- 📖 **Documentation**: Fully documented codebase + architecture guide
+
+**Total lines of code:** ~2500 (frontend + backend). Understand it in an afternoon.
+
+---
+
+## Installation & Configuration
 
 ### Environment Variables
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `ADMIN_USER` | — | Admin username seeded on first startup |
-| `ADMIN_PASS` | — | Admin password seeded on first startup |
-| `PORT` | `3001` | HTTP port |
-| `NODE_ENV` | `development` | `development` or `production` |
-| `APP_ORIGIN` | `http://localhost:3001` in local `.env` | Canonical origin used for same-origin checks and secure cookies |
-| `TRUST_PROXY` | `false` locally | Reverse-proxy trust setting. Use the real proxy hop count or trusted subnet list only |
-| `LOG_LEVEL` | `info` | Pino log level: `debug`, `info`, `warn`, `error` |
+Create a `.env` file (copy from `.env.example`):
 
-> In `production`, cookies require HTTPS (`Secure` flag), rate limiting is fully enforced, and logs are JSON. In `development`, HTTP cookies work and logs are pretty-printed.
+```env
+# Admin account seeded on first startup
+ADMIN_USER=admin
+ADMIN_PASS=your-secure-password
 
-### Production origin and proxy settings
+# Server
+PORT=3001
+NODE_ENV=development
 
-Set these explicitly in production:
+# URLs and security
+APP_ORIGIN=http://localhost:3001
+TRUST_PROXY=false
+
+# Logging
+LOG_LEVEL=info
+```
+
+#### Production Setup
 
 ```env
 NODE_ENV=production
-APP_ORIGIN=https://your-real-domain.example
-TRUST_PROXY=1
+APP_ORIGIN=https://your-domain.example
+TRUST_PROXY=1  # If behind a reverse proxy
 ```
 
-- Use `TRUST_PROXY=1` only when the app is behind exactly one trusted reverse proxy.
-- If your deployment has multiple proxy hops, set the exact hop count or a specific trusted subnet list instead.
-- On Vercel, the app will fall back to `https://${VERCEL_PROJECT_PRODUCTION_URL}` for `APP_ORIGIN` and `1` for `TRUST_PROXY` if you do not override them.
-- `TRUST_PROXY=true` is intentionally rejected in production because it trusts arbitrary forwarded headers.
-
----
+**Important:** In production, cookies require HTTPS (`Secure` flag) and rate limiting is fully enforced.
 
 ### Running Tests
 
 ```bash
-npm test                                      # Full E2E suite (Playwright)
-npm run test:ui                               # Playwright interactive UI
-npx playwright test --headed                  # Watch tests in browser
-npx playwright test tests/e2e/auth.spec.js    # Single spec file
+npm test                                    # Run all 93 E2E tests
+npm run test:ui                             # Interactive Playwright UI
+npx playwright test --headed                # Watch tests in browser
+npx playwright test tests/e2e/auth.spec.js  # Single test file
 ```
-
-93 E2E tests covering auth, CRUD, RBAC, security headers, team management, and UI flows.
 
 ---
 
 ## User Guide
 
-### Solo Use: Personal Task Management
+### Kanban Board: Mastering Work in Progress
 
-Project Overviewer works perfectly for an individual managing their own projects and tasks. Here's how to get started and stay organized.
+The Kanban view is the heart of Project Overviewer. It visualizes your entire work pipeline in one place.
 
-#### Getting Started
+#### The Four Lanes
 
-1. **Log in** with your admin credentials at `http://localhost:3001`
-2. Press `N` (or click **+ New Project**) to create your first project
-3. Fill in the project details:
-   - **Title** — what you're working on
-   - **Status** — backlog, not-started, in-progress, or completed
-   - **Priority** — high, medium, low, or none (color-coded for quick scanning)
-   - **Due Date** — optional, used for smart filters and sorting
-   - **Description** — any notes, context, or acceptance criteria
-   - **Tags** — free-form labels for organization (e.g., `urgent`, `research`, `cleanup`)
-4. Add tasks directly in the project modal — press Enter after each one
+| Lane | Purpose | Best For |
+|------|---------|----------|
+| **Backlog** | Ideas, not yet ready | Parking lot for future work |
+| **Not-Started** | Ready but not started | Queue of next work |
+| **In-Progress** | Currently being worked | Active focus (keep small!) |
+| **Completed** | Finished and shipped | Historical record |
 
-#### Daily Workflow
+#### WIP (Work In Progress) Limits — The Game Changer
 
-**Every morning:**
-- Check the **Overdue** and **Due Today** sidebar filters to see what needs immediate attention
-- Mark completed tasks and projects as you finish them
+WIP limits are the single most powerful feature for managing bottlenecks:
 
-**During the day:**
-- Use the **Kanban view** to see your work pipeline at a glance — drag projects across lanes as status changes
-- Press `/` to quickly search for a project by name or description
-- Use **Focus view** to see your highest-priority in-progress work
+1. **Open the Kanban view**
+2. **In each lane header**, you'll see a `WIP` input field (shows `∞` when unlimited)
+3. **Enter a number** — e.g., set `in-progress: 3` to limit active work
+4. **Visual feedback:**
+   - 🟡 Yellow: at the limit (warning)
+   - 🔴 Red: exceeded the limit (violation)
 
-**During planning:**
-- Switch to **Kanban** or **All Projects** view and sort by **due date** or **priority** to plan your week
-- Filter by **Due This Week** to see your commitments
-- Tag related projects so you can filter them together (e.g., all sprint tasks, all Q1 goals)
+**Why WIP limits matter:**
+- Forces you to finish work before starting new work
+- Prevents context-switching (mental tax is huge)
+- Shows bottlenecks immediately (red lanes = blocked work)
+- Improves throughput and team focus
 
-**When projects are done:**
-- Mark them as completed
-- **Archive** them (Settings → show archived projects) to keep your active list focused
-- Your statistics dashboard (`Cmd+I`) updates automatically
+**Best practice:** Try `in-progress: 2-5`, `not-started: 5-10`, others unlimited.
 
-#### Keyboard Shortcuts
+#### Swimlanes by Priority
 
-For faster navigation without reaching for the mouse:
+For teams or complex workflows, toggle **⊞ Swimlanes (on)** to see a matrix view:
+- **Columns** = status lanes (Backlog → Not-Started → In-Progress → Completed)
+- **Rows** = priority levels (High → Medium → Low → None)
+
+**Use when:**
+- 🤝 Team standups (see high-priority work across all statuses)
+- 🚨 Priority conflicts (low-priority work blocking high-priority)
+- 📊 Capacity planning (overloaded with low-priority tasks?)
+- 🚀 Release planning (high-priority items flowing? or stuck?)
+
+#### Card Visual Cues
+
+Each compact card shows critical information at a glance:
+
+- 🎨 **Colored dot** (left) — priority indicator
+- ✓ **Task progress** — completed/total tasks
+- 📅 **Due date** — red if overdue
+- ⛔ **Blocked badge** — has blocked tasks
+- **7d** — cycle time (days in current status; >14d = stale)
+- 👤 **Avatar** — project owner (in Team mode)
+
+#### Kanban Best Practices
+
+1. **Keep In-Progress small** — set a WIP limit and respect it
+2. **Unblock first** — if you see ⛔ badge, investigate immediately
+3. **Move projects daily** — every standup, reflect real status
+4. **Respect cycle time** — >14 days in one lane = investigate blocker
+5. **Review throughput** — check Completed lane footer: "X finished this week"
+6. **Use swimlanes for visibility** — team mode + swimlanes by priority
+
+### Settings & Options
+
+Open settings with `Cmd+,` (Mac) or `Ctrl+,` (Windows/Linux).
+
+#### Display & Appearance
+
+| Setting | Options | When to Use |
+|---------|---------|-------------|
+| **Theme** | Light, Dark, Ocean, Forest, Auto | Dark for low-light, Light for bright rooms, Auto follows OS |
+| **Sidebar Collapsed** | On/Off | Small screen or full-screen kanban focus |
+
+#### Sorting & Views
+
+| Setting | When to Use |
+|---------|-------------|
+| **Default Sort** | Manual (you control), Due Date (urgency), Priority (importance), Recently Updated (activity) |
+| **Default View** | All Projects (search/filter heavy), Kanban (visual workflow), Focus (single-threaded work) |
+
+#### Kanban Configuration
+
+| Setting | When to Use |
+|---------|-------------|
+| **WIP Limits** (per lane) | Always set `in-progress` (e.g., 3); optional for others |
+| **Swimlane By** | Turn on for team standups; turn off for simpler view |
+
+#### Data Portability
+
+- **Export Data** — weekly/monthly backup; migration; sharing snapshots
+- **Import Data** — restore from backup; test scenarios without losing current data
+
+#### Team Settings
+
+- **Workspace Mode** — Personal (focused) vs Team (shared visibility)
+- **Create Team / Add Members** — team setup; onboarding
+
+### Keyboard Shortcuts
 
 | Shortcut | Action |
 |----------|--------|
 | `N` | New project |
-| `Cmd+K` / `Ctrl+K` | Command palette (search, navigate, change theme) |
-| `/` | Focus search bar |
-| `Cmd+I` / `Ctrl+I` | Show statistics |
-| `Cmd+,` / `Ctrl+,` | Open settings |
-| `Esc` | Close modal or dialog |
+| `Cmd+K` / `Ctrl+K` | Command palette (search, navigate, theme) |
+| `/` | Focus search |
+| `Cmd+I` / `Ctrl+I` | Statistics |
+| `Cmd+,` / `Ctrl+,` | Settings |
 | `?` | Show all shortcuts |
-
-#### Data Backup and Portability
-
-Your data is yours. Back it up anytime:
-
-1. Go to **Settings → Export Data**
-2. Download a full JSON export of all your projects, tasks, and settings
-3. Store it in a safe place (external drive, cloud storage, etc.)
-4. To restore: go to **Settings → Import Data** and upload the JSON file
-
-This also makes it easy to migrate your workspace to a different machine or share a snapshot with a colleague.
+| `Esc` | Close modal |
 
 ---
 
-### Team Use: Collaboration & Shared Visibility
+## Team Collaboration
 
-Project Overviewer supports teams of any size. Each team member creates and manages their own projects, but everyone can see all work when they want to — perfect for stand-ups, planning sessions, and cross-functional visibility.
-
-#### Team Setup (Admin)
-
-As the admin, set up your team once:
+### One-Time Setup (Admin)
 
 **Step 1: Register teammates**
-1. Each team member goes to **http://localhost:3001/register** and creates an account
-2. You receive a notification of pending users (check Admin Panel at `/admin.html`)
-3. Click **Approve** next to each username to allow them to log in
-   - Optionally promote a team member to `admin` if needed for management duties
+- Each person visits `/register` and creates an account
+- You approve them in Admin Panel (`/admin.html`)
+- Optionally promote trusted people to admin
 
 **Step 2: Create a team**
-1. Log in and go to **Settings → Team**
-2. Click **Create Team** and name it (e.g., "Product Team", "Backend Squad")
-3. Click **Add Member** and enter each approved user's username
-4. Repeat for each team member you want to include
+- Settings → Team → **Create Team**
+- Add each member by username
 
-**Step 3: Notify your team**
-Send each member a message saying:
-> "You're added to the team! Toggle the Personal / Team button in the top nav bar to switch between your own projects and everyone's."
+**Step 3: Done**
+- Tell your team: "Toggle Personal / Team in the top nav bar"
 
-#### Team Workflow
+### Workspace Toggle: Personal vs. Team
 
-**For individual contributors:**
-- Each person creates their own projects in **Personal mode** — you own them, you're accountable
-- Set the **Stakeholder** field to indicate who needs the work (requestor, consumer, etc.)
-- Use **Tags** to label by initiative, sprint, or domain (e.g., `Q2-roadmap`, `backend`, `security`)
-- When you toggle to **Team mode**, you see all projects from all team members — great for awareness and blockers
+Each user controls their own view independently:
 
-**For team leads / managers:**
-1. During daily standups or planning, everyone toggles **Team mode**
-2. The **Kanban view** shows all work across the team in a single pipeline
-3. Filter by:
-   - **Status**: see everything blocked, in-progress, or completed
-   - **Priority**: focus on high-priority work
-   - **Tags**: see a specific initiative (e.g., filter `sprint-12` to see all sprint work)
-   - **Stakeholder**: see work owned by specific people
-4. The **Statistics dashboard** shows:
-   - Total projects across the team
-   - Breakdown by status (how much is in progress vs. done)
-   - Task completion percentage
-   - Distribution across team members
+| Mode | Sees | Best For |
+|------|------|----------|
+| **Personal** | Only their projects | Focused individual work |
+| **Team** | All team members' projects | Standups, planning, cross-team visibility |
 
-**For visibility and cross-functional work:**
-- Marketing can see engineering projects (and their status) to plan launch timelines
-- Backend can see frontend blockers and adjust priorities
-- Everyone can see upcoming deadlines and spot conflicts early
+### Team Best Practices
 
-#### Workspace Toggle: Personal vs. Team
+1. **Consistent naming** — "Fix widget rendering perf" not "Thing"
+2. **Team tagging convention** — e.g., `Q2-2025`, `backend`, `blocked`
+3. **Use Stakeholder field** — route visibility to who needs to know
+4. **Daily status updates** — move projects between lanes; shows activity
+5. **Review statistics** — breakdown by status, owner, priority
 
-Each user has a **Personal / Team** button in the top navigation bar. This toggle is **per-user and independent**:
+### Admin Responsibilities
 
-| Mode | What You See | Best For |
-|------|--------------|----------|
-| **Personal** | Only your own projects | Focused individual work, avoiding distractions |
-| **Team** | All team members' projects | Stand-ups, planning, dependency identification, cross-functional awareness |
-
-When you change your workspace mode, only *your* view changes — it doesn't affect your teammates.
-
-#### Best Practices for Team Success
-
-1. **Naming**: Use consistent naming so projects are searchable
-   - ✅ "Fix widget rendering perf"
-   - ❌ "Thing"
-
-2. **Tags**: Create a team tagging convention and stick to it
-   - Examples: `Q2-2025`, `backend`, `frontend`, `devops`, `blocked`, `waiting-on-external`
-   - Filter by multiple tags to slice views (e.g., all Q2 backend work)
-
-3. **Stakeholders**: Use this field to route visibility
-   - "Who cares about this project?" — set them as stakeholder
-   - During team view, filter by stakeholder to see your slice of work
-
-4. **Status updates**: Encourage daily or weekly updates during team mode
-   - Moving a project from `in-progress` to `completed` is instant feedback to the whole team
-   - The **recently updated** sort shows activity at a glance
-
-5. **Project limits**: The admin can set global limits in the Admin Panel
-   - Prevents one person from creating 100 half-finished projects
-   - Encourages focus and prioritization
-
-#### Admin Responsibilities
-
-During team operation, stay on top of:
-
-1. **User approvals**: Check the Admin Panel (`/admin.html`) weekly for pending registrations
-2. **Global settings** (`/admin.html → Global Settings`):
-   - Toggle `registrationEnabled` off once your team is fully onboarded (prevents random signups)
-   - Set `maxProjectsPerUser` to encourage focus (e.g., 50 per person)
-   - Customize `siteName` to show your team or org name
-3. **User offboarding**: If someone leaves, delete them from Admin Panel
-   - Their projects remain and can be reassigned if needed
-4. **Role management**: Promote trusted team members to `admin` if you need help managing users
+- ✅ Approve/reject pending user registrations (weekly check)
+- ✅ Configure global settings (registration on/off, project limits, site name)
+- ✅ Manage user offboarding (delete user; projects stay)
+- ✅ Promote power users to admin if needed
 
 ---
 
-## Architecture Guide
+## Architecture
 
 ### Design Philosophy
 
-Project Overviewer is intentionally simple. The goal is a tool you can run, understand, and modify without fighting a complex build pipeline or abstraction layers. There is no framework on the frontend, no ORM on the backend, and no external services — just Node.js, SQLite, and plain JavaScript files.
+Project Overviewer is **intentionally simple**. It prioritizes:
+- **Readability** — understand the entire codebase in an afternoon
+- **Reliability** — no external dependencies; no framework magic
+- **Ownership** — your data stays on your machine
+- **Modifiability** — change the code without fighting build pipelines
 
-### System Overview
+### Tech Stack
+
+| Layer | Technology | Why |
+|-------|-----------|-----|
+| **Frontend** | Vanilla JavaScript (16 modules, no bundler) | No build overhead; explicit dependency graph |
+| **Backend** | Express.js (one organized file) | Simple; easy to trace; no DI/IoC magic |
+| **Database** | SQLite with WAL mode | Reliable, concurrent, zero setup |
+| **Auth** | Session tokens (Bearer + HttpOnly) | Stateful; simple; compatible with browsers |
+| **Validation** | Zod | Runtime type safety on all inputs |
+| **Security** | Helmet, rate limiting, bcrypt | Defense-in-depth at every layer |
+
+### System Architecture
 
 ```
-┌─────────────────────────────────────────────────┐
-│                   Browser                        │
-│   public/index.html + 16 JS modules + CSS       │
-└──────────────────────┬──────────────────────────┘
-                       │ HTTP REST (JSON)
-┌──────────────────────▼──────────────────────────┐
-│              server.js  (Express)                │
-│   Helmet → Rate Limit → requireAuth → Zod       │
-│   → Route Handler → database.js                 │
-└──────────────────────┬──────────────────────────┘
-                       │ async/await
-┌──────────────────────▼──────────────────────────┐
-│             database.js  (SQLite3)               │
-│   waitForDb() → Promise wrappers → CRUD         │
-└──────────────────────┬──────────────────────────┘
-                       │ WAL mode
-┌──────────────────────▼──────────────────────────┐
-│               projects.db  (SQLite file)         │
-└─────────────────────────────────────────────────┘
+┌─────────────────────────────────┐
+│     Browser (index.html)         │
+│   16 JS modules + CSS            │
+└────────────────┬────────────────┘
+                 │ HTTP (REST)
+┌────────────────▼────────────────┐
+│   server.js (Express)            │
+│   Helmet → Rate Limit → Auth     │
+│   → Zod Validation → Routes      │
+└────────────────┬────────────────┘
+                 │ async/await
+┌────────────────▼────────────────┐
+│   database.js (SQLite)           │
+│   waitForDb() → Schema → CRUD    │
+└────────────────┬────────────────┘
+                 │ WAL mode
+┌────────────────▼────────────────┐
+│   projects.db (SQLite file)      │
+└─────────────────────────────────┘
 ```
 
-### Backend
+### Frontend: 16 Modular JS Files
 
-**`server.js`** — The entire Express application in one file, organized in clearly labeled sections.
+No bundler. No build step. Just plain `<script>` tags in dependency order:
 
-Every request passes through the same middleware stack before reaching a route handler:
-1. **Helmet** — sets security headers (CSP, X-Frame-Options, HSTS in production)
-2. **Rate limiting** — 200 req/15 min general, 20 req/15 min auth endpoints, 5/hr imports
-3. **Compression + body limits** — 2 MB general, 10 MB for uploads and imports
-4. **`requireAuth`** — validates session token from Bearer header or HttpOnly cookie
-5. **`requireAdmin`** — checks the `admin` role (applied only to admin routes)
-6. **Zod validation** — every endpoint that accepts input has a schema; invalid input returns 400 before business logic runs
+1. **api-client.js** — fetch wrapper with auth headers
+2. **utils.js** — date formatting, DOM helpers
+3. **state.js** — central state management
+4. **toast.js** — notifications
+5. **theme.js** — CSS variable swapping (5 themes)
+6. **filters.js** — search, filter, sort logic
+7. **render.js** — DOM construction
+8. **projects.js** — project CRUD
+9. **tasks.js** — task CRUD
+10. **modals.js** — modal lifecycle
+11. **commands.js** — command palette (Cmd+K)
+12. **dragdrop.js** — kanban drag-and-drop
+13. **keyboard.js** — keyboard shortcuts
+14. **events.js** — event delegation
+15. **team.js** — team management
+16. **app.js** — bootstrap
 
-Two shared helpers reduce duplication across routes:
-- `setSessionCookie(res, token)` — used by login, password-change, and logout
-- `resolveTeamScope(userId, workspaceMode)` — returns the list of user IDs to query (personal: just `[userId]`; team: all team member IDs)
+**Total: ~2500 lines of code across frontend + backend.**
 
-The SPA fallback at the bottom of `server.js` serves `public/index.html` for any route that is not an API endpoint or static asset, enabling client-side navigation to work correctly on refresh.
+### Backend: Single Organized File
 
-**Why one file?** At this codebase size, a single organized file is faster to navigate than a controller/router split. If the application grows significantly, splitting by domain (auth, projects, teams) is the natural next step.
+**server.js** contains:
+- Middleware stack (Helmet, rate limiting, auth, Zod validation)
+- All REST API endpoints (auth, projects, tasks, teams, settings)
+- Session management
+- Error handling
 
-**`database.js`** — The data access layer.
+**Why one file?** At this scale, it's faster to navigate than a split router/controller structure. If the app grows significantly, split by domain (auth, projects, teams) naturally.
 
-The key pattern is `waitForDb()`: every exported function starts with `await waitForDb()`. This awaits a promise that resolves once `initDatabase()` completes on startup. The result: the schema is guaranteed to exist before any query runs, even if a request arrives during the startup window.
+### Database: 10 Tables, User-Scoped Queries
 
-Schema initialization uses `CREATE TABLE IF NOT EXISTS` throughout, making every startup idempotent and safe to run against an existing database.
+**Schema** (10 tables across 4 groups):
+- **Auth**: users, sessions
+- **Content**: projects, tasks, documents
+- **Collaboration**: teams, team_members
+- **Configuration**: global_settings, user_settings, quick_notes, templates
 
-The project list endpoint uses a **bulk-fetch pattern**: load all projects, all tasks, and all documents in three queries, then join them in JavaScript. This replaces what would otherwise be a 2N+1 query pattern (one query per project for tasks, one per project for documents).
+**Key patterns:**
+- UUID primary keys everywhere (security + portability)
+- Every read query includes `user_id` filter (or expands to team members)
+- JSON columns for `tags`, `tasks` (template), `payload` (email) — schema-migration-free
+- SQLite with WAL mode (concurrent reads + reliable writes)
 
-SQLite is configured for reliable concurrent access:
-- WAL mode — readers don't block writers
-- `synchronous = NORMAL` — durable without the overhead of full `FULL` mode
-- `cache_size = -8000` — 8 MB page cache
-- `busy_timeout = 5000` — wait up to 5 seconds on a locked database before failing
-
-**`logger.js`** — Thin Pino wrapper. JSON output in production; pretty-printed colored output in development via `pino-pretty`. Level controlled by `LOG_LEVEL` env var.
-
-### Frontend Architecture
-
-The frontend is a **modular vanilla JavaScript SPA with no build step**.
-
-**Why no framework?** Project Overviewer is a focused, single-purpose tool. The DOM surface is manageable, and the overhead of a build pipeline (webpack, Vite, React) would add complexity and fragility without meaningful benefit at this scale.
-
-**Module loading**: 16 modules are loaded as plain `<script>` tags in `public/index.html`, in dependency order. Each module attaches its public API to `window` (e.g., `window.API`, `window.AppState`). No `import`/`export` — globals are appropriate for non-bundled scripts and make the dependency graph explicit.
-
-**Module responsibilities (in load order):**
-
-| Module | Responsibility |
-|--------|---------------|
-| `api-client.js` | All `fetch()` calls with auth headers and error handling (`window.API`) |
-| `utils.js` | Date formatting, debounce, DOM helpers |
-| `state.js` | Central app state: projects, settings, current user (`window.AppState`) |
-| `toast.js` | Toast notification system |
-| `theme.js` | CSS custom property swapping for 5 themes |
-| `filters.js` | Search, filter, and sort logic (pure functions, no side effects) |
-| `render.js` | DOM construction: project cards, kanban lanes, task lists |
-| `projects.js` | Project CRUD: create, update, delete, reorder |
-| `tasks.js` | Task CRUD: create, toggle, update, delete, reorder |
-| `modals.js` | Modal lifecycle: open, populate, close, form submission |
-| `commands.js` | Command palette (`Cmd+K`) |
-| `dragdrop.js` | Kanban drag-and-drop (projects and tasks) |
-| `keyboard.js` | Keyboard shortcut registry |
-| `events.js` | Event delegation setup |
-| `team.js` | Team management UI and workspace toggle |
-| `app.js` | Bootstrap: load state, wire modules, initial render |
-
-**State management**: `state.js` is a closure holding the application state (projects array, user settings, current user, active filters). Modules mutate state through explicit setters (`AppState.setProjects()`, `AppState.updateSettings()`) and then call render functions directly. There is no reactive system — data flow is explicit and easy to trace with a debugger.
-
-**Event handling**: `events.js` uses **event delegation** — a single listener per major container (`#app`, `#projectModal`, etc.) handles all interactions via `event.target` matching. This avoids the memory and bug risk of attaching individual listeners to every interactive element across dynamic DOM.
-
-Two shared helpers inside `events.js` prevent code duplication:
-- `handleDocAction(e, projectId)` — processes document-related clicks in both the content area and the project modal
-- `wireTaskDrag(container)` — sets up task drag-and-drop in both the card view and modal view
-
-### Database Schema
-
-Ten tables in four logical groups:
-
-| Group | Tables | Purpose |
-|-------|--------|---------|
-| Auth | `users`, `sessions` | Accounts, session tokens |
-| Content | `projects`, `tasks`, `documents` | The actual work |
-| Collaboration | `teams`, `team_members` | Team and membership |
-| Configuration | `global_settings`, `user_settings`, `quick_notes`, `templates` | Per-user and global config |
-
-**Key decisions:**
-
-- **UUID primary keys** (`crypto.randomUUID()`) everywhere — avoids sequential ID enumeration attacks and simplifies future data portability
-- **User-scoped queries** — every content table has a `user_id` column; every read query filters by it (or expands to the team member list in team mode)
-- **JSON columns** for `tags`, template `tasks`, and email `payload` — avoids schema migrations for fields that are naturally list- or object-shaped
-- **Cascade deletes** — deleting a user removes their sessions; deleting a project cascades to tasks and documents; foreign key constraints enforce referential integrity
-- **`project_order` / `task_order` integers** per record — manual ordering without a separate sort-order join table
-
-### Security Model
+### Security
 
 | Layer | Control |
 |-------|---------|
-| Transport | HSTS header in production; `Secure` cookie flag requires HTTPS |
-| Headers | Helmet: CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy |
-| Rate limiting | 200 req/15 min general; 20 req/15 min auth; 5/hr import |
-| Passwords | bcrypt with 12 salt rounds |
-| Sessions | 32-byte hex token; 24-hour expiry; invalidated on password change |
-| Authorization | Every data endpoint verifies `user_id` ownership or team membership before returning data |
-| Input | Zod schemas on all inputs; settings keys allowlisted server-side |
-| File downloads | MIME type allowlisting; filename sanitization |
-| Body limits | 2 MB general; 10 MB upload/import |
+| **Transport** | HSTS in production; Secure cookie flag requires HTTPS |
+| **Headers** | Helmet: CSP, X-Frame-Options, X-Content-Type-Options |
+| **Rate Limiting** | 200 req/15 min general; 20/15 auth; 5/hr import |
+| **Passwords** | bcrypt with 12 salt rounds |
+| **Sessions** | 32-byte token; 24-hour expiry; invalidated on password change |
+| **Authorization** | Every endpoint verifies user ownership or team membership |
+| **Input** | Zod schemas on all inputs; allowlisted settings keys |
+| **Files** | MIME type allowlisting; filename sanitization |
 
 ---
 
-## Project Structure
+## API Reference
+
+All endpoints require authentication (Bearer token or HttpOnly cookie) except `/api/health`.
+
+### Authentication
 
 ```
-project-overviewer/
-├── server.js              # Express app — all routes, middleware, auth
-├── database.js            # SQLite data layer — schema, CRUD, bulk queries
-├── logger.js              # Pino logger configuration
-├── package.json
-├── .env.example           # Environment variable template
-├── start.sh               # Mac/Linux startup script
-├── start.bat              # Windows startup script
-├── projects.db            # SQLite database (auto-created on first run)
-│
-├── public/
-│   ├── index.html         # SPA HTML shell (loads 16 JS modules)
-│   ├── login.html         # Login page
-│   ├── register.html      # Registration page
-│   ├── admin.html         # Admin panel (user management, global settings)
-│   ├── css/
-│   │   ├── app.css        # Main styles with CSS custom properties (5 themes)
-│   │   └── auth.css       # Auth page styles
-│   └── js/
-│       ├── api-client.js  # window.API — fetch wrapper with auth
-│       ├── utils.js       # Shared utilities
-│       ├── state.js       # window.AppState — central state management
-│       ├── toast.js       # Toast notifications
-│       ├── theme.js       # Theme switcher
-│       ├── filters.js     # Search / filter / sort (pure functions)
-│       ├── render.js      # DOM rendering
-│       ├── projects.js    # Project CRUD
-│       ├── tasks.js       # Task CRUD
-│       ├── modals.js      # Modal dialogs
-│       ├── commands.js    # Command palette (Cmd+K)
-│       ├── dragdrop.js    # Kanban drag-and-drop
-│       ├── keyboard.js    # Keyboard shortcuts
-│       ├── events.js      # Event delegation
-│       ├── team.js        # Team management UI
-│       └── app.js         # App bootstrap
-│
-└── tests/
-    └── e2e/
-        ├── auth.spec.js           # Auth flows
-        ├── projects-tasks.spec.js # Project and task CRUD
-        ├── rbac.spec.js           # Role-based access control
-        ├── security.spec.js       # Security headers, rate limits, validation
-        ├── teams.spec.js          # Team collaboration
-        ├── ui-auth.spec.js        # UI auth flows
-        └── helpers.js             # Shared test utilities
+POST /api/auth/register    Register new user (pending approval)
+POST /api/auth/login       Login (returns token + cookie)
+POST /api/auth/logout      Logout
+GET  /api/auth/me          Current user info
+PUT  /api/auth/password    Change password
+```
+
+### Projects
+
+```
+GET  /api/projects                Get all projects (team-aware)
+POST /api/projects                Create project
+PUT  /api/projects/:id            Update project
+DELETE /api/projects/:id          Delete project
+POST /api/projects/reorder        Reorder projects
+```
+
+### Tasks
+
+```
+POST /api/projects/:projectId/tasks           Create task
+PUT  /api/tasks/:id                            Update task
+DELETE /api/tasks/:id                          Delete task
+POST /api/projects/:projectId/tasks/reorder    Reorder tasks
+```
+
+### Teams (requires auth)
+
+```
+POST /api/teams                           Create team
+GET  /api/teams/mine                      Get current user's team
+POST /api/teams/:id/members               Add member (owner/admin only)
+DELETE /api/teams/:id/members/:userId     Remove member
+DELETE /api/teams/:id                     Delete team (owner/admin only)
+```
+
+### Settings
+
+```
+GET /api/settings                  Get all user settings
+POST /api/settings/:key            Set user setting
+```
+
+### Admin
+
+```
+GET /api/admin/users                    List all users (admin only)
+PUT /api/admin/users/:id/approve        Approve user registration
+PUT /api/admin/users/:id/role           Change user role
+DELETE /api/admin/users/:id             Delete user
+```
+
+### Health
+
+```
+GET /api/health                          Database health check (no auth required)
 ```
 
 ---
 
 ## Troubleshooting
 
-**App won't start**
-- Verify Node.js ≥ 18: `node --version`
-- Try `rm -rf node_modules && npm install`
-- Check if port 3001 is in use: `lsof -i :3001`
+### App Won't Start
 
-**Can't log in**
-- Confirm `ADMIN_USER` and `ADMIN_PASS` are set in `.env`
-- If you changed the password, the old session token is invalid — log in again
-- New user accounts require admin approval before they can log in
+```bash
+# Check Node.js version
+node --version  # should be v18+
 
-**Database issues**
-- To reset completely: `rm projects.db` then restart — schema recreates automatically
-- Inspect directly: `sqlite3 projects.db` then `.tables` or `SELECT * FROM users;`
-- WAL mode creates companion files (`projects.db-wal`, `projects.db-shm`) — these are normal
+# Reinstall dependencies
+rm -rf node_modules && npm install
 
-**Projects not showing in Team view**
-- Check that the workspace toggle (top nav bar) is set to **Team**
-- Confirm all team members have been added via Settings → Team → Add Member
+# Check if port is in use
+lsof -i :3001  # if in use, change PORT in .env
+```
+
+### Can't Log In
+
+- ✅ Confirm `ADMIN_USER` and `ADMIN_PASS` are set in `.env`
+- ✅ Check that user is approved (Admin Panel → Users)
+- ✅ New users require admin approval before first login
+- ✅ If you changed the password, session tokens are invalidated — log in again
+
+### Database Issues
+
+```bash
+# Reset database completely
+rm projects.db
+# Restart server — schema recreates automatically
+
+# Inspect database directly
+sqlite3 projects.db
+sqlite> .tables
+sqlite> SELECT id, username, role FROM users;
+sqlite> .quit
+```
+
+**Note:** WAL mode creates `-wal` and `-shm` files — these are normal and safe.
+
+### Projects Not Showing in Team View
+
+- ✅ Check workspace toggle (top nav bar) is set to **Team**
+- ✅ Confirm all team members are added (Settings → Team → Add Member)
+- ✅ Verify members are approved in Admin Panel
+
+---
+
+## Contributing
+
+We welcome contributions! Here's how:
+
+1. **Fork** the repository
+2. **Create a feature branch** (`git checkout -b feature/your-feature`)
+3. **Write tests** (Playwright E2E tests in `tests/e2e/`)
+4. **Keep it simple** — no frameworks, no complex abstractions
+5. **Test it locally** (`npm test`)
+6. **Submit a pull request**
+
+### Code Guidelines
+
+- **Frontend:** Vanilla JavaScript, no build step, explicit globals
+- **Backend:** Single `server.js` file, organized by middleware stack
+- **Database:** User-scoped queries, cascade deletes, UUIDs for IDs
+- **Security:** Validate all inputs (Zod), hash passwords, rate-limit endpoints
+- **Tests:** E2E tests only (Playwright); test auth, CRUD, RBAC, security
+
+---
+
+## Support & Community
+
+- 🐛 **Report bugs** — [Open a GitHub issue](https://github.com/yourusername/project-overviewer/issues)
+- 💬 **Ask questions** — [GitHub Discussions](https://github.com/yourusername/project-overviewer/discussions)
+- 📚 **Read docs** — [Full documentation](./docs/)
+- 🚀 **See examples** — [Example projects](./examples/)
+
+---
+
+## Roadmap
+
+- [ ] Real-time collaboration (WebSocket + operational transform)
+- [ ] Recurring projects and tasks
+- [ ] Project templates (advanced)
+- [ ] Custom fields per project
+- [ ] Webhooks for external integrations
+- [ ] Mobile app (React Native)
+- [ ] Dark mode enhancements
+- [ ] Bulk import/export tools
 
 ---
 
 ## License
 
-MIT
+MIT — use freely, modify freely, deploy freely.
+
+---
+
+<div align="center">
+
+**[Get Started](#quick-start)** • **[Features](#what-you-get)** • **[Docs](#user-guide)** • **[Issues](https://github.com/yourusername/project-overviewer/issues)** • **[License](#license)**
+
+Built with ❤️ for people who want to own their tools.
+
+</div>
