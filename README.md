@@ -427,6 +427,226 @@ Each user controls their own view independently:
 
 ---
 
+## Advanced Features
+
+### Project Archiving
+
+**Keep your active list clean by archiving completed projects.**
+
+1. Open any project → click **Archive** button
+2. Archived projects appear in a separate **Archived** tab (All Projects view)
+3. Archived projects are **read-only** — tasks and documents cannot be modified
+4. Unarchive anytime to bring a project back to active status
+
+**When to use:**
+- End-of-quarter cleanup
+- Completed initiatives you want to preserve for reference
+- Reducing Kanban board noise (they don't appear on the Kanban)
+
+### Focus View: Prioritized Task List
+
+**One distraction-free view of all your incomplete work, organized by urgency.**
+
+Access via:
+- Statistics icon (`Cmd+I`)
+- Command Palette (`Cmd+K` → "Focus Mode")
+
+**What you see:**
+- **Overdue** — Tasks past their due date (red)
+- **Today** — Tasks due today (urgent)
+- **Next 7 Days** — Tasks due this week
+- **High Priority (No Date)** — Critical work without deadlines
+
+Click any task to open it. Great for morning standups or single-threaded work sessions.
+
+### Task Blocking & Dependencies
+
+**Track task sequences, prevent duplicate work, and visualize impediments.**
+
+**How to create a dependency:**
+
+1. Open a task in the modal
+2. Find the **"Blocked By"** field
+3. Click the input → search for the blocking task (from any project)
+4. Confirm the selection
+
+**What you'll see:**
+- **Cards show ⛔ badge** when a project contains blocked tasks
+- **"Unblocks" section** shows what this task unblocks (transitive dependencies)
+- **Task ID** shown for reference in logs or discussion
+
+**Example use case:**
+- Task A (backend API) blocks Task B (frontend integration)
+- Task B's card shows ⛔ badge
+- You know not to start Task B until Task A is done
+
+### Subtasks: Hierarchical Task Structure
+
+**Break down complex tasks into one level of subtasks.**
+
+**Creating subtasks:**
+
+1. Open a project modal
+2. In the task list, click **+ Add Subtask** below a parent task
+3. Enter subtask title and press Enter
+4. Subtasks inherit parent's due date but can override priority
+
+**What you get:**
+- **Progress indicator** on parent: "3/5 completed"
+- **All task properties**: priority, due date, blocking, notes
+- **Nested drag-and-drop** in Kanban (drag subtask to change status)
+- **Cannot nest deeper** than 1 level (prevents complexity)
+
+**When to use:**
+- Refactor task: split into smaller steps
+- QA sign-off: break into test cases
+- Sprint planning: decompose larger stories
+
+### Cycle Time Tracking: Spot Bottlenecks
+
+**Every Kanban card shows how long it's been in the current status.**
+
+**What the numbers mean:**
+- **"7d"** — 7 days in current status
+- **"🕐 stale"** — >14 days in one status (usually a blocker)
+
+**How to interpret:**
+- High cycle time = bottleneck. Ask: "Why hasn't this moved?"
+- Stale cards on Kanban = investigate blocked work
+- Compare across statuses: "Not-Started lane has high averages" = capacity issue
+
+**Best practice:** During daily standups, look for stale cards and unblock them.
+
+### Quick Notes: Scratch Pad
+
+**A personal, persistent scratch space — think notepad, not project notes.**
+
+Access via:
+- Command Palette (`Cmd+K` → "Quick Notes")
+- Keyboard shortcut `Cmd+Shift+N`
+
+**Use for:**
+- Daily standup talking points
+- Brain dumps before organizing into projects
+- Meeting notes (separate from project-tied documents)
+- Personal reminders
+
+Notes are **per-user** and persisted to the database (never lost on refresh).
+
+### Undo & Recovery: Safe Deletions
+
+**Deleted projects can be recovered — safety net for teams.**
+
+**How it works:**
+- Delete a project → it enters a soft-delete state (not permanently gone)
+- Project is hidden from views but data remains in database
+- Project can be restored (undeleted) within a recovery window
+
+**Useful for:**
+- Accidental deletes by team members
+- "Oops, I shouldn't have archived that" moments
+- Bulk delete recovery via undo endpoint
+
+### Data Export & Import: Full Data Portability
+
+**Back up everything. Migrate between machines. Test scenarios.**
+
+**Export:**
+1. Settings → Data Portability → **Export Data**
+2. Downloads all your projects, tasks, subtasks, documents, tags as JSON
+3. Human-readable; safe to store
+
+**Import:**
+1. Settings → Data Portability → **Import Data**
+2. Select JSON file (from backup or another user)
+3. All relationships preserved: subtask hierarchy, blocking, documents, tags
+
+**Use cases:**
+- Weekly backups (run on Monday)
+- Migrating to a new server
+- Testing workflow changes without affecting live data
+- Sharing a project template with the team
+
+**Rate limit:** 5 imports per hour per user (prevents abuse)
+
+### Global Settings (Admin Only)
+
+**Configure org-wide rules and limits.**
+
+Access: Admin Panel → **Global Settings**
+
+| Setting | Purpose | Example |
+|---------|---------|---------|
+| **maxProjectsPerUser** | Enforce project quota per user | `50` = max 50 projects per user |
+| **maxTasksPerProject** | Prevent runaway task lists | `200` = max 200 tasks per project |
+| **siteName** | Customize app title | `"Acme Corp Projects"` |
+| **registrationEnabled** | Open/close new registrations | `false` = admin-only, no self-signup |
+| **maintenanceMode** | Graceful shutdown (no new requests) | `true` = app returns 503, exit gracefully |
+
+**Best practice:** Set `maxProjectsPerUser` and `maxTasksPerProject` to prevent database bloat.
+
+### Theme Switching: Keyboard Power User Workflow
+
+**Change themes without touching Settings.**
+
+Press `Cmd+K` (Command Palette) and type:
+- `light`, `dark`, `ocean`, `forest`, or `auto`
+- Select and press Enter
+
+**Themes:**
+- **Light** — Bright rooms, bright screens
+- **Dark** — Low-light environments, reduced eye strain
+- **Ocean** — Cool blues, calming
+- **Forest** — Warm greens, nature-inspired
+- **Auto** — Match your OS preference (system dark mode)
+
+All themes preserve full readability and WCAG AA contrast.
+
+### Webhooks: External Integrations
+
+**Notify external systems when projects and tasks change.**
+
+**Setting up:**
+1. Settings → Team → **Webhooks**
+2. Enter webhook URL (e.g., `https://your-api.example.com/projects`)
+3. Select events to trigger: `project.created`, `project.updated`, `project.deleted`, `task.*`
+4. Save
+
+**What happens:**
+- When a project updates, an HTTP POST is sent to your URL with event data
+- Payload includes full project/task details in JSON
+- Automatic retries on failure (exponential backoff)
+
+**Use cases:**
+- Slack notifications: post to channel when high-priority project created
+- Analytics pipeline: log every change for insights
+- CI/CD integration: trigger builds when project status changes
+- Sync to external tools: Jira, Linear, Asana integration
+- Audit logging: centralized record of all changes
+
+**Security:** Each webhook has a secret token for HMAC signature verification.
+
+### Real-Time Sync: Live Multiplayer Editing
+
+**See teammates' changes instantly. No manual refresh.**
+
+**How it works:**
+- When a teammate updates a project, your browser receives live WebSocket notification
+- Project cards update automatically on Kanban board
+- No stale data; always in sync with latest state
+
+**Experience:**
+- Colleague moves card to "Completed" → your board updates immediately
+- Teammate adds a task → appears in modal without reload
+- Multiple people editing same project → no conflicts (event-driven sync)
+
+**When it matters:**
+- Live standup: watch the board update as people report progress
+- Remote collaboration: real-time visibility without back-and-forth
+- Distributed teams: async standups where you watch live updates
+
+---
+
 ## Architecture
 
 ### Design Philosophy
