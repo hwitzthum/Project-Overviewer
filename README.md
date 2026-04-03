@@ -248,15 +248,42 @@ WIP limits are the single most powerful feature for managing bottlenecks:
 
 #### Swimlanes by Priority
 
-For teams or complex workflows, toggle **⊞ Swimlanes (on)** to see a matrix view:
-- **Columns** = status lanes (Backlog → Not-Started → In-Progress → Completed)
-- **Rows** = priority levels (High → Medium → Low → None)
+For teams or complex workflows, toggle **Swimlanes** to transform the Kanban view into a matrix — giving you instant visibility into high-priority work flow.
 
-**Use when:**
-- 🤝 Team standups (see high-priority work across all statuses)
-- 🚨 Priority conflicts (low-priority work blocking high-priority)
-- 📊 Capacity planning (overloaded with low-priority tasks?)
-- 🚀 Release planning (high-priority items flowing? or stuck?)
+**How to activate:**
+1. In the Kanban view, look for the **⊞ Swimlanes** toggle in the toolbar (top-right of the board)
+2. Click the toggle to switch between:
+   - **⊞ Off** — Standard lane view (one horizontal lane per status)
+   - **⊞ On** — Matrix view (priority + status grid)
+
+**What you see with Swimlanes ON:**
+- **Columns** = status lanes from left to right (Backlog → Not-Started → In-Progress → Completed)
+- **Rows** = priority levels from top to bottom (High → Medium → Low → None)
+- **Cards** appear in their priority row + status column intersection
+- **Example**: A high-priority, in-progress project appears in the top-right quadrant
+
+This creates a powerful **priority matrix** that instantly shows:
+- High-priority work stuck in Backlog (needs attention!)
+- How many high-priority items are In-Progress (vs. low-priority tasks)
+- When low-priority work is blocking high-priority (visible misalignment)
+
+**Use swimlanes when:**
+- 🤝 **Team standups** — Everyone sees high-priority work across all statuses at a glance
+- 🚨 **Priority conflicts** — Spot low-priority work blocking high-priority items immediately
+- 📊 **Capacity planning** — "Are we overloaded with medium/low-priority tasks?"
+- 🚀 **Release planning** — Track how fast high-priority items flow to Completed
+- 👥 **Team visibility** — In Team mode + swimlanes = complete work priority picture
+
+**Swimlanes vs. Standard view:**
+
+| Aspect | Standard Lanes | Swimlanes Matrix |
+|--------|---|---|
+| **Layout** | 4 horizontal lanes (one per status) | 4×4 grid (status × priority) |
+| **Best for** | Individual focus, simple workflows | Teams, priority-driven workflows |
+| **Visual** | Compact, minimal scrolling | Spacious, clear separation by priority |
+| **Drag-drop** | Move between status lanes | Move within same priority row or between lanes |
+
+**Pro tip:** Toggle swimlanes OFF for deep focus work, ON for team planning sessions.
 
 #### Card Visual Cues
 
