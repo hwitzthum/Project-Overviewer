@@ -50,6 +50,9 @@ module.exports = function createExportImportRouter({ db, logger, schemas, requir
       }
       res.json({ success: true });
     } catch (error) {
+      if (error?.code === 'DOCUMENT_LIMIT_EXCEEDED') {
+        return res.status(403).json({ error: error.message });
+      }
       logger.error({ err: error }, 'Error importing data');
       res.status(500).json({ error: 'Failed to import data' });
     }

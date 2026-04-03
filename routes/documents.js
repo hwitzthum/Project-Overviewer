@@ -8,7 +8,8 @@ module.exports = function createDocumentsRouters({
   requireAuth,
   mammoth,
   allowedMimeTypes,
-  logSecurityEvent
+  logSecurityEvent,
+  eventBus
 }) {
   async function resolveTeamScope(userId) {
     const workspaceMode = await db.getUserSetting(userId, 'workspaceMode');
@@ -74,7 +75,11 @@ module.exports = function createDocumentsRouters({
         return res.status(404).json({ error: 'Project not found' });
       }
       res.status(201).json({ id: documentId });
+      if (eventBus) eventBus.emit('document.created', { documentId, projectId: req.params.projectId, userId: req.user.userId });
     } catch (error) {
+      if (error?.code === 'DOCUMENT_LIMIT_EXCEEDED') {
+        return res.status(403).json({ error: error.message });
+      }
       logger.error({ err: error }, 'Error creating document');
       res.status(500).json({ error: 'Failed to create document' });
     }
@@ -87,6 +92,7 @@ module.exports = function createDocumentsRouters({
         return res.status(404).json({ error: 'Document not found' });
       }
       res.json({ success: true });
+      if (eventBus) eventBus.emit('document.deleted', { documentId: req.params.id, userId: req.user.userId });
     } catch (error) {
       logger.error({ err: error }, 'Error deleting document');
       res.status(500).json({ error: 'Failed to delete document' });

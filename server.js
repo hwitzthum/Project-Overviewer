@@ -14,12 +14,17 @@ const createSettingsRouter = require('./routes/settings');
 const createTasksRouters = require('./routes/tasks');
 const createTeamsRouter = require('./routes/teams');
 const createTemplatesRouter = require('./routes/templates');
+const createWebhooksRouter = require('./routes/webhooks');
+const eventBus = require('./event-bus');
+const createWebhookDispatcher = require('./webhook-dispatcher');
+const { VALID_SETTINGS_KEYS, VALID_WEBHOOK_EVENTS } = require('./app-constants');
 const { logSecurityEvent, fingerprintToken } = require('./security-events');
 const { SESSION_ABSOLUTE_TIMEOUT_SECONDS } = require('./session-config');
 const {
   MAX_PASSWORD_LENGTH,
   MIN_ADMIN_PASSWORD_LENGTH,
-  MIN_PASSWORD_LENGTH
+  MIN_PASSWORD_LENGTH,
+  validatePasswordPolicy
 } = require('./password-policy');
 
 // Load bcryptjs (pure-JS implementation, works in serverless environments)
@@ -40,6 +45,7 @@ try {
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+const HOST = process.env.HOST || (process.env.NODE_ENV === 'production' ? '0.0.0.0' : '127.0.0.1');
 const BCRYPT_ROUNDS = 12;
 const SAFE_HTTP_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 const API_BASE_PATHS = ['/api', '/api/v1'];
@@ -178,10 +184,20 @@ if (process.env.NODE_ENV !== 'test') {
       message: { error: 'Too many admin requests, please try again later' }
     });
 
+    const webhookLimiter = rateLimit({
+      windowMs: 15 * 60 * 1000,
+      max: 10,
+      standardHeaders: true,
+      legacyHeaders: false,
+      message: { error: 'Webhook rate limit exceeded' }
+    });
+
     app.use('/api/auth/', authLimiter);
     app.use('/api/v1/auth/', authLimiter);
     app.use('/api/admin/', adminLimiter);
     app.use('/api/v1/admin/', adminLimiter);
+    app.use('/api/webhooks', webhookLimiter);
+    app.use('/api/v1/webhooks', webhookLimiter);
     app.use('/api/import', importLimiter);
     app.use('/api/v1/import', importLimiter);
     app.use('/api/', generalLimiter);
@@ -398,11 +414,6 @@ const ALLOWED_MIME_TYPES = new Set([
   'text/plain'
 ]);
 
-const VALID_SETTINGS_KEYS = [
-  'theme', 'defaultView', 'sortBy', 'showCompleted', 'showArchived',
-  'wipLimits', 'kanbanColumns', 'sidebarCollapsed', 'workspaceMode'
-];
-
 const VALID_GLOBAL_SETTINGS_KEYS = [
   'registrationEnabled', 'maxProjectsPerUser', 'maxTasksPerProject',
   'siteName', 'maintenanceMode'
@@ -531,6 +542,7 @@ if (z.object && z.string && typeof z.string === 'function') {
       priority: z.enum(VALID_PRIORITIES).optional(),
       recurring: z.string().max(100).optional().nullable(),
       blockedBy: z.string().max(100).optional().nullable(),
+      parentTaskId: z.string().uuid().optional().nullable(),
       order: z.number().int().min(0).optional()
     });
 
@@ -541,7 +553,8 @@ if (z.object && z.string && typeof z.string === 'function') {
       notes: z.string().max(10000).optional(),
       priority: z.enum(VALID_PRIORITIES).optional(),
       recurring: z.string().max(100).optional().nullable(),
-      blockedBy: z.string().max(100).optional().nullable()
+      blockedBy: z.string().max(100).optional().nullable(),
+      parentTaskId: z.string().uuid().optional().nullable()
     });
 
     schemas.reorderItem = z.object({
@@ -551,6 +564,17 @@ if (z.object && z.string && typeof z.string === 'function') {
 
     schemas.createTeam = z.object({
       name: z.string().min(1).max(100)
+    });
+
+    schemas.createWebhook = z.object({
+      url: z.string().url().max(2048),
+      events: z.array(z.enum(VALID_WEBHOOK_EVENTS)).min(1).max(20)
+    });
+
+    schemas.updateWebhook = z.object({
+      url: z.string().url().max(2048).optional(),
+      events: z.array(z.enum(VALID_WEBHOOK_EVENTS)).min(1).max(20).optional(),
+      active: z.boolean().optional()
     });
 
     schemas.addTeamMember = z.object({
@@ -806,7 +830,7 @@ app.use((req, res, next) => {
   if (cookieHeader) {
     cookieHeader.split(';').forEach(cookie => {
       const [name, ...rest] = cookie.trim().split('=');
-      req.cookies[name] = rest.join('=');
+      req.cookies[name.trim()] = rest.join('=');
     });
   }
   next();
@@ -867,8 +891,8 @@ const adminRouter = createAdminRouter({
   isSerializedJsonWithinLimit,
   logSecurityEvent
 });
-const projectsRouter = createProjectsRouter({ db, logger, schemas, requireAuth });
-const { projectTasksRouter, tasksRouter } = createTasksRouters({ db, logger, schemas, requireAuth });
+const projectsRouter = createProjectsRouter({ db, logger, schemas, requireAuth, eventBus });
+const { projectTasksRouter, tasksRouter } = createTasksRouters({ db, logger, schemas, requireAuth, eventBus });
 const { projectDocumentsRouter, documentsRouter } = createDocumentsRouters({
   db,
   logger,
@@ -876,7 +900,8 @@ const { projectDocumentsRouter, documentsRouter } = createDocumentsRouters({
   requireAuth,
   mammoth,
   allowedMimeTypes: ALLOWED_MIME_TYPES,
-  logSecurityEvent
+  logSecurityEvent,
+  eventBus
 });
 const teamsRouter = createTeamsRouter({ db, logger, schemas, requireAuth });
 const settingsRouter = createSettingsRouter({
@@ -889,6 +914,11 @@ const settingsRouter = createSettingsRouter({
 const notesRouter = createNotesRouter({ db, logger, schemas, requireAuth });
 const templatesRouter = createTemplatesRouter({ db, logger, requireAuth });
 const exportImportRouter = createExportImportRouter({ db, logger, schemas, requireAuth, logSecurityEvent });
+const webhooksRouter = createWebhooksRouter({ db, logger, schemas, requireAuth });
+
+// Initialize webhook dispatcher
+const webhookDispatcher = createWebhookDispatcher({ db, logger, eventBus });
+webhookDispatcher.init();
 
 function mountApiRoutes(prefix) {
   app.use(`${prefix}/auth`, authRouter);
@@ -902,6 +932,7 @@ function mountApiRoutes(prefix) {
   app.use(`${prefix}/settings`, settingsRouter);
   app.use(`${prefix}/notes`, notesRouter);
   app.use(`${prefix}/templates`, templatesRouter);
+  app.use(`${prefix}/webhooks`, webhooksRouter);
   app.use(prefix, exportImportRouter);
 }
 
@@ -954,8 +985,13 @@ async function seedAdminUser() {
   const existing = await db.getUserByUsername(adminUser);
   if (existing) return;
 
-  if (adminPass.length < MIN_ADMIN_PASSWORD_LENGTH) {
-    throw new Error(`ADMIN_PASS must be at least ${MIN_ADMIN_PASSWORD_LENGTH} characters for seeded admin accounts`);
+  const policyResult = validatePasswordPolicy({
+    password: adminPass,
+    username: adminUser,
+    role: 'admin'
+  });
+  if (!policyResult.valid) {
+    throw new Error(`ADMIN_PASS rejected by password policy: ${policyResult.message}`);
   }
 
   const passwordHash = await bcrypt.hash(adminPass, BCRYPT_ROUNDS);
@@ -968,9 +1004,17 @@ async function startServer() {
   await initPromise;
   logger.info('Database ready');
 
-  const server = app.listen(PORT, () => {
-    logger.info({ port: PORT, database: 'projects.db', auth: 'session-based' }, 'Project Overviewer server running');
+  const server = app.listen(PORT, HOST, () => {
+    logger.info({ host: HOST, port: PORT, database: 'projects.db', auth: 'session-based' }, 'Project Overviewer server running');
   });
+
+  // Initialize WebSocket server (persistent Node.js only, not serverless)
+  try {
+    const createWebSocketServer = require('./ws-server');
+    createWebSocketServer({ server, db, logger, eventBus, logSecurityEvent });
+  } catch (err) {
+    logger.warn({ err: err.message }, 'WebSocket server not available (ws module missing or error)');
+  }
 
   // Graceful shutdown with request draining
   async function shutdown(signal) {

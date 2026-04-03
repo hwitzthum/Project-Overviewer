@@ -1,4 +1,6 @@
 // Project Overviewer — App Initialization
+var notesSaveTimeout = null;
+
 async function init() {
   // Load data from API
   await loadFromStorage();
@@ -53,9 +55,22 @@ async function init() {
   });
 
   // Navigation
+  var ALLOWED_STATIC_VIEWS = ['all', 'kanban', 'focus', 'active', 'not-started',
+    'in-progress', 'backlog', 'completed', 'archived', 'overdue', 'today', 'week',
+    'priority-high', 'priority-medium', 'priority-low',
+    'smart-overdue', 'smart-due-soon', 'smart-waiting', 'project'];
+
+  function isAllowedView(view) {
+    if (!view) return false;
+    if (ALLOWED_STATIC_VIEWS.indexOf(view) !== -1) return true;
+    if (/^tag-.{1,64}$/.test(view)) return true;
+    if (/^stakeholder-.{1,100}$/.test(view)) return true;
+    return false;
+  }
+
   document.querySelector('.sidebar-nav').addEventListener('click', e => {
     const navItem = e.target.closest('.nav-item');
-    if (navItem && navItem.dataset.view) {
+    if (navItem && navItem.dataset.view && isAllowedView(navItem.dataset.view)) {
       document.querySelectorAll('.nav-item').forEach(item => item.classList.remove('active'));
       navItem.classList.add('active');
       currentView = navItem.dataset.view;
@@ -168,15 +183,16 @@ async function init() {
 
   // Modal close buttons
   document.querySelectorAll('.modal-close').forEach(btn => {
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('.modal-overlay').forEach(m => m.classList.remove('active'));
+    btn.addEventListener('click', e => {
+      const overlay = e.target.closest('.modal-overlay');
+      if (overlay) closeModal(overlay.id);
     });
   });
 
   // Close modals on overlay click
   document.querySelectorAll('.modal-overlay').forEach(overlay => {
     overlay.addEventListener('click', e => {
-      if (e.target === overlay) overlay.classList.remove('active');
+      if (e.target === overlay) closeModal(overlay.id);
     });
   });
 
@@ -186,8 +202,8 @@ async function init() {
   });
   document.getElementById('notesTextarea').addEventListener('input', e => {
     state.quickNotes = e.target.value;
-    clearTimeout(window.notesSaveTimeout);
-    window.notesSaveTimeout = setTimeout(async () => {
+    clearTimeout(notesSaveTimeout);
+    notesSaveTimeout = setTimeout(async () => {
       try {
         await API.saveQuickNotes(state.quickNotes);
       } catch (error) {
@@ -238,6 +254,7 @@ async function init() {
 
   // API saves immediately, no need for beforeunload handler
   startAppPolling();
+  if (window.WS) WS.connect();
   markPageReady();
 }
 

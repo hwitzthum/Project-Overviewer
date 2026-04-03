@@ -3,6 +3,7 @@ let workspaceToggleAppliedMode = 'team';
 let workspaceToggleRequestedMode = 'team';
 let workspaceToggleInFlight = false;
 const pendingTeamActions = new Set();
+let userMenuOutsideClickAbort = null;
 
 async function withPendingState(actionKey, button, action, relatedInputs = []) {
   if (!button || pendingTeamActions.has(actionKey)) return;
@@ -39,36 +40,60 @@ async function initUserMenu() {
       document.getElementById('menuAdmin').style.display = '';
     }
 
+    function closeUserMenu() {
+      document.getElementById('userMenuDropdown').style.display = 'none';
+      if (userMenuOutsideClickAbort) {
+        userMenuOutsideClickAbort.abort();
+        userMenuOutsideClickAbort = null;
+      }
+    }
+
+    function armUserMenuClose() {
+      if (userMenuOutsideClickAbort) {
+        userMenuOutsideClickAbort.abort();
+      }
+      userMenuOutsideClickAbort = new AbortController();
+      window.setTimeout(() => {
+        document.addEventListener('click', closeUserMenu, {
+          once: true,
+          signal: userMenuOutsideClickAbort.signal
+        });
+      }, 0);
+    }
+
     // Toggle dropdown
     document.getElementById('userMenuTrigger').addEventListener('click', (e) => {
       e.stopPropagation();
       const dd = document.getElementById('userMenuDropdown');
-      dd.style.display = dd.style.display === 'none' ? '' : 'none';
+      const isOpening = dd.style.display === 'none';
+      if (isOpening) {
+        dd.style.display = '';
+        armUserMenuClose();
+      } else {
+        closeUserMenu();
+      }
     });
-
-    // Close on outside click (use capture to ensure it fires, and named function for cleanup)
-    function closeUserMenu() {
-      document.getElementById('userMenuDropdown').style.display = 'none';
-    }
-    document.addEventListener('click', closeUserMenu);
+    document.getElementById('userMenuDropdown').addEventListener('click', (e) => e.stopPropagation());
 
     // Menu actions
     document.getElementById('menuSettings').addEventListener('click', () => {
-      document.getElementById('userMenuDropdown').style.display = 'none';
+      closeUserMenu();
       document.getElementById('openSettings').click();
     });
 
     document.getElementById('menuAdmin').addEventListener('click', () => {
+      closeUserMenu();
       window.location.href = '/admin.html';
     });
 
     document.getElementById('menuLogout').addEventListener('click', () => {
+      closeUserMenu();
       API.logout();
     });
 
     // Team menu
     document.getElementById('menuTeam').addEventListener('click', () => {
-      document.getElementById('userMenuDropdown').style.display = 'none';
+      closeUserMenu();
       openModal('settingsModal');
       // Scroll to team section
       setTimeout(() => {

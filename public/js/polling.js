@@ -1,4 +1,9 @@
 const SHARED_DATA_POLL_INTERVAL_MS = 30 * 1000;
+const WS_BACKSTOP_POLL_INTERVAL_MS = 120 * 1000;
+
+function getEffectivePollInterval() {
+  return (window.WS && WS.isConnected()) ? WS_BACKSTOP_POLL_INTERVAL_MS : SHARED_DATA_POLL_INTERVAL_MS;
+}
 
 let appPollingStarted = false;
 let appPollingTimer = null;
@@ -62,7 +67,8 @@ function normalizeTeamPayload(payload) {
   return payload.id ? payload : null;
 }
 
-function scheduleNextAppPoll(delay = SHARED_DATA_POLL_INTERVAL_MS) {
+function scheduleNextAppPoll(delay) {
+  if (delay === undefined) delay = getEffectivePollInterval();
   clearTimeout(appPollingTimer);
   appPollingTimer = window.setTimeout(runAppPollingCycle, delay);
 }

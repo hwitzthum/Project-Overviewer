@@ -1,6 +1,6 @@
 const express = require('express');
 
-module.exports = function createProjectsRouter({ db, logger, schemas, requireAuth }) {
+module.exports = function createProjectsRouter({ db, logger, schemas, requireAuth, eventBus }) {
   async function resolveTeamScope(userId) {
     const workspaceMode = await db.getUserSetting(userId, 'workspaceMode');
     let teamUserIds = null;
@@ -56,6 +56,7 @@ module.exports = function createProjectsRouter({ db, logger, schemas, requireAut
 
       const project = await db.createProject(req.user.userId, req.body);
       res.status(201).json(project);
+      if (eventBus) eventBus.emit('project.created', { projectId: project.id, userId: req.user.userId, title: req.body.title });
     } catch (error) {
       logger.error({ err: error }, 'Error creating project');
       res.status(500).json({ error: 'Failed to create project' });
@@ -76,6 +77,7 @@ module.exports = function createProjectsRouter({ db, logger, schemas, requireAut
         return res.status(404).json({ error: 'Project not found' });
       }
       res.json(project);
+      if (eventBus) eventBus.emit('project.updated', { projectId: req.params.id, userId: req.user.userId, changes: req.body });
     } catch (error) {
       logger.error({ err: error }, 'Error updating project');
       res.status(500).json({ error: 'Failed to update project' });
@@ -89,6 +91,7 @@ module.exports = function createProjectsRouter({ db, logger, schemas, requireAut
         return res.status(404).json({ error: 'Project not found' });
       }
       res.json({ success: true });
+      if (eventBus) eventBus.emit('project.deleted', { projectId: req.params.id, userId: req.user.userId });
     } catch (error) {
       logger.error({ err: error }, 'Error deleting project');
       res.status(500).json({ error: 'Failed to delete project' });

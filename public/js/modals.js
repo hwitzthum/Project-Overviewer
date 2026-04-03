@@ -1,10 +1,32 @@
 // Project Overviewer — Modal Functions
+var modalStack = [];
+
+function syncModalStack(id, isOpen) {
+  modalStack = modalStack.filter(function(openId) {
+    return openId !== id;
+  });
+
+  if (isOpen) {
+    modalStack.push(id);
+  }
+}
+
+function getTopModalId() {
+  return modalStack.length > 0 ? modalStack[modalStack.length - 1] : null;
+}
+
 function openModal(id) {
-  document.getElementById(id).classList.add('active');
+  var modal = document.getElementById(id);
+  if (!modal) return;
+  modal.classList.add('active');
+  syncModalStack(id, true);
 }
 
 function closeModal(id) {
-  document.getElementById(id).classList.remove('active');
+  var modal = document.getElementById(id);
+  if (!modal) return;
+  modal.classList.remove('active');
+  syncModalStack(id, false);
 }
 
 function showConfirmModal(title, message, onConfirm) {
