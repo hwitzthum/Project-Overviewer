@@ -63,6 +63,31 @@ test.describe('Subtasks API', () => {
     expect(body.error).toContain('Cannot nest subtasks');
   });
 
+  test('bulk create rejects grandchild hierarchies atomically', async ({ request }) => {
+    const proj = await createProjectAPI(request, adminToken, { title: 'Bulk Grandchild Rejection' });
+    const pid = proj.body.id;
+
+    const bulk = await request.post(`${BASE_URL}/api/projects/${pid}/tasks/bulk`, {
+      headers: authHeaders(adminToken),
+      data: [
+        { tempId: 'root', title: 'Level 0' },
+        { tempId: 'child', title: 'Level 1', parentTempId: 'root' },
+        { title: 'Level 2', parentTempId: 'child' }
+      ]
+    });
+
+    expect(bulk.status()).toBe(400);
+    const body = await bulk.json();
+    expect(body.error).toContain('Cannot nest subtasks');
+
+    const projectRes = await request.get(`${BASE_URL}/api/projects/${pid}`, {
+      headers: authHeaders(adminToken)
+    });
+    expect(projectRes.status()).toBe(200);
+    const project = await projectRes.json();
+    expect(project.tasks).toEqual([]);
+  });
+
   test('subtasks appear in project task list via GET /api/projects', async ({ request }) => {
     const proj = await createProjectAPI(request, adminToken, { title: 'List Subtask Project' });
     const pid = proj.body.id;

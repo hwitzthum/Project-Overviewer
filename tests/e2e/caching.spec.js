@@ -19,7 +19,13 @@ test.describe('HTTP Caching', () => {
 
     const cssRes = await request.get(`${BASE_URL}${cssMatch[1]}`);
     expect(cssRes.ok()).toBeTruthy();
-    expect(cssRes.headers()['cache-control']).toBe('public, max-age=31536000, immutable');
+    // CSS gets immutable caching in production; revalidation otherwise (test/dev)
+    const cssCacheControl = cssRes.headers()['cache-control'];
+    if (process.env.NODE_ENV === 'production') {
+      expect(cssCacheControl).toBe('public, max-age=31536000, immutable');
+    } else {
+      expect(cssCacheControl).toBe('no-cache, max-age=0, must-revalidate');
+    }
   });
 
   test('versioned API reads send revalidation headers', async ({ request }) => {

@@ -1,5 +1,6 @@
 const express = require('express');
 const { inspectDocumentPayload } = require('../document-security');
+const { resolveTeamScope } = require('./shared');
 
 module.exports = function createDocumentsRouters({
   db,
@@ -11,14 +12,6 @@ module.exports = function createDocumentsRouters({
   logSecurityEvent,
   eventBus
 }) {
-  async function resolveTeamScope(userId) {
-    const workspaceMode = await db.getUserSetting(userId, 'workspaceMode');
-    let teamUserIds = null;
-    if (workspaceMode === 'team' || workspaceMode === null) {
-      teamUserIds = await db.getTeamUserIds(userId);
-    }
-    return teamUserIds;
-  }
 
   function getSafeDocumentMimeType(mimeType) {
     return allowedMimeTypes.has(mimeType) ? mimeType : 'application/octet-stream';
@@ -35,7 +28,7 @@ module.exports = function createDocumentsRouters({
 
   projectDocumentsRouter.get('/', requireAuth, async (req, res) => {
     try {
-      const teamUserIds = await resolveTeamScope(req.user.userId);
+      const teamUserIds = await resolveTeamScope(db, req.user.userId, req.user.workspaceMode);
       const documents = await db.getProjectDocuments(req.params.projectId, req.user.userId, {
         includeContent: false,
         teamUserIds
@@ -101,7 +94,7 @@ module.exports = function createDocumentsRouters({
 
   documentsRouter.get('/:id/preview', requireAuth, async (req, res) => {
     try {
-      const teamUserIds = await resolveTeamScope(req.user.userId);
+      const teamUserIds = await resolveTeamScope(db, req.user.userId, req.user.workspaceMode);
       const document = await db.getDocumentById(req.params.id, req.user.userId, { teamUserIds });
       if (!document) {
         return res.status(404).json({ error: 'Document not found' });
@@ -193,7 +186,7 @@ module.exports = function createDocumentsRouters({
 
   documentsRouter.get('/:id/download', requireAuth, async (req, res) => {
     try {
-      const teamUserIds = await resolveTeamScope(req.user.userId);
+      const teamUserIds = await resolveTeamScope(db, req.user.userId, req.user.workspaceMode);
       const document = await db.getDocumentById(req.params.id, req.user.userId, { teamUserIds });
       if (!document) {
         return res.status(404).json({ error: 'Document not found' });

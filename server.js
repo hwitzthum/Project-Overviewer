@@ -370,7 +370,11 @@ app.use(express.static(PUBLIC_DIR, {
     }
 
     if (filePath.includes(`${path.sep}css${path.sep}`)) {
-      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      if (process.env.NODE_ENV === 'production') {
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      } else {
+        res.setHeader('Cache-Control', 'no-cache, max-age=0, must-revalidate');
+      }
       return;
     }
 
@@ -510,6 +514,7 @@ if (z.object && z.string && typeof z.string === 'function') {
     });
 
     schemas.createProject = z.object({
+      id: z.string().uuid().optional(),
       title: z.string().min(1).max(500),
       stakeholder: z.string().max(200).optional(),
       description: z.string().max(10000).optional(),
@@ -546,6 +551,21 @@ if (z.object && z.string && typeof z.string === 'function') {
       parentTaskId: z.string().uuid().optional().nullable(),
       order: z.number().int().min(0).optional()
     });
+
+    schemas.createTaskBulk = z.array(z.object({
+      tempId: z.string().min(1).max(100).optional(),
+      title: z.string().min(1).max(500),
+      completed: z.boolean().optional(),
+      dueDate: dueDateSchema.optional(),
+      notes: z.string().max(10000).optional(),
+      priority: z.enum(VALID_PRIORITIES).optional(),
+      recurring: z.string().max(100).optional().nullable(),
+      blockedBy: z.string().max(100).optional().nullable(),
+      blockedByTempId: z.string().min(1).max(100).optional().nullable(),
+      parentTaskId: z.string().uuid().optional().nullable(),
+      parentTempId: z.string().min(1).max(100).optional().nullable(),
+      order: z.number().int().min(0).optional()
+    }));
 
     schemas.updateTask = z.object({
       title: z.string().min(1).max(500).optional(),

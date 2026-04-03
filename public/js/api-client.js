@@ -253,6 +253,13 @@ class API {
     });
   }
 
+  static async createTasksBulk(projectId, tasks) {
+    return await this.request(`/api/projects/${projectId}/tasks/bulk`, {
+      method: 'POST',
+      body: JSON.stringify(tasks)
+    });
+  }
+
   static async updateTask(taskId, updates) {
     return await this.request(`/api/tasks/${taskId}`, {
       method: 'PUT',
@@ -305,6 +312,13 @@ class API {
     return await this.request(`/api/settings/${key}`, {
       method: 'POST',
       body: JSON.stringify({ value })
+    });
+  }
+
+  static async setSettingsBulk(settings) {
+    return await this.request('/api/settings', {
+      method: 'PUT',
+      body: JSON.stringify({ settings })
     });
   }
 

@@ -1,23 +1,10 @@
 // Project Overviewer — Render Functions
 
-function flattenAllTasks(tasks) {
-  var result = [];
-  for (var i = 0; i < tasks.length; i++) {
-    result.push(tasks[i]);
-    if (tasks[i].subtasks) {
-      for (var j = 0; j < tasks[i].subtasks.length; j++) {
-        result.push(tasks[i].subtasks[j]);
-      }
-    }
-  }
-  return result;
-}
-
 function renderProjectCard(project, options) {
   var compact = options && options.compact;
   const dueInfo = formatDate(project.dueDate);
   const effectivePriority = project.status === 'backlog' ? 'none' : (project.priority || 'none');
-  const allTasks = flattenAllTasks(project.tasks || []);
+  const allTasks = flattenProjectTasks(project.tasks || []);
   const completedTasks = allTasks.filter(t => t.completed).length;
   const totalTasks = allTasks.length;
   const progress = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
@@ -27,7 +14,7 @@ function renderProjectCard(project, options) {
   if (compact) {
     const daysSinceUpdate = Math.floor((Date.now() - new Date(project.updated_at || project.created_at || 0)) / 86400000);
     const agingClass = daysSinceUpdate >= 14 ? ' card-aging-stale' : daysSinceUpdate >= 7 ? ' card-aging-mild' : '';
-    const hasBlockedTask = flattenAllTasks(project.tasks || []).some(t => t.blockedBy);
+    const hasBlockedTask = allTasks.some(t => t.blockedBy);
     const daysInStatus = project.statusChangedAt
       ? Math.floor((Date.now() - new Date(project.statusChangedAt)) / 86400000)
       : null;
@@ -259,7 +246,7 @@ function renderSmartListView(view) {
 }
 
 function renderProjectHome(project) {
-  const allHomeTasks = flattenAllTasks(project.tasks || []);
+  const allHomeTasks = flattenProjectTasks(project.tasks || []);
   const completedTasks = allHomeTasks.filter(t => t.completed).length;
   const totalTasks = allHomeTasks.length;
   const progress = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
@@ -981,7 +968,7 @@ function render() {
 
 function renderStatistics() {
   const projects = state.projects.filter(p => !p.archived);
-  const tasks = projects.flatMap(p => flattenAllTasks(p.tasks || []));
+  const tasks = projects.flatMap(p => flattenProjectTasks(p.tasks || []));
   const completedTasks = tasks.filter(t => t.completed).length;
   const totalTasks = tasks.length;
 

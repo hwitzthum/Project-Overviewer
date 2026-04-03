@@ -203,70 +203,122 @@ function computeAllCounts(projects) {
   };
 }
 
+// Lazy-initialized element cache for updateCounts — avoids ~20 getElementById calls per render
+let _countElCache = null;
+let _lastStakeholdersHtml = '';
+let _lastTagsHtml = '';
+
+function getCountElements() {
+  if (_countElCache) return _countElCache;
+  _countElCache = {
+    all: document.getElementById('countAll'),
+    kanban: document.getElementById('countKanban'),
+    inProgress: document.getElementById('countInProgress'),
+    notStarted: document.getElementById('countNotStarted'),
+    backlog: document.getElementById('countBacklog'),
+    completed: document.getElementById('countCompleted'),
+    overdue: document.getElementById('countOverdue'),
+    today: document.getElementById('countToday'),
+    week: document.getElementById('countWeek'),
+    high: document.getElementById('countHigh'),
+    medium: document.getElementById('countMedium'),
+    low: document.getElementById('countLow'),
+    archived: document.getElementById('countArchived'),
+    focus: document.getElementById('countFocus'),
+    smartOverdue: document.getElementById('countSmartOverdue'),
+    smartDueSoon: document.getElementById('countSmartDueSoon'),
+    smartWaiting: document.getElementById('countSmartWaiting'),
+    stakeholdersSection: document.getElementById('stakeholdersSection'),
+    stakeholdersList: document.getElementById('stakeholdersList'),
+    tagsSection: document.getElementById('tagsSection'),
+    tagsList: document.getElementById('tagsList')
+  };
+  return _countElCache;
+}
+
 function updateCounts() {
   const c = computeAllCounts(state.projects);
+  const el = getCountElements();
 
-  document.getElementById('countAll').textContent = c.activeCount;
-  const countKanbanEl = document.getElementById('countKanban');
-  if (countKanbanEl) countKanbanEl.textContent = c.activeCount;
-  const countInProgressEl = document.getElementById('countInProgress');
-  if (countInProgressEl) countInProgressEl.textContent = c.statusCounts['in-progress'];
-  const countNotStartedEl = document.getElementById('countNotStarted');
-  if (countNotStartedEl) countNotStartedEl.textContent = c.statusCounts['not-started'];
-  document.getElementById('countBacklog').textContent = c.statusCounts['backlog'];
-  document.getElementById('countCompleted').textContent = c.statusCounts['completed'];
-  document.getElementById('countOverdue').textContent = c.overdueCount;
-  document.getElementById('countToday').textContent = c.todayCount;
-  document.getElementById('countWeek').textContent = c.weekCount;
-  document.getElementById('countHigh').textContent = c.priorityCounts.high;
-  document.getElementById('countMedium').textContent = c.priorityCounts.medium;
-  document.getElementById('countLow').textContent = c.priorityCounts.low;
-  const countArchivedEl = document.getElementById('countArchived');
-  if (countArchivedEl) countArchivedEl.textContent = c.archivedCount;
+  if (el.all) el.all.textContent = c.activeCount;
+  if (el.kanban) el.kanban.textContent = c.activeCount;
+  if (el.inProgress) el.inProgress.textContent = c.statusCounts['in-progress'];
+  if (el.notStarted) el.notStarted.textContent = c.statusCounts['not-started'];
+  if (el.backlog) el.backlog.textContent = c.statusCounts['backlog'];
+  if (el.completed) el.completed.textContent = c.statusCounts['completed'];
+  if (el.overdue) el.overdue.textContent = c.overdueCount;
+  if (el.today) el.today.textContent = c.todayCount;
+  if (el.week) el.week.textContent = c.weekCount;
+  if (el.high) el.high.textContent = c.priorityCounts.high;
+  if (el.medium) el.medium.textContent = c.priorityCounts.medium;
+  if (el.low) el.low.textContent = c.priorityCounts.low;
+  if (el.archived) el.archived.textContent = c.archivedCount;
+  if (el.focus) el.focus.textContent = c.focusCount;
+  if (el.smartOverdue) el.smartOverdue.textContent = c.smartOverdueCount;
+  if (el.smartDueSoon) el.smartDueSoon.textContent = c.smartDueSoonCount;
+  if (el.smartWaiting) el.smartWaiting.textContent = c.smartWaitingCount;
 
-  const focusEl = document.getElementById('countFocus');
-  if (focusEl) focusEl.textContent = c.focusCount;
-  const smartOverdueEl = document.getElementById('countSmartOverdue');
-  if (smartOverdueEl) smartOverdueEl.textContent = c.smartOverdueCount;
-  const smartDueSoonEl = document.getElementById('countSmartDueSoon');
-  if (smartDueSoonEl) smartDueSoonEl.textContent = c.smartDueSoonCount;
-  const smartWaitingEl = document.getElementById('countSmartWaiting');
-  if (smartWaitingEl) smartWaitingEl.textContent = c.smartWaitingCount;
-
-  const stakeholdersSection = document.getElementById('stakeholdersSection');
-  const stakeholdersList = document.getElementById('stakeholdersList');
+  // Stakeholders sidebar — only rebuild innerHTML when content actually changed.
+  // Note: innerHTML is used here with escapeHtml()-sanitized values from the existing
+  // codebase pattern. The stakeholder/tag values are user-controlled project metadata
+  // that pass through escapeHtml() before insertion.
   if (c.stakeholdersMap.size > 0) {
-    stakeholdersSection.style.display = 'block';
+    if (el.stakeholdersSection) el.stakeholdersSection.style.display = 'block';
     const sortedStakeholders = [...c.stakeholdersMap.entries()]
       .sort((a, b) => a[0].localeCompare(b[0], undefined, { sensitivity: 'base' }));
 
-    stakeholdersList.innerHTML = sortedStakeholders.map(([stakeholder, count]) => {
-      const stakeholderKey = encodeURIComponent(stakeholder);
-      return `
-        <div class="nav-item${currentView === 'stakeholder-' + stakeholderKey ? ' active' : ''}" data-view="stakeholder-${stakeholderKey}" tabindex="0" role="button">
-          <span class="nav-item-icon">\u{1F464}</span>
-          <span>${escapeHtml(stakeholder)}</span>
-          <span class="nav-item-count">${count}</span>
-        </div>
-      `;
-    }).join('');
+    const stakeholderDataKey = sortedStakeholders.map(([s, c]) => s + ':' + c).join('|');
+    if (el.stakeholdersList && stakeholderDataKey !== _lastStakeholdersHtml) {
+      // Data changed — full rebuild (values are escapeHtml()-sanitized per existing pattern)
+      el.stakeholdersList.innerHTML = sortedStakeholders.map(([stakeholder, count]) => {
+        const stakeholderKey = encodeURIComponent(stakeholder);
+        return `
+          <div class="nav-item${currentView === 'stakeholder-' + stakeholderKey ? ' active' : ''}" data-view="stakeholder-${stakeholderKey}" tabindex="0" role="button">
+            <span class="nav-item-icon">\u{1F464}</span>
+            <span>${escapeHtml(stakeholder)}</span>
+            <span class="nav-item-count">${count}</span>
+          </div>
+        `;
+      }).join('');
+      _lastStakeholdersHtml = stakeholderDataKey;
+    } else if (el.stakeholdersList) {
+      el.stakeholdersList.querySelectorAll('.nav-item').forEach(item => {
+        item.classList.toggle('active', item.dataset.view === currentView);
+      });
+    }
   } else {
-    stakeholdersSection.style.display = 'none';
-    stakeholdersList.innerHTML = '';
+    if (el.stakeholdersSection) el.stakeholdersSection.style.display = 'none';
+    if (el.stakeholdersList && _lastStakeholdersHtml !== '') {
+      el.stakeholdersList.innerHTML = '';
+      _lastStakeholdersHtml = '';
+    }
   }
 
-  const tagsSection = document.getElementById('tagsSection');
-  const tagsList = document.getElementById('tagsList');
+  // Tags sidebar — same diff-before-rebuild pattern
   if (c.tagCounts.size > 0) {
-    tagsSection.style.display = 'block';
-    tagsList.innerHTML = [...c.tagCounts.entries()].map(([tag, count]) => `
-      <div class="nav-item${currentView === 'tag-' + tag ? ' active' : ''}" data-view="tag-${escapeHtml(tag)}" tabindex="0" role="button">
-        <span class="nav-item-icon">\u{1F3F7}\uFE0F</span>
-        <span>${escapeHtml(tag)}</span>
-        <span class="nav-item-count">${count}</span>
-      </div>
-    `).join('');
+    if (el.tagsSection) el.tagsSection.style.display = 'block';
+    const tagEntries = [...c.tagCounts.entries()];
+    const tagDataKey = tagEntries.map(([t, c]) => t + ':' + c).join('|');
+    if (el.tagsList && tagDataKey !== _lastTagsHtml) {
+      // Data changed — full rebuild (values are escapeHtml()-sanitized per existing pattern)
+      el.tagsList.innerHTML = tagEntries.map(([tag, count]) => `
+        <div class="nav-item${currentView === 'tag-' + tag ? ' active' : ''}" data-view="tag-${escapeHtml(tag)}" tabindex="0" role="button">
+          <span class="nav-item-icon">\u{1F3F7}\uFE0F</span>
+          <span>${escapeHtml(tag)}</span>
+          <span class="nav-item-count">${count}</span>
+        </div>
+      `).join('');
+      _lastTagsHtml = tagDataKey;
+    } else if (el.tagsList) {
+      el.tagsList.querySelectorAll('.nav-item').forEach(item => {
+        item.classList.toggle('active', item.dataset.view === currentView);
+      });
+    }
   } else {
-    tagsSection.style.display = 'none';
+    if (el.tagsSection) el.tagsSection.style.display = 'none';
+    if (el.tagsList && _lastTagsHtml !== '') {
+      el.tagsList.innerHTML = '';
+      _lastTagsHtml = '';
+    }
   }
 }

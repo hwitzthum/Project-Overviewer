@@ -20,9 +20,7 @@ module.exports = function createExportImportRouter({ db, logger, schemas, requir
         return res.status(400).json({ error: 'Invalid import data' });
       }
 
-      const normalizedImport = JSON.parse(JSON.stringify(req.body));
-
-      for (const project of normalizedImport.projects || []) {
+      for (const project of req.body.projects || []) {
         for (const document of project.documents || []) {
           if (document?.type !== 'docx') continue;
           const inspection = inspectDocumentPayload(document, { allowMimeInference: true });
@@ -40,13 +38,13 @@ module.exports = function createExportImportRouter({ db, logger, schemas, requir
       }
 
       if (schemas.importData) {
-        const result = schemas.importData.safeParse(normalizedImport);
+        const result = schemas.importData.safeParse(req.body);
         if (!result.success) {
           return res.status(400).json({ error: 'Invalid import data', details: result.error.issues });
         }
         await db.importData(req.user.userId, result.data);
       } else {
-        await db.importData(req.user.userId, normalizedImport);
+        await db.importData(req.user.userId, req.body);
       }
       res.json({ success: true });
     } catch (error) {

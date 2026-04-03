@@ -510,7 +510,8 @@ async function initDatabase() {
     { sql: 'CREATE INDEX IF NOT EXISTS idx_user_settings_user_id ON user_settings(user_id)', args: [] },
     { sql: 'CREATE INDEX IF NOT EXISTS idx_user_settings_user_key ON user_settings(user_id, key)', args: [] },
     { sql: 'CREATE INDEX IF NOT EXISTS idx_team_members_user_id ON team_members(user_id)', args: [] },
-    { sql: 'CREATE UNIQUE INDEX IF NOT EXISTS idx_quick_notes_user_id_unique ON quick_notes(user_id)', args: [] }
+    { sql: 'CREATE UNIQUE INDEX IF NOT EXISTS idx_quick_notes_user_id_unique ON quick_notes(user_id)', args: [] },
+    { sql: 'CREATE INDEX IF NOT EXISTS idx_projects_user_id_archived ON projects(user_id, archived)', args: [] }
   ], 'write');
 
   await ensureSessionSchema();
@@ -640,9 +641,11 @@ async function getSessionByToken(token) {
   await waitForDb();
   const tokenHash = hashSessionToken(token);
   const session = await get(`
-    SELECT s.*, u.id as uid, u.username, u.email, u.role, u.approved
+    SELECT s.*, u.id as uid, u.username, u.email, u.role, u.approved,
+           us.value AS workspace_mode_raw
     FROM sessions s
     JOIN users u ON s.user_id = u.id
+    LEFT JOIN user_settings us ON us.user_id = u.id AND us.key = 'workspaceMode'
     WHERE s.token = ?
   `, [tokenHash]);
 
@@ -680,7 +683,8 @@ async function getSessionByToken(token) {
       role: session.role,
       approved: session.approved === 1,
       expiresAt: session.expires_at,
-      lastSeenAt: effectiveLastSeenAt
+      lastSeenAt: effectiveLastSeenAt,
+      workspaceMode: session.workspace_mode_raw ? safeJsonParse(session.workspace_mode_raw) : null
     }
   };
 }
@@ -883,14 +887,10 @@ async function getProjectById(id, userId, options = {}) {
   }
   if (!project) return null;
 
-  const tasks = await all(
-    'SELECT * FROM tasks WHERE project_id = ? ORDER BY task_order ASC, created_at ASC',
-    [id]
-  );
-  const docs = await all(
-    'SELECT id, project_id, doc_type, title, payload, file_name, mime_type, created_at FROM documents WHERE project_id = ? ORDER BY created_at ASC',
-    [id]
-  );
+  const [tasks, docs] = await Promise.all([
+    all('SELECT * FROM tasks WHERE project_id = ? ORDER BY task_order ASC, created_at ASC', [id]),
+    all('SELECT id, project_id, doc_type, title, payload, file_name, mime_type, created_at FROM documents WHERE project_id = ? ORDER BY created_at ASC', [id])
+  ]);
 
   return {
     ...mapProject(project),
@@ -901,7 +901,7 @@ async function getProjectById(id, userId, options = {}) {
 
 async function createProject(userId, project) {
   await waitForDb();
-  const id = generateId();
+  const id = project.id || generateId();
   const owner = await getUserById(userId);
   await run(`
     INSERT INTO projects (id, user_id, title, stakeholder, description, status, priority, due_date, tags, project_order, archived, archived_at)
@@ -1127,6 +1127,59 @@ async function createTask(projectId, userId, task) {
   ]);
 
   return id;
+}
+
+async function createTasksBulk(projectId, userId, tasks) {
+  await waitForDb();
+  const project = await get('SELECT id FROM projects WHERE id = ? AND user_id = ?', [projectId, userId]);
+  if (!project) return null;
+
+  // Phase 1: Assign real IDs and compute order offsets
+  const row = await get(
+    'SELECT COALESCE(MAX(task_order), -1) AS max_order FROM tasks WHERE project_id = ?',
+    [projectId]
+  );
+  let nextOrder = (row?.max_order ?? -1) + 1;
+
+  // First pass: assign real IDs so forward references can be resolved
+  const tempToReal = new Map();
+  for (const task of tasks) {
+    if (task.tempId) tempToReal.set(task.tempId, generateId());
+  }
+
+  const insertStmts = [];
+  for (const task of tasks) {
+    const realId = task.tempId ? tempToReal.get(task.tempId) : generateId();
+
+    const parentTaskId = task.parentTempId
+      ? (tempToReal.get(task.parentTempId) || null)
+      : (task.parentTaskId || null);
+
+    const blockedBy = task.blockedByTempId
+      ? (tempToReal.get(task.blockedByTempId) || null)
+      : (task.blockedBy || null);
+
+    const order = Number.isInteger(task.order) ? task.order : nextOrder++;
+    insertStmts.push({
+      sql: `INSERT INTO tasks (id, project_id, title, completed, due_date, notes, priority, recurring, blocked_by, task_order, parent_task_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      args: [
+        realId, projectId, task.title,
+        task.completed ? 1 : 0,
+        task.dueDate || null,
+        task.notes || '',
+        task.priority || 'none',
+        task.recurring || null,
+        blockedBy,
+        order,
+        parentTaskId
+      ]
+    });
+  }
+
+  await client.batch(insertStmts, 'write');
+
+  return Object.fromEntries(tempToReal);
 }
 
 async function updateTask(taskId, userId, updates) {
@@ -1401,6 +1454,19 @@ async function setUserSetting(userId, key, value) {
   );
 }
 
+async function setUserSettingsBulk(userId, settings) {
+  await waitForDb();
+  const entries = Object.entries(settings);
+  if (entries.length === 0) return;
+  await client.batch(
+    entries.map(([key, value]) => ({
+      sql: 'INSERT OR REPLACE INTO user_settings (user_id, key, value) VALUES (?, ?, ?)',
+      args: [userId, key, JSON.stringify(value)]
+    })),
+    'write'
+  );
+}
+
 async function getAllUserSettings(userId) {
   await waitForDb();
   const rows = await all('SELECT * FROM user_settings WHERE user_id = ?', [userId]);
@@ -1415,7 +1481,7 @@ async function getAllUserSettings(userId) {
 
 async function getQuickNotes(userId) {
   await waitForDb();
-  const note = await get('SELECT content FROM quick_notes WHERE user_id = ? ORDER BY id DESC LIMIT 1', [userId]);
+  const note = await get('SELECT content FROM quick_notes WHERE user_id = ? LIMIT 1', [userId]);
   return note ? note.content : '';
 }
 
@@ -1872,6 +1938,7 @@ module.exports = {
   getProjectTasks,
   countTasksByProject,
   createTask,
+  createTasksBulk,
   updateTask,
   deleteTask,
   reorderTasks,
@@ -1888,6 +1955,7 @@ module.exports = {
   // User Settings
   getUserSetting,
   setUserSetting,
+  setUserSettingsBulk,
   getAllUserSettings,
   // Teams
   createTeam,

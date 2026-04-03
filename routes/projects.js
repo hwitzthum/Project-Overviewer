@@ -1,20 +1,12 @@
 const express = require('express');
+const { resolveTeamScope } = require('./shared');
 
 module.exports = function createProjectsRouter({ db, logger, schemas, requireAuth, eventBus }) {
-  async function resolveTeamScope(userId) {
-    const workspaceMode = await db.getUserSetting(userId, 'workspaceMode');
-    let teamUserIds = null;
-    if (workspaceMode === 'team' || workspaceMode === null) {
-      teamUserIds = await db.getTeamUserIds(userId);
-    }
-    return teamUserIds;
-  }
-
   const router = express.Router();
 
   router.get('/', requireAuth, async (req, res) => {
     try {
-      const teamUserIds = await resolveTeamScope(req.user.userId);
+      const teamUserIds = await resolveTeamScope(db, req.user.userId, req.user.workspaceMode);
       const projects = await db.getAllProjects(req.user.userId, { teamUserIds });
       res.json(projects);
     } catch (error) {
@@ -25,7 +17,7 @@ module.exports = function createProjectsRouter({ db, logger, schemas, requireAut
 
   router.get('/:id', requireAuth, async (req, res) => {
     try {
-      const teamUserIds = await resolveTeamScope(req.user.userId);
+      const teamUserIds = await resolveTeamScope(db, req.user.userId, req.user.workspaceMode);
       const project = await db.getProjectById(req.params.id, req.user.userId, { teamUserIds });
       if (!project) {
         return res.status(404).json({ error: 'Project not found' });

@@ -16,6 +16,7 @@ const {
   createTaskAPI,
   createDocumentAPI,
   authHeaders,
+  loginUI,
   uniqueUser,
 } = require('./helpers');
 
@@ -119,6 +120,56 @@ test.describe('Max Tasks Per Project (maxTasksPerProject)', () => {
     expect(r4.status()).toBe(403);
 
     // Cleanup
+    await setGlobalSetting(request, adminToken, 'maxTasksPerProject', null);
+  });
+
+  test('undo delete restores projects with subtasks when root task limit is reached', async ({ request, page }) => {
+    const { token: adminToken } = await loginAPI(request);
+    const user = await createApprovedUser(request, adminToken, 'undo');
+    const password = 'SecurePass123!';
+
+    await setGlobalSetting(request, adminToken, 'maxTasksPerProject', 3);
+
+    const { body: project } = await createProjectAPI(request, user.token, { title: 'Undo Restore Project' });
+
+    const rootTaskIds = [];
+    for (let i = 1; i <= 3; i += 1) {
+      const { response, body } = await createTaskAPI(request, user.token, project.id, { title: `Root Task ${i}` });
+      expect(response.status()).toBe(201);
+      rootTaskIds.push(body.id);
+    }
+
+    const subtask = await request.post(`${BASE_URL}/api/projects/${project.id}/tasks`, {
+      headers: authHeaders(user.token),
+      data: { title: 'Nested Task', parentTaskId: rootTaskIds[0] }
+    });
+    expect(subtask.status()).toBe(201);
+
+    await page.goto(`${BASE_URL}/login.html`);
+    await loginUI(page, { username: user.username, password });
+    await page.waitForURL(/index\.html$/);
+    const projectCard = page.locator(`.project-card[data-id="${project.id}"]`);
+    await expect(projectCard).toBeVisible();
+    await projectCard.locator('.project-delete-btn').click();
+    await page.locator('#confirmModal.active').waitFor();
+    await page.click('#confirmAction');
+
+    const undoToast = page.locator('.toast', { hasText: 'Deleted "Undo Restore Project"' });
+    await expect(undoToast).toBeVisible();
+    await undoToast.locator('.toast-action', { hasText: 'Undo' }).click();
+
+    await expect(page.locator('.toast', { hasText: 'Project restored' })).toBeVisible();
+
+    const restored = await request.get(`${BASE_URL}/api/projects/${project.id}`, {
+      headers: authHeaders(user.token),
+    });
+    expect(restored.status()).toBe(200);
+    const restoredProject = await restored.json();
+    expect(restoredProject.tasks).toHaveLength(3);
+    const restoredRoot = restoredProject.tasks.find(task => task.title === 'Root Task 1');
+    expect(restoredRoot).toBeTruthy();
+    expect(restoredRoot.subtasks.map(task => task.title)).toContain('Nested Task');
+
     await setGlobalSetting(request, adminToken, 'maxTasksPerProject', null);
   });
 });

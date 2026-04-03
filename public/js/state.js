@@ -104,12 +104,18 @@ async function saveSettings(changedSettingKeys = []) {
   clearTimeout(settingsSaveTimeout);
   settingsSaveTimeout = setTimeout(async () => {
     try {
+      const changed = {};
       for (const [key, value] of Object.entries(state.settings)) {
         if (key === 'theme') continue;
         const serialized = JSON.stringify(value);
         if (lastSavedSettings[key] !== serialized) {
-          await API.setSetting(key, value);
-          lastSavedSettings[key] = serialized;
+          changed[key] = value;
+        }
+      }
+      if (Object.keys(changed).length > 0) {
+        await API.setSettingsBulk(changed);
+        for (const [key, value] of Object.entries(changed)) {
+          lastSavedSettings[key] = JSON.stringify(value);
         }
       }
     } catch (error) {
@@ -227,8 +233,6 @@ async function restoreDeletedProject(deletedProject) {
   try {
     const tasks = deletedProject.tasks || [];
     const documents = deletedProject.documents || [];
-    const taskIdMap = new Map();
-    const createdTaskRefs = [];
     const restoredProject = await API.createProject({
       id: deletedProject.id,
       title: deletedProject.title,
@@ -242,48 +246,61 @@ async function restoreDeletedProject(deletedProject) {
       order: deletedProject.project_order ?? deletedProject.order ?? state.projects.length
     });
 
-    async function restoreTaskTree(taskList, parentTaskId) {
-      for (let i = 0; i < taskList.length; i += 1) {
-        const task = taskList[i];
-        const created = await API.createTask(restoredProject.id, {
-          title: task.title,
-          completed: task.completed,
-          dueDate: task.dueDate || null,
-          notes: task.notes || '',
-          priority: task.priority || 'none',
-          recurring: task.recurring || null,
-          blockedBy: null,
-          parentTaskId: parentTaskId || null,
-          order: i
-        });
-        const createdTaskId = created?.id || task.id || uuid();
-        if (task.id) {
-          taskIdMap.set(task.id, createdTaskId);
+    if (tasks.length > 0) {
+      const oldIdToNewId = new Map();
+      const dependencyUpdates = [];
+
+      async function restoreTaskTree(taskList, parentTaskId) {
+        for (let i = 0; i < taskList.length; i += 1) {
+          const task = taskList[i];
+          const created = await API.createTask(restoredProject.id, {
+            title: task.title,
+            completed: task.completed,
+            dueDate: task.dueDate || null,
+            notes: task.notes || '',
+            priority: task.priority || 'none',
+            recurring: task.recurring || null,
+            parentTaskId: parentTaskId || null,
+            order: i
+          });
+
+          if (!created || !created.id) {
+            throw new Error('Task restore failed');
+          }
+
+          if (task.id) {
+            oldIdToNewId.set(task.id, created.id);
+          }
+          if (task.blockedBy && task.id) {
+            dependencyUpdates.push({
+              taskId: task.id,
+              blockedBy: task.blockedBy
+            });
+          }
+          if (task.subtasks && task.subtasks.length > 0) {
+            await restoreTaskTree(task.subtasks, created.id);
+          }
         }
-        createdTaskRefs.push({
-          newTaskId: createdTaskId,
-          blockedBy: task.blockedBy || null
-        });
-        if (task.subtasks && task.subtasks.length > 0) {
-          await restoreTaskTree(task.subtasks, createdTaskId);
+      }
+
+      await restoreTaskTree(tasks, null);
+
+      for (let i = 0; i < dependencyUpdates.length; i += 1) {
+        const dependency = dependencyUpdates[i];
+        const restoredTaskId = oldIdToNewId.get(dependency.taskId);
+        const restoredBlockedById = oldIdToNewId.get(dependency.blockedBy);
+
+        if (restoredTaskId && restoredBlockedById) {
+          await API.updateTask(restoredTaskId, { blockedBy: restoredBlockedById });
         }
       }
     }
 
-    await restoreTaskTree(tasks, null);
-
-    for (let i = 0; i < createdTaskRefs.length; i += 1) {
-      const ref = createdTaskRefs[i];
-      if (!ref.blockedBy) continue;
-      const mappedBlockedBy = taskIdMap.get(ref.blockedBy);
-      if (mappedBlockedBy) {
-        await API.updateTask(ref.newTaskId, { blockedBy: mappedBlockedBy });
-      }
-    }
-
-    for (let i = 0; i < documents.length; i += 1) {
-      const doc = documents[i];
-      await API.createDocument(restoredProject.id, { ...doc, id: doc.id });
+    // Restore documents in parallel
+    if (documents.length > 0) {
+      await Promise.all(
+        documents.map(doc => API.createDocument(restoredProject.id, { ...doc, id: doc.id }))
+      );
     }
 
     const refreshedProject = await API.getProject(restoredProject.id);
