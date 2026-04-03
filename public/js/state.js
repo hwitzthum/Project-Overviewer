@@ -45,7 +45,7 @@ function notify() {
 }
 
 function setState(updates) {
-  const oldSettings = { ...state.settings };
+  var oldSettings = state.settings;
 
   if (typeof updates === 'function') {
     state = { ...state, ...updates(state) };
@@ -54,11 +54,21 @@ function setState(updates) {
   }
   notify();
 
-  // If settings changed, save to API
-  if (updates.settings || (typeof updates === 'function' && state.settings !== oldSettings)) {
-    const changedSettingKeys = Object.keys(state.settings).filter(key => (
-      JSON.stringify(state.settings[key]) !== JSON.stringify(oldSettings[key])
-    ));
+  // If settings changed, save to API — compare by value, not reference
+  var settingsChanged = false;
+  if (typeof updates === 'function' || updates.settings) {
+    var keys = Object.keys(state.settings);
+    for (var i = 0; i < keys.length; i++) {
+      if (JSON.stringify(state.settings[keys[i]]) !== JSON.stringify(oldSettings[keys[i]])) {
+        settingsChanged = true;
+        break;
+      }
+    }
+  }
+  if (settingsChanged) {
+    var changedSettingKeys = Object.keys(state.settings).filter(function(key) {
+      return JSON.stringify(state.settings[key]) !== JSON.stringify(oldSettings[key]);
+    });
     saveSettings(changedSettingKeys);
   }
 }
@@ -214,6 +224,8 @@ async function restoreDeletedProject(deletedProject) {
   try {
     const tasks = deletedProject.tasks || [];
     const documents = deletedProject.documents || [];
+    const taskIdMap = new Map();
+    const createdTaskRefs = [];
     const restoredProject = await API.createProject({
       id: deletedProject.id,
       title: deletedProject.title,
@@ -227,19 +239,43 @@ async function restoreDeletedProject(deletedProject) {
       order: deletedProject.project_order ?? deletedProject.order ?? state.projects.length
     });
 
-    for (let i = 0; i < tasks.length; i += 1) {
-      const task = tasks[i];
-      await API.createTask(restoredProject.id, {
-        id: task.id,
-        title: task.title,
-        completed: task.completed,
-        dueDate: task.dueDate || null,
-        notes: task.notes || '',
-        priority: task.priority || 'none',
-        recurring: task.recurring || null,
-        blockedBy: task.blockedBy || null,
-        order: i
-      });
+    async function restoreTaskTree(taskList, parentTaskId) {
+      for (let i = 0; i < taskList.length; i += 1) {
+        const task = taskList[i];
+        const created = await API.createTask(restoredProject.id, {
+          title: task.title,
+          completed: task.completed,
+          dueDate: task.dueDate || null,
+          notes: task.notes || '',
+          priority: task.priority || 'none',
+          recurring: task.recurring || null,
+          blockedBy: null,
+          parentTaskId: parentTaskId || null,
+          order: i
+        });
+        const createdTaskId = created?.id || task.id || uuid();
+        if (task.id) {
+          taskIdMap.set(task.id, createdTaskId);
+        }
+        createdTaskRefs.push({
+          newTaskId: createdTaskId,
+          blockedBy: task.blockedBy || null
+        });
+        if (task.subtasks && task.subtasks.length > 0) {
+          await restoreTaskTree(task.subtasks, createdTaskId);
+        }
+      }
+    }
+
+    await restoreTaskTree(tasks, null);
+
+    for (let i = 0; i < createdTaskRefs.length; i += 1) {
+      const ref = createdTaskRefs[i];
+      if (!ref.blockedBy) continue;
+      const mappedBlockedBy = taskIdMap.get(ref.blockedBy);
+      if (mappedBlockedBy) {
+        await API.updateTask(ref.newTaskId, { blockedBy: mappedBlockedBy });
+      }
     }
 
     for (let i = 0; i < documents.length; i += 1) {
@@ -286,7 +322,14 @@ async function loadFromStorage() {
     }
 
     if (settings.status === 'fulfilled' && Object.keys(settings.value).length > 0) {
-      state.settings = { ...state.settings, ...settings.value };
+      var ALLOWED_SETTING_KEYS = ['theme', 'defaultView', 'sortBy', 'showCompleted',
+        'showArchived', 'wipLimits', 'kanbanColumns', 'sidebarCollapsed', 'workspaceMode'];
+      var safeSettings = {};
+      for (var i = 0; i < ALLOWED_SETTING_KEYS.length; i++) {
+        var k = ALLOWED_SETTING_KEYS[i];
+        if (k in settings.value) safeSettings[k] = settings.value[k];
+      }
+      state.settings = { ...state.settings, ...safeSettings };
     }
 
     if (notes.status === 'fulfilled') {
@@ -297,7 +340,6 @@ async function loadFromStorage() {
       state.templates = templates.value;
     }
 
-    showToast('Data loaded', 'success');
   } catch (e) {
     if (signal.aborted) return;
     console.error('Load failed:', e);

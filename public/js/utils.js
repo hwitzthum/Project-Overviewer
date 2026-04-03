@@ -28,6 +28,19 @@ function escapeAttribute(value) {
   return escapeHtml(value);
 }
 
+function sanitizeUrl(url, fallback) {
+  if (fallback === undefined) fallback = '#';
+  if (!url) return fallback;
+  // Relative paths are safe
+  if (url.startsWith('/') || url.startsWith('./') || url.startsWith('../')) return url;
+  try {
+    var parsed = new URL(url, window.location.origin);
+    return (parsed.protocol === 'https:' || parsed.protocol === 'http:') ? url : fallback;
+  } catch (e) {
+    return fallback;
+  }
+}
+
 function formatDateInputValue(value) {
   if (!value) return '';
   const normalized = String(value).trim();
@@ -78,10 +91,35 @@ function isDueWithinDays(dateStr, days) {
   return date >= today && date <= limit;
 }
 
+function flattenProjectTasks(tasks) {
+  var flattened = [];
+
+  function walk(taskList) {
+    for (var i = 0; i < taskList.length; i++) {
+      var task = taskList[i];
+      flattened.push(task);
+      if (task.subtasks && task.subtasks.length > 0) {
+        walk(task.subtasks);
+      }
+    }
+  }
+
+  walk(tasks || []);
+  return flattened;
+}
+
+function findTaskInProject(project, taskId) {
+  var tasks = flattenProjectTasks((project && project.tasks) || []);
+  for (var i = 0; i < tasks.length; i++) {
+    if (tasks[i].id === taskId) return tasks[i];
+  }
+  return null;
+}
+
 function findTaskEntryById(taskId) {
   if (!taskId) return null;
   for (const project of state.projects) {
-    const task = (project.tasks || []).find(t => t.id === taskId);
+    const task = findTaskInProject(project, taskId);
     if (task) return { task, project };
   }
   return null;
@@ -95,7 +133,7 @@ function getDependencyCandidates(taskId) {
   const entries = [];
   for (const project of state.projects) {
     if (project.archived) continue;
-    for (const task of project.tasks || []) {
+    for (const task of flattenProjectTasks(project.tasks || [])) {
       if (task.id === taskId) continue;
       entries.push({ task, project });
     }
@@ -107,7 +145,7 @@ function getUnblockedEntries(taskId) {
   if (!taskId) return [];
   const entries = [];
   for (const project of state.projects) {
-    for (const task of project.tasks || []) {
+    for (const task of flattenProjectTasks(project.tasks || [])) {
       if (task.blockedBy === taskId) {
         entries.push({ task, project });
       }
@@ -117,12 +155,16 @@ function getUnblockedEntries(taskId) {
 }
 
 function getAllTasksWithProjects() {
-  return state.projects
-    .filter(project => !project.archived)
-    .flatMap(project => (project.tasks || []).map(task => ({
-      task,
-      project
-    })));
+  var entries = [];
+  var projects = state.projects.filter(function(project) { return !project.archived; });
+  for (var i = 0; i < projects.length; i++) {
+    var project = projects[i];
+    var tasks = flattenProjectTasks(project.tasks || []);
+    for (var j = 0; j < tasks.length; j++) {
+      entries.push({ task: tasks[j], project: project });
+    }
+  }
+  return entries;
 }
 
 function decodeStakeholderView(view) {

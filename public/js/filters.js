@@ -85,7 +85,7 @@ function getFilteredProjects() {
       p.title.toLowerCase().includes(q) ||
       p.stakeholder?.toLowerCase().includes(q) ||
       p.description?.toLowerCase().includes(q) ||
-      p.tasks?.some(t => t.title.toLowerCase().includes(q))
+      flattenProjectTasks(p.tasks || []).some(t => t.title.toLowerCase().includes(q))
     );
   }
 
@@ -183,7 +183,7 @@ function computeAllCounts(projects) {
     }
 
     const isWaiting = ['backlog', 'not-started'].includes(p.status) && stakeholder;
-    const tasks = p.tasks || [];
+    const tasks = flattenProjectTasks(p.tasks || []);
     for (let j = 0; j < tasks.length; j++) {
       const task = tasks[j];
       if (task.completed) continue;

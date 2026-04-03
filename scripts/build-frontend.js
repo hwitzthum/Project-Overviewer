@@ -40,6 +40,7 @@ const bundles = [
       'js/events.js',
       'js/team.js',
       'js/polling.js',
+      'js/ws-client.js',
       'js/app.js'
     ]
   },

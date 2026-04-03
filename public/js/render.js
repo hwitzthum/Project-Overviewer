@@ -1,10 +1,24 @@
 // Project Overviewer — Render Functions
 
+function flattenAllTasks(tasks) {
+  var result = [];
+  for (var i = 0; i < tasks.length; i++) {
+    result.push(tasks[i]);
+    if (tasks[i].subtasks) {
+      for (var j = 0; j < tasks[i].subtasks.length; j++) {
+        result.push(tasks[i].subtasks[j]);
+      }
+    }
+  }
+  return result;
+}
+
 function renderProjectCard(project) {
   const dueInfo = formatDate(project.dueDate);
   const effectivePriority = project.status === 'backlog' ? 'none' : (project.priority || 'none');
-  const completedTasks = (project.tasks || []).filter(t => t.completed).length;
-  const totalTasks = (project.tasks || []).length;
+  const allTasks = flattenAllTasks(project.tasks || []);
+  const completedTasks = allTasks.filter(t => t.completed).length;
+  const totalTasks = allTasks.length;
   const progress = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
   const isArchived = project.archived;
   const disabledAttr = isArchived ? 'disabled' : '';
@@ -80,6 +94,7 @@ function renderProjectCard(project) {
                   <span>📅 ${formatDate(task.dueDate).text}</span>
                 </div>
               ` : ''}
+              ${task.subtasks && task.subtasks.length > 0 ? `<span class="subtask-count">(+${task.subtasks.length} subtask${task.subtasks.length !== 1 ? 's' : ''})</span>` : ''}
             </div>
           </div>
         `).join('')}
@@ -211,8 +226,9 @@ function renderSmartListView(view) {
 }
 
 function renderProjectHome(project) {
-  const completedTasks = (project.tasks || []).filter(t => t.completed).length;
-  const totalTasks = (project.tasks || []).length;
+  const allHomeTasks = flattenAllTasks(project.tasks || []);
+  const completedTasks = allHomeTasks.filter(t => t.completed).length;
+  const totalTasks = allHomeTasks.length;
   const progress = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
   const effectivePriority = project.status === 'backlog' ? 'none' : (project.priority || 'none');
   const isArchived = project.archived;
@@ -327,62 +343,91 @@ function renderEmailDocumentPreview(doc) {
   `;
 }
 
+function renderModalTaskItem(task, project, isArchived, isSubtask) {
+  const disabledAttr = isArchived ? 'disabled' : '';
+  const subtaskClass = isSubtask ? ' subtask' : '';
+  const blockedEntry = task.blockedBy ? findTaskEntryById(task.blockedBy) : null;
+  const unblocks = getUnblockedEntries(task.id);
+  const unblocksText = unblocks.map(entry => `${escapeHtml(entry.project.title)}: ${escapeHtml(entry.task.title)}`).join(', ');
+  const subtaskCount = (task.subtasks && task.subtasks.length > 0) ? task.subtasks.length : 0;
+
+  return `
+    <div class="modal-task-item${task.completed ? ' completed' : ''}${subtaskClass}" data-task-id="${task.id}" data-project-id="${project.id}" ${isSubtask ? `data-parent-task-id="${task.parentTaskId}"` : ''} draggable="${isArchived || isSubtask ? 'false' : 'true'}">
+      <span class="task-drag-handle" title="Drag to reorder">${isSubtask ? '' : '⋮⋮'}</span>
+      <div class="task-checkbox" data-project-id="${project.id}" data-task-id="${task.id}"
+        tabindex="0" role="checkbox" aria-checked="${task.completed}">
+        ${task.completed ? '✓' : ''}
+      </div>
+      <input type="text" class="task-title-input modal-task-title" value="${escapeHtml(task.title)}"
+        data-project-id="${project.id}" data-task-id="${task.id}" aria-label="Task title" ${disabledAttr}>
+      ${!isSubtask && subtaskCount > 0 ? `<span class="subtask-count">${subtaskCount} subtask${subtaskCount !== 1 ? 's' : ''}</span>` : ''}
+      <input type="date" class="modal-task-date" value="${formatDateInputValue(task.dueDate)}"
+        data-project-id="${project.id}" data-task-id="${task.id}" aria-label="Task due date" ${disabledAttr}>
+      ${isArchived ? '' : `
+        ${isSubtask ? '' : `
+        <button class="btn-icon btn-icon-small modal-task-move" data-direction="up"
+          data-project-id="${project.id}" data-task-id="${task.id}" title="Move up">↑</button>
+        <button class="btn-icon btn-icon-small modal-task-move" data-direction="down"
+          data-project-id="${project.id}" data-task-id="${task.id}" title="Move down">↓</button>
+        `}
+        ${!isSubtask ? `<button class="btn-icon btn-icon-small add-subtask-btn" data-project-id="${project.id}" data-task-id="${task.id}" title="Add subtask">+sub</button>` : ''}
+        <button class="btn-icon btn-icon-small modal-task-delete" data-project-id="${project.id}"
+          data-task-id="${task.id}" title="Delete task">🗑️</button>
+      `}
+      <div class="task-dependency-row">
+        <span>Blocked by</span>
+        <div class="dependency-picker" data-project-id="${project.id}" data-task-id="${task.id}">
+          <input type="text" class="task-blocked-by-input" placeholder="Search tasks..."
+            value="${blockedEntry ? escapeHtml(formatDependencyLabel(blockedEntry)) : ''}"
+            data-project-id="${project.id}" data-task-id="${task.id}"
+            data-blocked-by-id="${escapeAttribute(task.blockedBy || '')}"
+            data-blocked-by-label="${blockedEntry ? escapeAttribute(formatDependencyLabel(blockedEntry)) : ''}"
+            ${disabledAttr}>
+          <button class="btn-icon btn-icon-small dependency-clear" data-project-id="${project.id}" data-task-id="${task.id}" title="Clear dependency" ${disabledAttr}>✕</button>
+          <div class="dependency-options hidden"></div>
+        </div>
+        ${blockedEntry
+          ? `<span class="dependency-chip">↳ ${escapeHtml(blockedEntry.project.title)}: ${escapeHtml(blockedEntry.task.title)}</span>`
+          : ''}
+        ${unblocks.length > 0
+          ? `<span class="dependency-chip">Unblocks: ${unblocksText}</span>`
+          : ''}
+        <span class="dependency-chip">ID: ${task.id}</span>
+      </div>
+    </div>
+  `;
+}
+
 function renderProjectModalTasks(project, options = {}) {
   const tasks = project.tasks || [];
   const isArchived = options.readOnly || project.archived;
-  const disabledAttr = isArchived ? 'disabled' : '';
+  let taskHtml = '';
+  for (const task of tasks) {
+    taskHtml += renderModalTaskItem(task, project, isArchived, false);
+    // Render subtasks indented after parent
+    if (task.subtasks && task.subtasks.length > 0) {
+      for (const sub of task.subtasks) {
+        taskHtml += renderModalTaskItem(sub, project, isArchived, true);
+      }
+      if (!isArchived) {
+        taskHtml += `
+          <div class="subtask-add" data-project-id="${project.id}" data-parent-task-id="${task.id}">
+            <span>+</span>
+            <input type="text" class="subtask-add-input" placeholder="Add subtask..."
+              data-project-id="${project.id}" data-parent-task-id="${task.id}" aria-label="Add subtask">
+          </div>
+        `;
+      }
+    }
+  }
+
   return `
     <div class="modal-section-header">
       <span class="modal-section-title">Tasks</span>
     </div>
     ${isArchived ? '<div class="empty-muted">Archived projects are read-only.</div>' : ''}
     <div class="modal-task-list" data-project-id="${project.id}">
-      ${tasks.map(task => {
-        const blockedEntry = task.blockedBy ? findTaskEntryById(task.blockedBy) : null;
-        const unblocks = getUnblockedEntries(task.id);
-        const unblocksText = unblocks.map(entry => `${escapeHtml(entry.project.title)}: ${escapeHtml(entry.task.title)}`).join(', ');
-        return `
-          <div class="modal-task-item${task.completed ? ' completed' : ''}" data-task-id="${task.id}" data-project-id="${project.id}" draggable="${isArchived ? 'false' : 'true'}">
-            <span class="task-drag-handle" title="Drag to reorder">⋮⋮</span>
-            <div class="task-checkbox" data-project-id="${project.id}" data-task-id="${task.id}"
-              tabindex="0" role="checkbox" aria-checked="${task.completed}">
-              ${task.completed ? '✓' : ''}
-            </div>
-            <input type="text" class="task-title-input modal-task-title" value="${escapeHtml(task.title)}"
-              data-project-id="${project.id}" data-task-id="${task.id}" aria-label="Task title" ${disabledAttr}>
-            <input type="date" class="modal-task-date" value="${formatDateInputValue(task.dueDate)}"
-              data-project-id="${project.id}" data-task-id="${task.id}" aria-label="Task due date" ${disabledAttr}>
-            ${isArchived ? '' : `
-              <button class="btn-icon btn-icon-small modal-task-move" data-direction="up"
-                data-project-id="${project.id}" data-task-id="${task.id}" title="Move up">↑</button>
-              <button class="btn-icon btn-icon-small modal-task-move" data-direction="down"
-                data-project-id="${project.id}" data-task-id="${task.id}" title="Move down">↓</button>
-              <button class="btn-icon btn-icon-small modal-task-delete" data-project-id="${project.id}"
-                data-task-id="${task.id}" title="Delete task">🗑️</button>
-            `}
-            <div class="task-dependency-row">
-              <span>Blocked by</span>
-              <div class="dependency-picker" data-project-id="${project.id}" data-task-id="${task.id}">
-                <input type="text" class="task-blocked-by-input" placeholder="Search tasks..."
-                  value="${blockedEntry ? escapeHtml(formatDependencyLabel(blockedEntry)) : ''}"
-                  data-project-id="${project.id}" data-task-id="${task.id}"
-                  data-blocked-by-id="${escapeAttribute(task.blockedBy || '')}"
-                  data-blocked-by-label="${blockedEntry ? escapeAttribute(formatDependencyLabel(blockedEntry)) : ''}"
-                  ${disabledAttr}>
-                <button class="btn-icon btn-icon-small dependency-clear" data-project-id="${project.id}" data-task-id="${task.id}" title="Clear dependency" ${disabledAttr}>✕</button>
-                <div class="dependency-options hidden"></div>
-              </div>
-              ${blockedEntry
-                ? `<span class="dependency-chip">↳ ${escapeHtml(blockedEntry.project.title)}: ${escapeHtml(blockedEntry.task.title)}</span>`
-                : ''}
-              ${unblocks.length > 0
-                ? `<span class="dependency-chip">Unblocks: ${unblocksText}</span>`
-                : ''}
-              <span class="dependency-chip">ID: ${task.id}</span>
-            </div>
-          </div>
-        `;
-      }).join('')}
+      ${taskHtml}
       ${isArchived ? '' : `
         <div class="modal-task-add" data-project-id="${project.id}">
           <span>+</span>
@@ -437,7 +482,7 @@ function renderProjectModalDocuments(project, options = {}) {
             <div class="doc-actions">
               <button class="btn btn-secondary btn-sm" data-doc-action="open" data-doc-id="${doc.id}" data-project-id="${project.id}">Open</button>
               ${doc.type === 'docx'
-                ? `<a class="btn btn-secondary btn-sm" href="${buildApiPath(`/api/documents/${doc.id}/download`)}">Download</a>`
+                ? `<a class="btn btn-secondary btn-sm" href="${escapeAttribute(buildApiPath(`/api/documents/${doc.id}/download`))}">Download</a>`
                 : ''}
               ${isArchived ? '' : `
                 <button class="btn btn-secondary btn-sm" data-doc-action="delete" data-doc-id="${doc.id}"
@@ -820,7 +865,7 @@ function render() {
 
 function renderStatistics() {
   const projects = state.projects.filter(p => !p.archived);
-  const tasks = projects.flatMap(p => p.tasks || []);
+  const tasks = projects.flatMap(p => flattenAllTasks(p.tasks || []));
   const completedTasks = tasks.filter(t => t.completed).length;
   const totalTasks = tasks.length;
 

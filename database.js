@@ -1,17 +1,13 @@
 const { createClient } = require('@libsql/client');
 const crypto = require('crypto');
 const logger = require('./logger');
+const { MAX_DOCUMENTS_PER_USER, VALID_SETTINGS_KEYS } = require('./app-constants');
 const {
   SESSION_ABSOLUTE_TIMEOUT_MS,
   SESSION_IDLE_TIMEOUT_MS,
   SESSION_TOUCH_INTERVAL_MS,
   SESSION_TOKEN_BYTES
 } = require('./session-config');
-
-const VALID_SETTINGS_KEYS = [
-  'theme', 'defaultView', 'sortBy', 'showCompleted', 'showArchived',
-  'wipLimits', 'kanbanColumns', 'sidebarCollapsed', 'workspaceMode'
-];
 
 const ALLOWED_DOC_MIME_TYPES = [
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
@@ -84,6 +80,12 @@ function safeJsonParse(str, fallback = null) {
   }
 }
 
+function createDocumentLimitError() {
+  const error = new Error(`Document storage limit exceeded (${MAX_DOCUMENTS_PER_USER} documents max)`);
+  error.code = 'DOCUMENT_LIMIT_EXCEEDED';
+  return error;
+}
+
 function createTeamMembershipConflict() {
   const error = new Error('User already belongs to a team');
   error.code = 'TEAM_MEMBERSHIP_CONFLICT';
@@ -147,6 +149,16 @@ async function ensureSessionSchema() {
   `);
 
   await run('CREATE INDEX IF NOT EXISTS idx_sessions_last_seen_at ON sessions(last_seen_at)');
+}
+
+async function ensureTaskSubtaskColumn() {
+  const columns = await all('PRAGMA table_info(tasks)');
+  const columnNames = new Set(columns.map(c => c.name));
+  if (!columnNames.has('parent_task_id')) {
+    await run('ALTER TABLE tasks ADD COLUMN parent_task_id TEXT');
+    await run('CREATE INDEX IF NOT EXISTS idx_tasks_parent_task_id ON tasks(parent_task_id)');
+    logger.info('Added parent_task_id column to tasks table');
+  }
 }
 
 async function cleanupExpiredSessions() {
@@ -467,7 +479,22 @@ async function initDatabase() {
       )`,
       args: []
     },
+    // Webhooks table
+    {
+      sql: `CREATE TABLE IF NOT EXISTS webhooks (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        url TEXT NOT NULL,
+        secret TEXT NOT NULL,
+        events TEXT NOT NULL DEFAULT '["*"]',
+        active INTEGER DEFAULT 1,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      )`,
+      args: []
+    },
     // Indexes
+    { sql: 'CREATE INDEX IF NOT EXISTS idx_webhooks_user_id ON webhooks(user_id)', args: [] },
     { sql: 'CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token)', args: [] },
     { sql: 'CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id)', args: [] },
     { sql: 'CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at)', args: [] },
@@ -486,6 +513,7 @@ async function initDatabase() {
   ], 'write');
 
   await ensureSessionSchema();
+  await ensureTaskSubtaskColumn();
   await repairTeamMembershipIntegrity();
   await ensureSingleTeamMembershipIndex();
 
@@ -683,8 +711,44 @@ function mapTask(task) {
     notes: task.notes,
     priority: task.priority,
     recurring: task.recurring,
-    blockedBy: task.blocked_by || null
+    blockedBy: task.blocked_by || null,
+    parentTaskId: task.parent_task_id || null,
+    subtasks: []
   };
+}
+
+/**
+ * Nest flat mapped tasks into a parent→children structure.
+ * Top-level tasks (parentTaskId === null) get subtasks attached.
+ * Orphan subtasks (parent missing) are promoted to top-level.
+ */
+function nestTasks(flatMappedTasks) {
+  const topLevel = [];
+  const parentMap = new Map();
+
+  // First pass: collect top-level tasks
+  for (const t of flatMappedTasks) {
+    if (!t.parentTaskId) {
+      topLevel.push(t);
+      parentMap.set(t.id, t);
+    }
+  }
+
+  // Second pass: attach subtasks to parents
+  for (const t of flatMappedTasks) {
+    if (t.parentTaskId) {
+      const parent = parentMap.get(t.parentTaskId);
+      if (parent) {
+        parent.subtasks.push(t);
+      } else {
+        // Orphan — promote to top-level
+        t.parentTaskId = null;
+        topLevel.push(t);
+      }
+    }
+  }
+
+  return topLevel;
 }
 
 function mapDocument(row, includeContent = false) {
@@ -749,11 +813,15 @@ async function getAllProjects(userId, options = {}) {
     projectIds
   );
 
-  // Group by project_id
-  const tasksByProject = new Map();
+  // Group by project_id, then nest subtasks under parents
+  const flatByProject = new Map();
   for (const task of allTasks) {
-    if (!tasksByProject.has(task.project_id)) tasksByProject.set(task.project_id, []);
-    tasksByProject.get(task.project_id).push(mapTask(task));
+    if (!flatByProject.has(task.project_id)) flatByProject.set(task.project_id, []);
+    flatByProject.get(task.project_id).push(mapTask(task));
+  }
+  const tasksByProject = new Map();
+  for (const [pid, tasks] of flatByProject) {
+    tasksByProject.set(pid, nestTasks(tasks));
   }
 
   const docsByProject = new Map();
@@ -818,7 +886,7 @@ async function getProjectById(id, userId, options = {}) {
 
   return {
     ...mapProject(project),
-    tasks: tasks.map(mapTask),
+    tasks: nestTasks(tasks.map(mapTask)),
     documents: docs.map(d => mapDocument(d, false))
   };
 }
@@ -993,7 +1061,7 @@ async function getProjectTasks(projectId, userId) {
     'SELECT * FROM tasks WHERE project_id = ? ORDER BY task_order ASC, created_at ASC',
     [projectId]
   );
-  return tasks.map(mapTask);
+  return nestTasks(tasks.map(mapTask));
 }
 
 async function countTasksByProject(projectId, userId) {
@@ -1001,7 +1069,7 @@ async function countTasksByProject(projectId, userId) {
   const row = await get(`
     SELECT p.id AS project_id, COUNT(t.id) AS count
     FROM projects p
-    LEFT JOIN tasks t ON t.project_id = p.id
+    LEFT JOIN tasks t ON t.project_id = p.id AND t.parent_task_id IS NULL
     WHERE p.id = ? AND p.user_id = ?
     GROUP BY p.id
   `, [projectId, userId]);
@@ -1016,6 +1084,19 @@ async function createTask(projectId, userId, task) {
   const project = await get('SELECT id FROM projects WHERE id = ? AND user_id = ?', [projectId, userId]);
   if (!project) return null;
 
+  // Validate subtask nesting (1-level max)
+  const parentTaskId = task.parentTaskId || null;
+  if (parentTaskId) {
+    const parent = await get(
+      'SELECT id, parent_task_id FROM tasks WHERE id = ? AND project_id = ?',
+      [parentTaskId, projectId]
+    );
+    if (!parent) return null; // parent doesn't exist in this project
+    if (parent.parent_task_id) {
+      throw new Error('Cannot nest subtasks more than one level');
+    }
+  }
+
   const id = generateId();
 
   let taskOrder = Number.isInteger(task.order) ? task.order : null;
@@ -1028,8 +1109,8 @@ async function createTask(projectId, userId, task) {
   }
 
   await run(`
-    INSERT INTO tasks (id, project_id, title, completed, due_date, notes, priority, recurring, blocked_by, task_order)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO tasks (id, project_id, title, completed, due_date, notes, priority, recurring, blocked_by, task_order, parent_task_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `, [
     id, projectId, task.title,
     task.completed ? 1 : 0,
@@ -1038,7 +1119,8 @@ async function createTask(projectId, userId, task) {
     task.priority || 'none',
     task.recurring || null,
     task.blockedBy || null,
-    taskOrder
+    taskOrder,
+    parentTaskId
   ]);
 
   return id;
@@ -1079,6 +1161,32 @@ async function updateTask(taskId, userId, updates) {
     fields.push('blocked_by = ?');
     values.push(updates.blockedBy || null);
   }
+  if (updates.parentTaskId !== undefined) {
+    const newParentId = updates.parentTaskId || null;
+    if (newParentId) {
+      // Look up this task's project so we can scope the parent check
+      const thisTask = await get('SELECT project_id FROM tasks WHERE id = ?', [taskId]);
+      if (!thisTask) return false;
+      // Enforce 1-level nesting: parent must exist in the same project and not itself be a subtask
+      const parent = await get(
+        'SELECT parent_task_id FROM tasks WHERE id = ? AND project_id = ?',
+        [newParentId, thisTask.project_id]
+      );
+      if (!parent) return false;
+      if (parent.parent_task_id) {
+        throw new Error('Cannot nest subtasks more than one level');
+      }
+      // Cannot make a task its own parent
+      if (newParentId === taskId) return false;
+      // Reject if this task already has children — would create a 2-level chain
+      const childCount = await get('SELECT COUNT(*) AS count FROM tasks WHERE parent_task_id = ?', [taskId]);
+      if (Number(childCount?.count) > 0) {
+        throw new Error('Cannot reparent a task that already has subtasks');
+      }
+    }
+    fields.push('parent_task_id = ?');
+    values.push(newParentId);
+  }
 
   if (fields.length === 0) return true;
 
@@ -1091,6 +1199,8 @@ async function deleteTask(taskId, userId) {
   await waitForDb();
   if (!(await verifyTaskOwnership(taskId, userId))) return false;
 
+  // Delete subtasks first (FK cascade not enforced for columns added via ALTER TABLE)
+  await run('DELETE FROM tasks WHERE parent_task_id = ?', [taskId]);
   const result = await run('DELETE FROM tasks WHERE id = ?', [taskId]);
   return result.changes > 0;
 }
@@ -1178,6 +1288,11 @@ async function createDocument(projectId, userId, doc) {
   const project = await get('SELECT id FROM projects WHERE id = ? AND user_id = ?', [projectId, userId]);
   if (!project) return null;
 
+  const documentCount = await countDocumentsByUser(userId);
+  if (documentCount >= MAX_DOCUMENTS_PER_USER) {
+    throw createDocumentLimitError();
+  }
+
   const id = generateId();
   const docType = doc.type;
   let title = doc.title || '';
@@ -1214,6 +1329,17 @@ async function createDocument(projectId, userId, doc) {
   `, [id, projectId, docType, title, payload, fileName, mimeType, contentBase64]);
 
   return id;
+}
+
+async function countDocumentsByUser(userId) {
+  await waitForDb();
+  const row = await get(`
+    SELECT COUNT(d.id) AS count
+    FROM documents d
+    JOIN projects p ON d.project_id = p.id
+    WHERE p.user_id = ?
+  `, [userId]);
+  return Number(row?.count || 0);
 }
 
 async function deleteDocument(id, userId) {
@@ -1468,6 +1594,13 @@ async function importData(userId, data) {
   }
 
   try {
+    const importedDocumentCount = (data.projects || []).reduce((count, project) => (
+      count + (project.documents || []).length
+    ), 0);
+    if (importedDocumentCount > MAX_DOCUMENTS_PER_USER) {
+      throw createDocumentLimitError();
+    }
+
     // Delete only this user's data
     const userProjectsResult = await tx.execute({ sql: 'SELECT id FROM projects WHERE user_id = ?', args: [userId] });
     const projectIds = userProjectsResult.rows.map(p => p.id);
@@ -1502,13 +1635,29 @@ async function importData(userId, data) {
         ]);
 
         if (project.tasks) {
+          // Flatten nested subtasks for import (exported format has subtasks arrays)
+          const flatTasks = [];
           for (let i = 0; i < project.tasks.length; i++) {
             const task = project.tasks[i];
+            flatTasks.push({ ...task, _order: task.order ?? i, _parentRef: task.parentTaskId || null });
+            if (task.subtasks && task.subtasks.length > 0) {
+              for (let j = 0; j < task.subtasks.length; j++) {
+                const sub = task.subtasks[j];
+                flatTasks.push({ ...sub, _order: sub.order ?? j, _parentRef: task.id || '__parent_' + i });
+              }
+            }
+          }
+
+          // Pass 1: Insert all tasks without parent references, building ID map
+          const taskIdMap = new Map(); // old ID → new ID
+          for (const task of flatTasks) {
+            const newId = generateId();
+            if (task.id) taskIdMap.set(task.id, newId);
             await txRun(`
               INSERT INTO tasks (id, project_id, title, completed, due_date, notes, priority, recurring, blocked_by, task_order)
               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             `, [
-              generateId(), projectId,
+              newId, projectId,
               task.title || 'Untitled',
               task.completed ? 1 : 0,
               task.dueDate || null,
@@ -1516,8 +1665,19 @@ async function importData(userId, data) {
               task.priority || 'none',
               task.recurring || null,
               task.blockedBy || null,
-              task.order ?? i
+              task._order
             ]);
+          }
+
+          // Pass 2: Set parent_task_id for subtasks using ID map
+          for (const task of flatTasks) {
+            if (task._parentRef) {
+              const newParentId = taskIdMap.get(task._parentRef);
+              const newTaskId = task.id ? taskIdMap.get(task.id) : null;
+              if (newParentId && newTaskId) {
+                await txRun('UPDATE tasks SET parent_task_id = ? WHERE id = ?', [newParentId, newTaskId]);
+              }
+            }
           }
         }
 
@@ -1586,6 +1746,79 @@ async function importData(userId, data) {
   }
 }
 
+// ========== WEBHOOKS ==========
+
+async function createWebhook(userId, data) {
+  await waitForDb();
+  const { MAX_WEBHOOKS_PER_USER } = require('./app-constants');
+  const existing = await get('SELECT COUNT(*) AS count FROM webhooks WHERE user_id = ?', [userId]);
+  if (Number(existing?.count) >= MAX_WEBHOOKS_PER_USER) {
+    const err = new Error(`Webhook limit reached (max ${MAX_WEBHOOKS_PER_USER})`);
+    err.code = 'WEBHOOK_LIMIT_EXCEEDED';
+    throw err;
+  }
+  const id = generateId();
+  const secret = require('crypto').randomBytes(32).toString('hex');
+  const events = JSON.stringify(data.events);
+  await run(
+    'INSERT INTO webhooks (id, user_id, url, secret, events) VALUES (?, ?, ?, ?, ?)',
+    [id, userId, data.url, secret, events]
+  );
+  return { id, url: data.url, secret, events: data.events, active: true };
+}
+
+async function getWebhooksByUser(userId) {
+  await waitForDb();
+  const rows = await all('SELECT * FROM webhooks WHERE user_id = ? ORDER BY created_at DESC', [userId]);
+  return rows.map(w => ({
+    id: w.id,
+    url: w.url,
+    secret: w.secret,
+    events: safeJsonParse(w.events, ['*']),
+    active: w.active === 1,
+    createdAt: w.created_at
+  }));
+}
+
+async function getActiveWebhooksForUser(userId) {
+  await waitForDb();
+  const rows = await all(
+    'SELECT * FROM webhooks WHERE user_id = ? AND active = 1',
+    [userId]
+  );
+  return rows.map(w => ({
+    id: w.id,
+    url: w.url,
+    secret: w.secret,
+    events: w.events
+  }));
+}
+
+async function updateWebhook(webhookId, userId, updates) {
+  await waitForDb();
+  const fields = [];
+  const params = [];
+
+  if (updates.url !== undefined) { fields.push('url = ?'); params.push(updates.url); }
+  if (updates.events !== undefined) { fields.push('events = ?'); params.push(JSON.stringify(updates.events)); }
+  if (updates.active !== undefined) { fields.push('active = ?'); params.push(updates.active ? 1 : 0); }
+
+  if (fields.length === 0) return false;
+
+  params.push(webhookId, userId);
+  const result = await run(
+    `UPDATE webhooks SET ${fields.join(', ')} WHERE id = ? AND user_id = ?`,
+    params
+  );
+  return result.changes > 0;
+}
+
+async function deleteWebhook(webhookId, userId) {
+  await waitForDb();
+  const result = await run('DELETE FROM webhooks WHERE id = ? AND user_id = ?', [webhookId, userId]);
+  return result.changes > 0;
+}
+
 // ========== HEALTH CHECK ==========
 
 async function healthCheck() {
@@ -1643,6 +1876,7 @@ module.exports = {
   getProjectDocuments,
   getDocumentById,
   createDocument,
+  countDocumentsByUser,
   deleteDocument,
   // Global Settings
   getGlobalSetting,
@@ -1667,6 +1901,12 @@ module.exports = {
   // Export/Import
   exportData,
   importData,
+  // Webhooks
+  createWebhook,
+  getWebhooksByUser,
+  getActiveWebhooksForUser,
+  updateWebhook,
+  deleteWebhook,
   // Health
   healthCheck,
   // Utility

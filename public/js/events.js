@@ -131,7 +131,7 @@ function initEventDelegation() {
       const projectId = e.target.dataset.projectId;
       const taskId = e.target.dataset.taskId;
       const project = state.projects.find(p => p.id === projectId);
-      const task = project?.tasks?.find(t => t.id === taskId);
+      const task = project ? findTaskInProject(project, taskId) : null;
       const title = e.target.value.trim();
       if (!title) {
         e.target.value = task?.title || '';
@@ -177,6 +177,14 @@ function initEventDelegation() {
     if (e.target.classList.contains('modal-task-add-input')) {
       if (e.key === 'Enter' && e.target.value.trim()) {
         addTask(e.target.dataset.projectId, e.target.value);
+        e.target.value = '';
+      }
+    }
+
+    // Subtask add input — Enter creates subtask
+    if (e.target.classList.contains('subtask-add-input')) {
+      if (e.key === 'Enter' && e.target.value.trim()) {
+        addSubtask(e.target.dataset.projectId, e.target.dataset.parentTaskId, e.target.value);
         e.target.value = '';
       }
     }
@@ -302,6 +310,48 @@ function initEventDelegation() {
       return;
     }
 
+    // Add subtask button — show subtask input under parent task
+    const addSubtaskBtn = e.target.closest('.add-subtask-btn');
+    if (addSubtaskBtn) {
+      const projectId = addSubtaskBtn.dataset.projectId;
+      const parentTaskId = addSubtaskBtn.dataset.taskId;
+      // Focus existing subtask input, or create one inline
+      const existing = document.querySelector('.subtask-add-input[data-parent-task-id="' + parentTaskId + '"]');
+      if (existing) {
+        existing.focus();
+      } else {
+        // Find the parent task item and insert a subtask input after its subtasks
+        const parentItem = document.querySelector('.modal-task-item[data-task-id="' + parentTaskId + '"]');
+        if (parentItem) {
+          var addDiv = document.createElement('div');
+          addDiv.className = 'subtask-add';
+          addDiv.dataset.projectId = projectId;
+          addDiv.dataset.parentTaskId = parentTaskId;
+          var plus = document.createElement('span');
+          plus.textContent = '+';
+          var input = document.createElement('input');
+          input.type = 'text';
+          input.className = 'subtask-add-input';
+          input.placeholder = 'Add subtask...';
+          input.dataset.projectId = projectId;
+          input.dataset.parentTaskId = parentTaskId;
+          input.setAttribute('aria-label', 'Add subtask');
+          addDiv.appendChild(plus);
+          addDiv.appendChild(input);
+          // Insert after parent + its subtasks
+          var insertAfter = parentItem;
+          var next = insertAfter.nextElementSibling;
+          while (next && (next.classList.contains('subtask') || next.classList.contains('subtask-add'))) {
+            insertAfter = next;
+            next = next.nextElementSibling;
+          }
+          insertAfter.after(addDiv);
+          input.focus();
+        }
+      }
+      return;
+    }
+
     const modalTaskDelete = e.target.closest('.modal-task-delete');
     if (modalTaskDelete) {
       deleteTask(modalTaskDelete.dataset.projectId, modalTaskDelete.dataset.taskId);
@@ -423,9 +473,7 @@ function initProjectModalDelegation() {
     }
 
     if (e.target.classList.contains('task-blocked-by-input')) {
-      const projectId = e.target.dataset.projectId;
-      const taskId = e.target.dataset.taskId;
-      updateTaskFields(projectId, taskId, { blockedBy: e.target.value });
+      return;
     }
   }, true);
 
@@ -507,7 +555,7 @@ function initDependencyPicker() {
     const items = filtered.slice(0, 8).map(entry => `
       <div class="dependency-option" data-task-id="${entry.task.id}">
         <div>${escapeHtml(entry.task.title)}</div>
-        <div class="dependency-option-meta">${escapeHtml(entry.project.title)} · ${entry.task.id}</div>
+        <div class="dependency-option-meta">${escapeHtml(entry.project.title)} · ${escapeHtml(entry.task.id)}</div>
       </div>
     `).join('');
 

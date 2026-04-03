@@ -1,6 +1,46 @@
 // Project Overviewer — Task CRUD
 const documentPreviewCache = new Map();
 
+function mapTasksById(tasks, taskId, updater) {
+  return (tasks || []).map(task => {
+    if (task.id === taskId) {
+      return updater(task);
+    }
+    if (task.subtasks && task.subtasks.length > 0) {
+      const nextSubtasks = mapTasksById(task.subtasks, taskId, updater);
+      if (nextSubtasks !== task.subtasks) {
+        return { ...task, subtasks: nextSubtasks };
+      }
+    }
+    return task;
+  });
+}
+
+function removeTaskById(tasks, taskId) {
+  var changed = false;
+  var nextTasks = [];
+
+  for (var i = 0; i < (tasks || []).length; i++) {
+    var task = tasks[i];
+    if (task.id === taskId) {
+      changed = true;
+      continue;
+    }
+
+    if (task.subtasks && task.subtasks.length > 0) {
+      var nextSubtasks = removeTaskById(task.subtasks, taskId);
+      if (nextSubtasks !== task.subtasks) {
+        changed = true;
+        task = { ...task, subtasks: nextSubtasks };
+      }
+    }
+
+    nextTasks.push(task);
+  }
+
+  return changed ? nextTasks : tasks;
+}
+
 async function addTask(projectId, title) {
   const trimmedTitle = title.trim();
   if (!trimmedTitle) return;
@@ -47,6 +87,62 @@ async function addTask(projectId, title) {
   }
 }
 
+async function addSubtask(projectId, parentTaskId, title) {
+  const trimmedTitle = title.trim();
+  if (!trimmedTitle) return;
+  if (!ensureNotArchived(projectId)) return;
+  try {
+    const task = {
+      title: trimmedTitle,
+      completed: false,
+      parentTaskId: parentTaskId
+    };
+
+    const created = await API.createTask(projectId, task);
+    const createdSubtask = {
+      id: created?.id || uuid(),
+      title: trimmedTitle,
+      completed: false,
+      dueDate: null,
+      notes: '',
+      priority: 'none',
+      recurring: null,
+      blockedBy: null,
+      parentTaskId: parentTaskId,
+      subtasks: []
+    };
+
+    // Append subtask to parent's subtasks array in local state
+    setState(s => ({
+      projects: s.projects.map(p => {
+        if (p.id !== projectId) return p;
+        return {
+          ...p,
+          tasks: (p.tasks || []).map(t => {
+            if (t.id !== parentTaskId) return t;
+            return { ...t, subtasks: [...(t.subtasks || []), createdSubtask] };
+          })
+        };
+      })
+    }));
+
+    setRenderHint({ type: 'project-update', projectId });
+    render();
+    if (currentEditingProject === projectId) {
+      refreshProjectModalTasks(projectId);
+    }
+
+    // Re-focus the subtask input
+    setTimeout(() => {
+      const input = document.querySelector(`.subtask-add-input[data-parent-task-id="${parentTaskId}"]`);
+      if (input) input.focus();
+    }, 50);
+  } catch (error) {
+    console.error('Failed to add subtask:', error);
+    showToast(error.message || 'Failed to add subtask', 'error');
+  }
+}
+
 function focusTaskAddInput(projectId) {
   const modalInput = document.querySelector(`.modal-task-add-input[data-project-id="${projectId}"]`);
   if (modalInput) {
@@ -67,7 +163,7 @@ async function toggleTask(projectId, taskId) {
     const project = state.projects.find(p => p.id === projectId);
     if (!project) return;
 
-    const task = project.tasks.find(t => t.id === taskId);
+    const task = findTaskInProject(project, taskId);
     if (!task) return;
 
     const completed = !task.completed;
@@ -83,7 +179,7 @@ async function toggleTask(projectId, taskId) {
     // Update locally (no need to re-fetch the entire project)
     setState(s => ({
       projects: s.projects.map(p => p.id === projectId
-        ? { ...p, tasks: p.tasks.map(t => t.id === taskId ? { ...t, completed } : t) }
+        ? { ...p, tasks: mapTasksById(p.tasks, taskId, t => ({ ...t, completed })) }
         : p)
     }));
     setRenderHint({ type: 'project-update', projectId });
@@ -102,7 +198,7 @@ async function updateTaskFields(projectId, taskId, updates) {
   const project = state.projects.find(p => p.id === projectId);
   if (!project) return;
 
-  const existing = project.tasks.find(t => t.id === taskId);
+  const existing = findTaskInProject(project, taskId);
   if (!existing) return;
 
   const normalizedUpdates = { ...updates };
@@ -135,7 +231,7 @@ async function updateTaskFields(projectId, taskId, updates) {
     await API.updateTask(taskId, normalizedUpdates);
     setState(s => ({
       projects: s.projects.map(p => p.id === projectId
-        ? { ...p, tasks: p.tasks.map(t => t.id === taskId ? { ...t, ...normalizedUpdates } : t) }
+        ? { ...p, tasks: mapTasksById(p.tasks, taskId, t => ({ ...t, ...normalizedUpdates })) }
         : p)
     }));
     setRenderHint({ type: 'project-update', projectId });
@@ -154,7 +250,7 @@ async function deleteTask(projectId, taskId) {
   const project = state.projects.find(p => p.id === projectId);
   if (!project) return;
 
-  const task = project.tasks.find(t => t.id === taskId);
+  const task = findTaskInProject(project, taskId);
   if (!task) return;
 
   showConfirmModal(`Delete "${task.title}"?`, 'This cannot be undone.', async () => {
@@ -162,7 +258,7 @@ async function deleteTask(projectId, taskId) {
       await API.deleteTask(taskId);
       setState(s => ({
         projects: s.projects.map(p => p.id === projectId
-          ? { ...p, tasks: p.tasks.filter(t => t.id !== taskId) }
+          ? { ...p, tasks: removeTaskById(p.tasks, taskId) }
           : p)
       }));
       setRenderHint({ type: 'project-update', projectId });
@@ -252,9 +348,21 @@ async function createRecurringTask(projectId, originalTask) {
     });
 
     if (created) {
+      const createdTask = {
+        id: created?.id || uuid(),
+        title: originalTask.title,
+        completed: false,
+        dueDate: nextDate.toISOString().split('T')[0],
+        notes: originalTask.notes || '',
+        priority: originalTask.priority || 'none',
+        recurring: originalTask.recurring || null,
+        blockedBy: null,
+        parentTaskId: null,
+        subtasks: []
+      };
       setState(s => ({
         projects: s.projects.map(p => p.id === projectId
-          ? { ...p, tasks: [...(p.tasks || []), created] }
+          ? { ...p, tasks: [...(p.tasks || []), createdTask] }
           : p)
       }));
       render();
@@ -306,12 +414,12 @@ function renderDocumentPreviewContent(preview) {
     return `
       <div class="doc-preview-toolbar">
         <span class="doc-preview-badge">PDF preview</span>
-        <a class="btn btn-secondary btn-sm" href="${escapeAttribute(preview.inlineUrl)}" target="_blank" rel="noopener noreferrer">Open in tab</a>
+        <a class="btn btn-secondary btn-sm" href="${escapeAttribute(sanitizeUrl(preview.inlineUrl))}" target="_blank" rel="noopener noreferrer">Open in tab</a>
       </div>
       <iframe
         class="doc-preview-frame"
-        src="${escapeAttribute(preview.inlineUrl)}"
-        sandbox="allow-downloads allow-same-origin"
+        src="${escapeAttribute(sanitizeUrl(preview.inlineUrl))}"
+        sandbox="allow-downloads"
         title="${escapeAttribute(preview.title || preview.fileName || 'Document preview')}"></iframe>
     `;
   }
@@ -320,7 +428,7 @@ function renderDocumentPreviewContent(preview) {
     <div class="doc-preview-empty">
       <div>${escapeHtml(preview.message || 'Preview is not available for this document.')}</div>
       ${preview.downloadUrl
-        ? `<a class="btn btn-secondary btn-sm" href="${escapeAttribute(preview.downloadUrl)}">Download document</a>`
+        ? `<a class="btn btn-secondary btn-sm" href="${escapeAttribute(sanitizeUrl(preview.downloadUrl))}">Download document</a>`
         : ''}
     </div>
   `;
@@ -353,7 +461,8 @@ async function toggleDocumentPreview(container, projectId, docId) {
   if (!loadingEl || !bodyEl) return;
 
   if (documentPreviewCache.has(docId)) {
-    bodyEl.innerHTML = documentPreviewCache.get(docId);
+    // Re-render from cached data (not cached HTML) to ensure escaping is always applied
+    bodyEl.innerHTML = renderDocumentPreviewContent(documentPreviewCache.get(docId));
     return;
   }
 
@@ -362,10 +471,14 @@ async function toggleDocumentPreview(container, projectId, docId) {
 
   try {
     const preview = await API.getDocumentPreview(docId);
-    const html = renderDocumentPreviewContent(preview);
-    documentPreviewCache.set(docId, html);
+    // Cache raw preview data, not rendered HTML — re-render on each hit
+    if (documentPreviewCache.size >= 50) {
+      documentPreviewCache.delete(documentPreviewCache.keys().next().value);
+    }
+    documentPreviewCache.set(docId, preview);
     if (!previewEl.isConnected) return;
-    bodyEl.innerHTML = html;
+    // renderDocumentPreviewContent applies escapeHtml to all user content
+    bodyEl.innerHTML = renderDocumentPreviewContent(preview);
   } catch (error) {
     console.error('Failed to preview document:', error);
     if (!previewEl.isConnected) return;
