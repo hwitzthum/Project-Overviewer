@@ -5,7 +5,8 @@ async function init() {
   // Load data from API
   await loadFromStorage();
 
-  // Apply theme — prefer server-side theme from /api/auth/me, then local storage, then settings
+  // Apply theme — prefer explicit server theme, then local preference
+  // persist: true keeps localStorage in sync so boot.js shows the correct theme on next navigation
   const serverTheme = window.__authenticatedUser?.theme;
   const bootThemePreference = getStoredThemePreference();
   const activeThemePreference = (serverTheme && serverTheme !== 'auto')
@@ -13,7 +14,7 @@ async function init() {
     : (state.settings.theme && state.settings.theme !== 'auto')
       ? state.settings.theme
       : bootThemePreference;
-  applyTheme(activeThemePreference, { persist: false });
+  applyTheme(activeThemePreference);
   markThemeReady();
 
   // Apply sidebar state

@@ -120,7 +120,7 @@
       height: 36px;
       border-radius: 50%;
       background: var(--accent);
-      color: #fff;
+      color: var(--text-on-accent);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -159,8 +159,8 @@
 
     .admin-badge.admin { background: rgba(var(--accent-rgb), 0.12); color: var(--accent); }
     .admin-badge.user { background: var(--bg-tertiary); color: var(--text-secondary); }
-    .admin-badge.pending { background: rgba(255, 149, 0, 0.12); color: var(--warning); }
-    .admin-badge.approved { background: rgba(52, 199, 89, 0.12); color: var(--success); }
+    .admin-badge.pending { background: rgba(var(--warning-rgb), 0.12); color: var(--warning); }
+    .admin-badge.approved { background: rgba(var(--success-rgb), 0.12); color: var(--success); }
 
     .admin-actions {
       display: flex;
@@ -187,7 +187,7 @@
     .admin-btn.approve {
       background: var(--success);
       border-color: var(--success);
-      color: #fff;
+      color: var(--text-on-accent);
     }
 
     .admin-btn.approve:hover {
@@ -196,11 +196,11 @@
 
     .admin-btn.danger {
       color: var(--danger);
-      border-color: rgba(255, 59, 48, 0.3);
+      border-color: rgba(var(--danger-rgb), 0.3);
     }
 
     .admin-btn.danger:hover {
-      background: rgba(255, 59, 48, 0.08);
+      background: rgba(var(--danger-rgb), 0.08);
     }
 
     .admin-empty {
@@ -231,14 +231,14 @@
     }
 
     .admin-toast.success {
-      background: rgba(52, 199, 89, 0.12);
-      border: 1px solid rgba(52, 199, 89, 0.2);
+      background: rgba(var(--success-rgb), 0.12);
+      border: 1px solid rgba(var(--success-rgb), 0.2);
       color: var(--success);
     }
 
     .admin-toast.error {
-      background: rgba(255, 59, 48, 0.12);
-      border: 1px solid rgba(255, 59, 48, 0.2);
+      background: rgba(var(--danger-rgb), 0.12);
+      border: 1px solid rgba(var(--danger-rgb), 0.2);
       color: var(--danger);
     }
 

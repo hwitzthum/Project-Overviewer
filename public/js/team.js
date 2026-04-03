@@ -231,7 +231,7 @@ function renderNoTeam(container) {
 
   const btn = document.createElement('button');
   btn.textContent = 'Create Team';
-  btn.style.cssText = 'padding:6px 12px;border:none;border-radius:var(--radius-sm);background:var(--accent);color:#fff;font-size:13px;cursor:pointer;';
+  btn.style.cssText = 'padding:6px 12px;border:none;border-radius:var(--radius-sm);background:var(--accent);color:var(--text-on-accent);font-size:13px;cursor:pointer;';
   btn.addEventListener('click', async () => {
     const name = input.value.trim();
     if (!name) return;
@@ -358,7 +358,7 @@ function renderTeamPanel(container, team) {
   if (team.myRole === 'owner') {
     const deleteBtn = document.createElement('button');
     deleteBtn.textContent = 'Delete Team';
-    deleteBtn.style.cssText = 'padding:6px 12px;border:1px solid rgba(255,59,48,0.3);border-radius:var(--radius-sm);background:transparent;color:var(--danger);font-size:12px;cursor:pointer;';
+    deleteBtn.style.cssText = 'padding:6px 12px;border:1px solid rgba(var(--danger-rgb),0.3);border-radius:var(--radius-sm);background:transparent;color:var(--danger);font-size:12px;cursor:pointer;';
     deleteBtn.addEventListener('click', async () => {
       if (!confirm('Delete team "' + team.name + '"? All members will be removed.')) return;
       await withPendingState(`delete-team:${team.id}`, deleteBtn, async () => {
@@ -378,7 +378,7 @@ function renderTeamPanel(container, team) {
   } else {
     const leaveBtn = document.createElement('button');
     leaveBtn.textContent = 'Leave Team';
-    leaveBtn.style.cssText = 'padding:6px 12px;border:1px solid rgba(255,59,48,0.3);border-radius:var(--radius-sm);background:transparent;color:var(--danger);font-size:12px;cursor:pointer;';
+    leaveBtn.style.cssText = 'padding:6px 12px;border:1px solid rgba(var(--danger-rgb),0.3);border-radius:var(--radius-sm);background:transparent;color:var(--danger);font-size:12px;cursor:pointer;';
     leaveBtn.addEventListener('click', async () => {
       if (!confirm('Leave team "' + team.name + '"?')) return;
       await withPendingState(`leave-team:${team.id}`, leaveBtn, async () => {

@@ -190,21 +190,16 @@ function initAdminPage() {
       return;
     }
     document.documentElement.setAttribute('data-auth-state', 'authorized');
-    let hasLocalTheme = false;
+    // Resolve theme with same priority as main app: explicit server theme > local preference
     try {
-      hasLocalTheme = Boolean(localStorage.getItem('theme'));
+      const serverTheme = user.theme || await API.getSetting('theme');
+      const localTheme = getStoredThemePreference();
+      const activeTheme = (serverTheme && serverTheme !== 'auto')
+        ? serverTheme
+        : localTheme;
+      applyTheme(activeTheme);
     } catch {
-      hasLocalTheme = false;
-    }
-    if (!hasLocalTheme) {
-      try {
-        const theme = await API.getSetting('theme');
-        if (theme) {
-          applyTheme(theme);
-        }
-      } catch {
-        // Local preference is already applied as a fallback.
-      }
+      // Boot-applied theme (from localStorage) is the fallback
     }
     markThemeReady();
     await loadAdminUsers();

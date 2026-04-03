@@ -122,7 +122,7 @@ body {
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(135deg, rgba(255,255,255,0.2) 0%, transparent 50%);
+  background: linear-gradient(135deg, rgba(var(--text-on-accent-rgb),0.2) 0%, transparent 50%);
 }
 
 .auth-brand-icon svg {
@@ -288,8 +288,8 @@ body {
   display: none;
   width: 18px;
   height: 18px;
-  border: 2px solid rgba(255,255,255,0.3);
-  border-top-color: #fff;
+  border: 2px solid rgba(var(--text-on-accent-rgb),0.3);
+  border-top-color: var(--text-on-accent);
   border-radius: 50%;
   animation: spin 0.6s linear infinite;
   margin: 0 auto;

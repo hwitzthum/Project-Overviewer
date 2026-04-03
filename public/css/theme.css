@@ -19,6 +19,7 @@
   --danger: #b93f3a;
   --danger-rgb: 185, 63, 58;
   --text-on-accent: #fff;
+  --text-on-accent-rgb: 255, 255, 255;
   --overlay: rgba(43, 29, 16, 0.5);
   --shadow-sm: 0 1px 2px rgba(43, 29, 16, 0.08);
   --shadow-md: 0 14px 40px rgba(88, 57, 24, 0.12);
@@ -65,6 +66,7 @@
   --danger: #ff7676;
   --danger-rgb: 255, 118, 118;
   --text-on-accent: #11161a;
+  --text-on-accent-rgb: 17, 22, 26;
   --overlay: rgba(0, 0, 0, 0.6);
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.32);
   --shadow-md: 0 18px 48px rgba(0, 0, 0, 0.42);
@@ -108,6 +110,7 @@
   --danger: #ff8d7b;
   --danger-rgb: 255, 141, 123;
   --text-on-accent: #0d202a;
+  --text-on-accent-rgb: 13, 32, 42;
   --overlay: rgba(1, 15, 20, 0.6);
   --shadow-sm: 0 1px 2px rgba(1, 15, 20, 0.34);
   --shadow-md: 0 18px 52px rgba(1, 15, 20, 0.45);
@@ -151,6 +154,7 @@
   --danger: #ee8574;
   --danger-rgb: 238, 133, 116;
   --text-on-accent: #151d16;
+  --text-on-accent-rgb: 21, 29, 22;
   --overlay: rgba(7, 12, 8, 0.6);
   --shadow-sm: 0 1px 2px rgba(7, 12, 8, 0.34);
   --shadow-md: 0 18px 52px rgba(7, 12, 8, 0.45);
