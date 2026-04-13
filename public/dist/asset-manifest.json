@@ -1,9 +1,9 @@
 {
-  "buildId": "30a19f8bef",
+  "buildId": "80162562cb",
   "bundles": {
     "boot.bundle.js": "boot.bundle.cac39ff5a7.js",
-    "app-shell.bundle.js": "app-shell.bundle.b003a43e08.js",
-    "app.bundle.js": "app.bundle.a75152dd96.js",
+    "app-shell.bundle.js": "app-shell.bundle.df0de502b2.js",
+    "app.bundle.js": "app.bundle.fd899ceb1d.js",
     "admin.bundle.js": "admin.bundle.9cfa89cffa.js",
     "login.bundle.js": "login.bundle.6b5d5f903c.js",
     "register.bundle.js": "register.bundle.5a08d05a1c.js"

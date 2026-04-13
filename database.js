@@ -517,11 +517,6 @@ async function initDatabase() {
   await ensureSessionSchema();
   await ensureTaskSubtaskColumn();
 
-  // Idempotent migrations for new columns
-  try {
-    await run('ALTER TABLE projects ADD COLUMN status_changed_at TEXT');
-  } catch (_) { /* column already exists */ }
-
   await repairTeamMembershipIntegrity();
   await ensureSingleTeamMembershipIndex();
 

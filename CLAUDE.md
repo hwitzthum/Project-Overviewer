@@ -9,14 +9,16 @@ Project Overviewer is a multi-user project and task management application with 
 **Technology Stack:**
 - **Backend**: Node.js with Express.js
 - **Database**: LibSQL (`@libsql/client`) — SQLite-compatible; connects to local file or remote Turso cloud DB
-- **Frontend**: Modular vanilla JavaScript (16 JS modules, no framework, no bundler)
+- **Frontend**: Modular vanilla JavaScript (23 JS modules, no framework), bundled by esbuild
+- **Build**: esbuild — content-hashed bundles in `public/dist/`
+- **Real-time**: WebSocket (`ws`) with long-polling fallback
 - **Auth**: Session-based with Bearer tokens and HttpOnly cookies (bcryptjs for password hashing)
 - **Validation**: Zod schemas on all API inputs
-- **Security**: Helmet (security headers), express-rate-limit, compression
+- **Security**: Helmet (security headers), express-rate-limit, compression, structured security event logging
 - **Logging**: Pino (structured logging, pino-pretty in dev)
-- **Testing**: Playwright E2E tests (93 tests)
+- **Testing**: Playwright E2E tests (216 tests across 15 spec files)
 - **API**: REST API with JSON responses
-- **Deployment**: Vercel-ready (`vercel.json`, serverless export in `server.js`)
+- **Deployment**: Vercel-ready (`vercel.json`, serverless export in `api/index.js`)
 
 **Key Features:**
 - Multi-user authentication with admin approval workflow
@@ -93,14 +95,14 @@ Project Overviewer is a multi-user project and task management application with 
 
 ### Design Philosophy
 
-Project Overviewer is intentionally simple. The goal is a tool you can run, understand, and modify without fighting a complex build pipeline or abstraction layers. There is no framework on the frontend, no ORM on the backend, and no external services — just Node.js, SQLite, and plain JavaScript files.
+Project Overviewer is intentionally simple. The goal is a tool you can run, understand, and modify without fighting complex abstraction layers. There is no framework on the frontend, no ORM on the backend, and no external services — just Node.js, SQLite, and plain JavaScript files. The build step (esbuild) is minimal and automatic via `npm start`.
 
 ### System Overview
 
 ```
 ┌─────────────────────────────────────────────────┐
 │                   Browser                        │
-│   public/index.html + 16 JS modules + CSS       │
+│   public/index.html + esbuild bundles + CSS      │
 └──────────────────────┬──────────────────────────┘
                        │ HTTP REST (JSON)
 ┌──────────────────────▼──────────────────────────┐
@@ -110,7 +112,7 @@ Project Overviewer is intentionally simple. The goal is a tool you can run, unde
 └──────────────────────┬──────────────────────────┘
                        │ async/await
 ┌──────────────────────▼──────────────────────────┐
-│             database.js  (SQLite3)               │
+│           database.js  (@libsql/client)          │
 │   waitForDb() → Promise wrappers → CRUD         │
 └──────────────────────┬──────────────────────────┘
                        │ WAL mode
@@ -122,11 +124,13 @@ Project Overviewer is intentionally simple. The goal is a tool you can run, unde
 ### Four-Tier Structure
 
 1. **Presentation Layer** (`public/`)
-   - `public/index.html` — HTML shell (383 lines), loads JS modules and CSS
+   - `public/index.html` — HTML shell, loads esbuild bundles from `public/dist/` and CSS
    - `public/login.html`, `public/register.html`, `public/admin.html` — Auth pages
    - `public/css/app.css` — Main application styles with CSS custom properties
    - `public/css/auth.css` — Auth page styles
-   - 16 JS modules in `public/js/` (see Frontend Modules below)
+   - `public/css/theme.css` — Theme variables
+   - `public/dist/` — esbuild content-hashed bundles (3 bundles: boot, app-shell, app)
+   - 23 JS source modules in `public/js/` (see Frontend Modules below)
 
 2. **Auth & Middleware Layer** (`server.js`)
    - `requireAuth` middleware — validates session tokens (Bearer header or cookie)
@@ -135,18 +139,19 @@ Project Overviewer is intentionally simple. The goal is a tool you can run, unde
    - Rate limiting (general, auth, import — disabled in `NODE_ENV=test`)
    - Helmet security headers, compression, body size limits
 
-3. **API Layer** (`server.js`)
-   - Express.js REST API handles all HTTP endpoints
+3. **API Layer** (`server.js` + `routes/`)
+   - Express.js REST API with route handlers organized in `routes/` directory
+   - 12 route modules: admin, auth, documents, export-import, notes, projects, settings, shared, tasks, teams, templates, webhooks
    - All data endpoints require authentication
    - User-scoped data isolation (all queries include `user_id`)
    - Team-aware reads via `workspaceMode` setting
    - All endpoints prefixed with `/api/`
 
 4. **Data Layer** (`database.js`)
-   - SQLite3 database abstraction with WAL mode
+   - LibSQL (`@libsql/client`) database abstraction with WAL mode
    - Promise-based query wrappers (`run`, `get`, `all`)
    - Database initialization and schema setup
-   - Ten tables: `users`, `sessions`, `projects`, `tasks`, `documents`, `global_settings`, `user_settings`, `quick_notes`, `templates`, `teams`, `team_members`
+   - Eleven tables: `users`, `sessions`, `projects`, `tasks`, `documents`, `global_settings`, `user_settings`, `quick_notes`, `templates`, `teams`, `team_members`
 
 ### Key Design Patterns
 
@@ -174,13 +179,13 @@ Project Overviewer is intentionally simple. The goal is a tool you can run, unde
 - All endpoints follow RESTful conventions
 
 **Frontend Module Pattern:**
-- Each module attaches its exports to `window` (e.g., `window.API`, `window.AppState`)
-- No bundler — modules loaded via `<script>` tags in dependency order
+- Each module attaches its exports to `window` (e.g., `window.API`, `window.AppState`, `window.WS`, `window.Polling`)
+- Modules are bundled by esbuild into 3 bundles (boot, app-shell, app); globals make inter-module communication explicit
 - State managed in `state.js` closure, accessed via `window.AppState`
 
 ### Frontend Architecture
 
-The frontend is a **modular vanilla JavaScript SPA with no build step**. 16 modules are loaded as plain `<script>` tags in `public/index.html`, in dependency order. Each module attaches its public API to `window` (e.g., `window.API`, `window.AppState`). No `import`/`export` — globals make the dependency graph explicit.
+The frontend is a **modular vanilla JavaScript SPA bundled by esbuild**. 23 source modules in `public/js/` are organized into 3 bundles (boot, app-shell, app) output to `public/dist/` with content hashes. Each module attaches its public API to `window` (e.g., `window.API`, `window.AppState`, `window.WS`). No `import`/`export` — globals make the dependency graph explicit within each bundle.
 
 **State management**: `state.js` is a closure holding the application state (projects array, user settings, current user, active filters). Modules mutate state through explicit setters (`AppState.setProjects()`, `AppState.updateSettings()`) and then call render functions directly. No reactive system — data flow is explicit and debugger-traceable.
 
@@ -190,10 +195,12 @@ The frontend is a **modular vanilla JavaScript SPA with no build step**. 16 modu
 
 ### Frontend Modules
 
-Located in `public/js/`, loaded in this order:
+Located in `public/js/`, bundled into 3 esbuild outputs:
 
 | Module | Responsibility |
 |--------|---------------|
+| `boot.js` | Entry-point router: detects page (login, register, admin, main) and loads the correct bundle |
+| `index-guard.js` | Auth guard for protected pages — verifies session before rendering |
 | `api-client.js` | All `fetch()` calls with auth headers and error handling (`window.API`) |
 | `utils.js` | Date formatting, debounce, DOM helpers |
 | `state.js` | Central app state: projects, settings, current user (`window.AppState`) |
@@ -209,7 +216,12 @@ Located in `public/js/`, loaded in this order:
 | `keyboard.js` | Keyboard shortcut registry |
 | `events.js` | Event delegation setup |
 | `team.js` | Team management UI and workspace toggle |
+| `ws-client.js` | WebSocket client for real-time sync (`window.WS`) |
+| `polling.js` | Long-polling fallback when WebSocket is unavailable (`window.Polling`) |
 | `app.js` | Bootstrap: load state, wire modules, initial render |
+| `login-page.js` | Login page initialization and form handling |
+| `register-page.js` | Registration page initialization and form handling |
+| `admin-page.js` | Admin panel: user management, approvals, global settings |
 
 ## Development Commands
 
@@ -261,9 +273,13 @@ Required dependencies:
 - `express-rate-limit` — Rate limiting
 - `zod` — Input validation
 - `pino` — Structured logging
+- `ws` — WebSocket server for real-time sync
+- `dotenv` — Environment variable loading
+- `mammoth` — DOCX document parsing
 
 Dev dependencies:
 - `@playwright/test` — E2E testing framework
+- `esbuild` — Frontend bundler
 - `pino-pretty` — Dev-friendly log formatting
 
 ### Running Tests
@@ -284,14 +300,26 @@ npx playwright test tests/e2e/auth.spec.js
 npx playwright test --headed
 ```
 
-Test files in `tests/e2e/`:
+Test files in `tests/e2e/` (216 tests across 15 spec files):
 - `auth.spec.js` — Authentication flows (register, login, logout, password change)
 - `projects-tasks.spec.js` — Project and task CRUD
 - `rbac.spec.js` — Role-based access control
 - `security.spec.js` — Security hardening (headers, rate limits, validation)
+- `security-hardening.spec.js` — Advanced security tests (CSP, HSTS, input sanitization)
 - `teams.spec.js` — Team collaboration
 - `ui-auth.spec.js` — UI authentication flows
+- `subtasks.spec.js` — Subtask creation, completion, hierarchy
+- `webhooks.spec.js` — Webhook CRUD and delivery
+- `websocket.spec.js` — WebSocket real-time sync
+- `caching.spec.js` — Cache headers and ETag behavior
+- `versioning.spec.js` — Optimistic concurrency / version checks
+- `theme-consistency.spec.js` — Theme switching and persistence
+- `audit-fixes.spec.js` — Regression tests for audit findings
+- `red-team-fixes.spec.js` — Regression tests for security fixes
 - `helpers.js` — Shared test utilities
+
+Additional test files:
+- `tests/team-membership-migration.test.js` — Team membership data migration
 
 ### Database Operations
 
@@ -316,7 +344,7 @@ sqlite> .quit
 
 ### Backend Files
 
-**`server.js`** — The entire Express application in one file, organized in clearly labeled sections. Every request passes through the same middleware stack:
+**`server.js`** — Express application entry point. Mounts middleware and route modules from `routes/`. Every request passes through the same middleware stack:
 1. **Helmet** — security headers (CSP, X-Frame-Options, HSTS in production)
 2. **Rate limiting** — 200 req/15 min general, 20 req/15 min auth, 5/hr imports
 3. **Compression + body limits** — 2 MB general, 10 MB for uploads and imports
@@ -324,11 +352,21 @@ sqlite> .quit
 5. **`requireAdmin`** — checks `admin` role (applied only to admin routes)
 6. **Zod validation** — every endpoint that accepts input has a schema; invalid input returns 400 before business logic runs
 
-Two shared helpers reduce duplication:
-- `setSessionCookie(res, token)` — used by login, password-change, and logout
-- `resolveTeamScope(userId, workspaceMode)` — returns user IDs to query (personal: `[userId]`; team: all member IDs)
+**`routes/`** — Modular route handlers (12 files):
+- `auth.js` — Registration, login, logout, password change, `/me`
+- `admin.js` — User management, approvals, global settings
+- `projects.js` — Project CRUD, reordering
+- `tasks.js` — Task CRUD, reordering, subtasks
+- `teams.js` — Team creation, membership, workspace mode
+- `documents.js` — Document attachments, downloads
+- `settings.js` — User settings CRUD
+- `notes.js` — Quick notes
+- `templates.js` — Project templates
+- `export-import.js` — Data export/import
+- `webhooks.js` — Webhook CRUD, test delivery
+- `shared.js` — Shared middleware (`requireAuth`, `requireAdmin`, `setSessionCookie`, `resolveTeamScope`)
 
-The SPA fallback at the bottom serves `public/index.html` for any non-API, non-static route, enabling client-side navigation on refresh.
+The SPA fallback at the bottom of `server.js` serves `public/index.html` for any non-API, non-static route.
 
 **`database.js`** — The data access layer. The key pattern is `waitForDb()`: every exported function starts with `await waitForDb()`, guaranteeing the schema exists before any query runs, even during the startup window.
 
@@ -344,12 +382,27 @@ SQLite performance configuration:
 
 **`logger.js`** — Thin Pino wrapper. JSON output in production; pretty-printed colored output in development via `pino-pretty`. Level controlled by `LOG_LEVEL` env var.
 
+**`event-bus.js`** — In-process event emitter for decoupling side effects (WebSocket broadcasts, webhook delivery) from route handlers.
+
+**`ws-server.js`** — WebSocket server (`ws` library) for real-time sync. Broadcasts project/task/setting mutations to connected clients.
+
+**`webhook-dispatcher.js`** — Dispatches HTTP webhook notifications on data events. HMAC-signed payloads with configurable URLs.
+
+**`security-events.js`** — Structured security event logging. Captures auth events, rate limit violations, and suspicious activity to a dedicated log stream.
+
+**`document-security.js`** — MIME type allowlisting and filename sanitization for document uploads/downloads.
+
+**`password-policy.js`** — Password strength validation rules (length, complexity, common password checks).
+
+**`session-config.js`** — Session configuration: token entropy, expiry durations, idle timeout. Values configurable via env vars.
+
+**`app-constants.js`** — Shared constants (setting key allowlists, status values, etc.).
+
 ### Frontend Files
 
 **`public/index.html`** — SPA HTML shell
-- Minimal HTML structure (383 lines)
-- Loads CSS from `public/css/`
-- Loads 16 JS modules from `public/js/` in dependency order
+- Loads esbuild bundles from `public/dist/` (boot, app-shell, app)
+- Loads CSS from `public/css/` (app.css, theme.css)
 - No inline JavaScript or CSS
 
 **`public/login.html`** — Login page
@@ -373,6 +426,11 @@ SQLite performance configuration:
 
 **`.env.example`** — Environment variable template
 **`playwright.config.js`** — Playwright E2E test configuration
+**`vercel.json`** — Vercel deployment configuration (routes, serverless functions)
+**`.nvmrc`** — Node.js version pin
+**`.github/workflows/security.yml`** — CI security workflow (dependency review, npm audit)
+**`.github/dependabot.yml`** — Dependabot config for npm and GitHub Actions
+**`scripts/build-frontend.js`** — esbuild bundler: compiles `public/js/` → `public/dist/` with content hashes
 
 ### Startup Scripts
 
