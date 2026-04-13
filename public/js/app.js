@@ -1,5 +1,5 @@
 // Project Overviewer — App Initialization
-var notesSaveTimeout = null;
+let notesSaveTimeout = null;
 
 async function init() {
   // Load data from API

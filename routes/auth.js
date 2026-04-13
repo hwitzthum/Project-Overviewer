@@ -335,14 +335,19 @@ module.exports = function createAuthRouter({
   });
 
   router.get('/me', requireAuth, async (req, res) => {
-    const theme = await db.getUserSetting(req.user.userId, 'theme');
-    res.json({
-      id: req.user.userId,
-      username: req.user.username,
-      email: req.user.email,
-      role: req.user.role,
-      theme: theme || 'auto'
-    });
+    try {
+      const theme = await db.getUserSetting(req.user.userId, 'theme');
+      res.json({
+        id: req.user.userId,
+        username: req.user.username,
+        email: req.user.email,
+        role: req.user.role,
+        theme: theme || 'auto'
+      });
+    } catch (error) {
+      logger.error({ err: error }, 'Get current user error');
+      res.status(500).json({ error: 'Failed to get user info' });
+    }
   });
 
   router.put('/password', requireAuth, async (req, res) => {

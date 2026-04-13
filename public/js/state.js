@@ -33,8 +33,8 @@ function getDefaultState() {
   };
 }
 
-var state = getDefaultState();
-var listeners = new Set();
+let state = getDefaultState();
+const listeners = new Set();
 
 function subscribe(fn) {
   listeners.add(fn);

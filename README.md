@@ -9,7 +9,7 @@ No subscriptions. No cloud lock-in. No framework overhead. Just Node.js, SQLite,
 ![Version](https://img.shields.io/badge/version-1.0-blue)
 ![Node.js](https://img.shields.io/badge/Node.js-v18%2B-green)
 ![License](https://img.shields.io/badge/license-MIT-blue)
-![Tests](https://img.shields.io/badge/tests-93%20E2E-brightgreen)
+![Tests](https://img.shields.io/badge/tests-216%20E2E-brightgreen)
 
 [**Get Started in 2 Minutes**](#quick-start) • [**See Features**](#what-you-get) • [**View Docs**](#user-guide) • [**GitHub**](https://github.com/yourusername/project-overviewer)
 
@@ -161,10 +161,10 @@ Open **http://localhost:3001** and log in with your admin credentials.
 
 ### For Developers: Dead-Simple Architecture
 
-**No build pipeline. No complexity. Just 16 JS modules + 1 Express file + SQLite.**
+**Minimal tooling. Maximum clarity. 23 JS modules + modular Express routes + SQLite.**
 
-- 📝 **Frontend**: Modular vanilla JavaScript (no React, Vue, or build step)
-- 🔌 **Backend**: Single `server.js` (all routes, middleware, auth)
+- 📝 **Frontend**: Modular vanilla JavaScript (no React or Vue), bundled by esbuild
+- 🔌 **Backend**: `server.js` entry point with 12 route modules in `routes/`
 - 💾 **Database**: SQLite with WAL mode (concurrent reads + reliable writes)
 - 🔒 **Security**: Helmet, rate limiting, Zod validation, bcrypt hashing
 - ✅ **Tests**: 93 Playwright E2E tests (auth, CRUD, RBAC, security)
@@ -661,7 +661,7 @@ Project Overviewer is **intentionally simple**. It prioritizes:
 
 | Layer | Technology | Why |
 |-------|-----------|-----|
-| **Frontend** | Vanilla JavaScript (16 modules, esbuild) | No framework overhead; explicit dependency graph; bundled for optimization |
+| **Frontend** | Vanilla JavaScript (23 modules, esbuild) | No framework overhead; explicit dependency graph; bundled for optimization |
 | **Backend** | Express.js (modular routes) | Clean separation by domain (auth, projects, tasks, etc.); easy to extend |
 | **Database** | SQLite with WAL mode | Reliable, concurrent, zero setup |
 | **Auth** | Session tokens (Bearer + HttpOnly) | Stateful; simple; compatible with browsers; security event logging |
@@ -675,7 +675,7 @@ Project Overviewer is **intentionally simple**. It prioritizes:
 ```
 ┌─────────────────────────────────┐
 │     Browser (index.html)         │
-│   16 JS modules + CSS            │
+│   esbuild bundles + CSS          │
 └────────────────┬────────────────┘
                  │ HTTP (REST)
 ┌────────────────▼────────────────┐
@@ -685,7 +685,7 @@ Project Overviewer is **intentionally simple**. It prioritizes:
 └────────────────┬────────────────┘
                  │ async/await
 ┌────────────────▼────────────────┐
-│   database.js (SQLite)           │
+│   database.js (@libsql/client)   │
 │   waitForDb() → Schema → CRUD    │
 └────────────────┬────────────────┘
                  │ WAL mode
@@ -694,28 +694,33 @@ Project Overviewer is **intentionally simple**. It prioritizes:
 └─────────────────────────────────┘
 ```
 
-### Frontend: 16 Modular JS Files
+### Frontend: 23 Modular JS Files
 
-No bundler. No build step. Just plain `<script>` tags in dependency order:
+Source modules in `public/js/` are bundled by esbuild into 3 content-hashed bundles in `public/dist/`:
 
-1. **api-client.js** — fetch wrapper with auth headers
-2. **utils.js** — date formatting, DOM helpers
-3. **state.js** — central state management
-4. **toast.js** — notifications
-5. **theme.js** — CSS variable swapping (5 themes)
-6. **filters.js** — search, filter, sort logic
-7. **render.js** — DOM construction
-8. **projects.js** — project CRUD
-9. **tasks.js** — task CRUD
-10. **modals.js** — modal lifecycle
-11. **commands.js** — command palette (Cmd+K)
-12. **dragdrop.js** — kanban drag-and-drop
-13. **keyboard.js** — keyboard shortcuts
-14. **events.js** — event delegation
-15. **team.js** — team management
-16. **app.js** — bootstrap
-
-**Total: ~2500 lines of code across frontend + backend.**
+1. **boot.js** — entry-point router (page detection, bundle loading)
+2. **index-guard.js** — auth guard for protected pages
+3. **api-client.js** — fetch wrapper with auth headers
+4. **utils.js** — date formatting, DOM helpers
+5. **state.js** — central state management
+6. **toast.js** — notifications
+7. **theme.js** — CSS variable swapping (5 themes)
+8. **filters.js** — search, filter, sort logic
+9. **render.js** — DOM construction
+10. **projects.js** — project CRUD
+11. **tasks.js** — task CRUD
+12. **modals.js** — modal lifecycle
+13. **commands.js** — command palette (Cmd+K)
+14. **dragdrop.js** — kanban drag-and-drop
+15. **keyboard.js** — keyboard shortcuts
+16. **events.js** — event delegation
+17. **team.js** — team management
+18. **ws-client.js** — WebSocket real-time sync
+19. **polling.js** — long-polling fallback
+20. **app.js** — bootstrap
+21. **login-page.js** — login page
+22. **register-page.js** — registration page
+23. **admin-page.js** — admin panel
 
 ### Backend: Modular Route Structure
 
@@ -925,8 +930,8 @@ We welcome contributions! Here's how:
 
 ### Code Guidelines
 
-- **Frontend:** Vanilla JavaScript, no build step, explicit globals
-- **Backend:** Single `server.js` file, organized by middleware stack
+- **Frontend:** Vanilla JavaScript, esbuild bundles, explicit globals
+- **Backend:** `server.js` entry point with modular route files in `routes/`
 - **Database:** User-scoped queries, cascade deletes, UUIDs for IDs
 - **Security:** Validate all inputs (Zod), hash passwords, rate-limit endpoints
 - **Tests:** E2E tests only (Playwright); test auth, CRUD, RBAC, security

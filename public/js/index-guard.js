@@ -4,9 +4,6 @@
 
   async function verifySession() {
     root.setAttribute('data-auth-state', 'pending');
-    if (typeof window.markPagePending === 'function') {
-      window.markPagePending();
-    }
     const user = await API.getMe();
     root.setAttribute('data-auth-state', 'authorized');
     window.__authenticatedUser = user;
