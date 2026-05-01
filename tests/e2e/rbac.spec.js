@@ -330,8 +330,15 @@ test.describe('Role-Based Access Control', () => {
     await expect(userRow).toBeVisible();
     const approveBtn = userRow.locator('button.approve');
     await expect(approveBtn).toBeVisible();
-    page.once('dialog', dialog => dialog.accept(ADMIN.password));
     await approveBtn.click();
+
+    // The admin panel opens a custom in-page modal (not a native browser dialog)
+    // for the password prompt. Fill it and confirm.
+    const modal = page.locator('#adminModal');
+    await expect(modal).toBeVisible();
+    await page.locator('#adminModalPassword').fill(ADMIN.password);
+    await page.locator('#adminModalConfirm').click();
+    await expect(modal).toBeHidden();
 
     // After approval, user should no longer be in pending section
     await expect(userRow).toBeHidden({ timeout: 5000 });
@@ -374,16 +381,24 @@ test.describe('Role-Based Access Control', () => {
     const userRow = page.locator('#userList .admin-user-row', { hasText: newUser });
     await expect(userRow).toBeVisible();
 
-    // Handle the confirm dialog
-    page.on('dialog', dialog => {
-      if (dialog.type() === 'confirm') {
-        dialog.accept();
-        return;
-      }
-      dialog.accept(ADMIN.password);
-    });
     const deleteBtn = userRow.locator('button.danger');
     await deleteBtn.click();
+
+    // Delete flow opens the custom #adminModal twice: first a confirmation
+    // (no password field), then a password prompt. Drive both.
+    const modal = page.locator('#adminModal');
+    const passwordWrap = page.locator('#adminModalPasswordWrap');
+    const confirmBtn = page.locator('#adminModalConfirm');
+
+    await expect(modal).toBeVisible();
+    await expect(passwordWrap).toBeHidden();
+    await confirmBtn.click();
+
+    // Second modal: password prompt
+    await expect(passwordWrap).toBeVisible();
+    await page.locator('#adminModalPassword').fill(ADMIN.password);
+    await confirmBtn.click();
+    await expect(modal).toBeHidden();
 
     // User row should disappear
     await expect(userRow).toBeHidden({ timeout: 5000 });
