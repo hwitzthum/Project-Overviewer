@@ -751,6 +751,10 @@
       color: var(--danger);
     }
 
+    .project-due.due-soon {
+      color: var(--warning);
+    }
+
     .project-quick-edit {
       display: grid;
       grid-template-columns: 1fr 1fr;
