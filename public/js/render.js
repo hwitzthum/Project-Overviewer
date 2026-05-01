@@ -985,10 +985,17 @@ function renderStatistics() {
   const weekAgo = new Date(now);
   weekAgo.setDate(weekAgo.getDate() - 7);
 
-  const completedThisWeek = tasks.filter(t => {
-    // For simplicity, count completed tasks (in a real app, track completedAt timestamp)
-    return t.completed;
-  }).length;
+  const completedThisWeek = projects.filter(p =>
+    p.status === 'completed' && new Date(p.updated_at || 0) >= weekAgo
+  ).length;
+
+  const overdueProjects = projects.filter(p =>
+    p.dueDate && p.status !== 'completed' && isOverdue(p.dueDate)
+  ).length;
+
+  const dueSoonProjects = projects.filter(p =>
+    p.dueDate && p.status !== 'completed' && isDueWithinDays(p.dueDate, 7)
+  ).length;
 
   const projectsByStatus = {
     'not-started': projects.filter(p => p.status === 'not-started').length,
@@ -1010,26 +1017,36 @@ function renderStatistics() {
       </div>
       <div class="stat-card">
         <div class="stat-value">${projectsByStatus['in-progress']}</div>
-        <div class="stat-label">in-progress Projects</div>
+        <div class="stat-label">In Progress</div>
       </div>
       <div class="stat-card">
-        <div class="stat-value">${projectsByStatus['completed']}</div>
-        <div class="stat-label">completed Projects</div>
+        <div class="stat-value">${completedThisWeek}</div>
+        <div class="stat-label">Completed This Week</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value">${overdueProjects}</div>
+        <div class="stat-label">Overdue Projects</div>
+        ${overdueProjects > 0 ? `<div class="stat-trend negative">needs attention</div>` : `<div class="stat-trend positive">all on track</div>`}
+      </div>
+      <div class="stat-card">
+        <div class="stat-value">${dueSoonProjects}</div>
+        <div class="stat-label">Due This Week</div>
+        ${dueSoonProjects > 0 ? `<div class="stat-trend" style="color: var(--warning);">upcoming deadlines</div>` : ''}
       </div>
     </div>
     <div style="background: var(--bg-secondary); border-radius: var(--radius-md); padding: 20px; margin-top: 16px;">
       <div class="settings-label" style="margin-bottom: 12px;">Project Status Distribution</div>
       <div style="display: flex; height: 24px; border-radius: 4px; overflow: hidden;">
-        <div style="flex: ${projectsByStatus['not-started']}; background: var(--text-tertiary);" title="not-started"></div>
-        <div style="flex: ${projectsByStatus['in-progress']}; background: var(--accent);" title="in-progress"></div>
-        <div style="flex: ${projectsByStatus['completed']}; background: var(--success);" title="completed"></div>
-        <div style="flex: ${projectsByStatus['backlog']}; background: var(--warning);" title="backlog"></div>
+        <div style="flex: ${projectsByStatus['not-started']}; background: var(--text-tertiary);" title="Not Started: ${projectsByStatus['not-started']}"></div>
+        <div style="flex: ${projectsByStatus['in-progress']}; background: var(--accent);" title="In Progress: ${projectsByStatus['in-progress']}"></div>
+        <div style="flex: ${projectsByStatus['completed']}; background: var(--success);" title="Completed: ${projectsByStatus['completed']}"></div>
+        <div style="flex: ${projectsByStatus['backlog']}; background: var(--warning);" title="Backlog: ${projectsByStatus['backlog']}"></div>
       </div>
-      <div style="display: flex; gap: 16px; margin-top: 12px; font-size: 12px; color: var(--text-secondary);">
-        <span>⬜ not-started: ${projectsByStatus['not-started']}</span>
-        <span>🔵 in-progress: ${projectsByStatus['in-progress']}</span>
-        <span>🟢 completed: ${projectsByStatus['completed']}</span>
-        <span>🟡 backlog: ${projectsByStatus['backlog']}</span>
+      <div style="display: flex; gap: 16px; margin-top: 12px; font-size: 12px; color: var(--text-secondary); flex-wrap: wrap;">
+        <span>Not Started: ${projectsByStatus['not-started']}</span>
+        <span>In Progress: ${projectsByStatus['in-progress']}</span>
+        <span>Completed: ${projectsByStatus['completed']}</span>
+        <span>Backlog: ${projectsByStatus['backlog']}</span>
       </div>
     </div>
   `;
