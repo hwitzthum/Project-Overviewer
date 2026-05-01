@@ -351,6 +351,70 @@
     </div>
   </div>
 
+  <!-- Keyboard Shortcuts Modal -->
+  <div class="modal-overlay" id="shortcutsModal">
+    <div class="modal" style="max-width: 480px;" role="dialog" aria-labelledby="shortcutsTitle">
+      <div class="modal-header">
+        <h2 class="modal-title" id="shortcutsTitle">Keyboard Shortcuts</h2>
+        <button class="modal-close" aria-label="Close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="shortcuts-section">
+          <div class="shortcuts-section-title">Projects</div>
+          <div class="shortcuts-table">
+            <div class="shortcut-row">
+              <span class="shortcut-desc">New project</span>
+              <kbd class="kbd">N</kbd>
+            </div>
+            <div class="shortcut-row">
+              <span class="shortcut-desc">New project (alternative)</span>
+              <div class="shortcut-keys"><kbd class="kbd">⌘</kbd><kbd class="kbd">N</kbd></div>
+            </div>
+          </div>
+        </div>
+        <div class="shortcuts-section">
+          <div class="shortcuts-section-title">Navigation</div>
+          <div class="shortcuts-table">
+            <div class="shortcut-row">
+              <span class="shortcut-desc">Command palette</span>
+              <div class="shortcut-keys"><kbd class="kbd">⌘</kbd><kbd class="kbd">K</kbd></div>
+            </div>
+            <div class="shortcut-row">
+              <span class="shortcut-desc">Focus search</span>
+              <kbd class="kbd">/</kbd>
+            </div>
+            <div class="shortcut-row">
+              <span class="shortcut-desc">Statistics</span>
+              <div class="shortcut-keys"><kbd class="kbd">⌘</kbd><kbd class="kbd">I</kbd></div>
+            </div>
+            <div class="shortcut-row">
+              <span class="shortcut-desc">Settings</span>
+              <div class="shortcut-keys"><kbd class="kbd">⌘</kbd><kbd class="kbd">,</kbd></div>
+            </div>
+            <div class="shortcut-row">
+              <span class="shortcut-desc">Toggle Quick Notes</span>
+              <div class="shortcut-keys"><kbd class="kbd">⌘</kbd><kbd class="kbd">⇧</kbd><kbd class="kbd">N</kbd></div>
+            </div>
+          </div>
+        </div>
+        <div class="shortcuts-section">
+          <div class="shortcuts-section-title">General</div>
+          <div class="shortcuts-table">
+            <div class="shortcut-row">
+              <span class="shortcut-desc">Close modal / panel</span>
+              <kbd class="kbd">Esc</kbd>
+            </div>
+            <div class="shortcut-row">
+              <span class="shortcut-desc">Show this help</span>
+              <kbd class="kbd">?</kbd>
+            </div>
+          </div>
+        </div>
+        <p class="shortcuts-hint">⌘ = Cmd on Mac, Ctrl on Windows/Linux</p>
+      </div>
+    </div>
+  </div>
+
   <!-- Toast Container -->
   <div class="toast-container" id="toastContainer" aria-live="polite"></div>
 
