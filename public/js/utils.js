@@ -56,11 +56,12 @@ function formatDate(dateStr) {
   tomorrow.setDate(tomorrow.getDate() + 1);
   const diff = Math.ceil((date - today) / (1000 * 60 * 60 * 24));
 
-  if (date < today) return { text: `${Math.abs(diff)} days overdue`, overdue: true };
-  if (diff === 0) return { text: 'Today', overdue: false };
-  if (diff === 1) return { text: 'Tomorrow', overdue: false };
-  if (diff <= 7) return { text: `In ${diff} days`, overdue: false };
-  return { text: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }), overdue: false };
+  if (date < today) return { text: `${Math.abs(diff)} days overdue`, overdue: true, dueSoon: false };
+  if (diff === 0) return { text: 'Today', overdue: false, dueSoon: true };
+  if (diff === 1) return { text: 'Tomorrow', overdue: false, dueSoon: true };
+  if (diff <= 3) return { text: `In ${diff} days`, overdue: false, dueSoon: true };
+  if (diff <= 7) return { text: `In ${diff} days`, overdue: false, dueSoon: false };
+  return { text: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }), overdue: false, dueSoon: false };
 }
 
 function isOverdue(dateStr) {

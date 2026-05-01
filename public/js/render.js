@@ -27,7 +27,7 @@ function renderProjectCard(project, options) {
         <span class="project-card-compact-title">${escapeHtml(project.title)}</span>
         <span class="project-status status-${project.status}">${formatStatus(project.status)}</span>
         ${totalTasks > 0 ? `<span class="project-meta-item">✓ ${completedTasks}/${totalTasks}</span>` : ''}
-        ${project.dueDate ? `<span class="project-meta-item project-due${dueInfo.overdue ? ' overdue' : ''}">📅 ${dueInfo.text}</span>` : ''}
+        ${project.dueDate ? `<span class="project-meta-item project-due${dueInfo.overdue ? ' overdue' : dueInfo.dueSoon ? ' due-soon' : ''}">📅 ${dueInfo.text}</span>` : ''}
         ${hasBlockedTask ? `<span class="card-blocked-badge" title="Has blocked tasks">⛔ blocked</span>` : ''}
         ${daysInStatus !== null && daysInStatus > 0
           ? `<span class="card-cycle-time${cycleClass}" title="Days in current status">${daysInStatus}d</span>`
@@ -59,7 +59,7 @@ function renderProjectCard(project, options) {
           <span class="project-meta-item">👤 ${escapeHtml(project.stakeholder)}</span>
         ` : ''}
         ${project.dueDate ? `
-          <span class="project-meta-item project-due${dueInfo.overdue ? ' overdue' : ''}">
+          <span class="project-meta-item project-due${dueInfo.overdue ? ' overdue' : dueInfo.dueSoon ? ' due-soon' : ''}">
             📅 ${dueInfo.text}
           </span>
         ` : ''}
