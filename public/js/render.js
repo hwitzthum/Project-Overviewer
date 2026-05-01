@@ -157,8 +157,10 @@ function renderProjectCard(project, options) {
 function renderTaskListRow(entry, options = {}) {
   const { task, project } = entry;
   const showProject = options.showProject !== false;
+  const priority = task.priority || 'none';
   return `
     <div class="task-list-row${task.completed ? ' completed' : ''}" data-task-id="${task.id}" data-project-id="${project.id}">
+      <div class="task-priority-dot priority-${priority}" title="Priority: ${priority}"></div>
       <div class="task-checkbox" data-project-id="${project.id}" data-task-id="${task.id}"
         tabindex="0" role="checkbox" aria-checked="${task.completed}">
         ${task.completed ? '✓' : ''}
@@ -383,6 +385,13 @@ function renderModalTaskItem(task, project, isArchived, isSubtask) {
       ${!isSubtask && subtaskCount > 0 ? `<span class="subtask-count">${subtaskCount} subtask${subtaskCount !== 1 ? 's' : ''}</span>` : ''}
       <input type="date" class="modal-task-date" value="${formatDateInputValue(task.dueDate)}"
         data-project-id="${project.id}" data-task-id="${task.id}" aria-label="Task due date" ${disabledAttr}>
+      <select class="modal-task-priority task-priority-${task.priority || 'none'}" aria-label="Task priority"
+        data-project-id="${project.id}" data-task-id="${task.id}" ${disabledAttr}>
+        <option value="none" ${(task.priority || 'none') === 'none' ? 'selected' : ''}>None</option>
+        <option value="low" ${task.priority === 'low' ? 'selected' : ''}>Low</option>
+        <option value="medium" ${task.priority === 'medium' ? 'selected' : ''}>Med</option>
+        <option value="high" ${task.priority === 'high' ? 'selected' : ''}>High</option>
+      </select>
       ${isArchived ? '' : `
         ${isSubtask ? '' : `
         <button class="btn-icon btn-icon-small modal-task-move" data-direction="up"
