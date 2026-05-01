@@ -62,11 +62,8 @@ module.exports = function createTeamsRouter({ db, logger, schemas, requireAuth }
 
       const { username } = req.body;
       const user = await db.getUserByUsername(username);
-      if (!user) {
-        return res.status(404).json({ error: 'User not found' });
-      }
-      if (!user.approved) {
-        return res.status(400).json({ error: 'User account is not approved' });
+      if (!user || !user.approved) {
+        return res.status(404).json({ error: 'User not found or not eligible to join a team' });
       }
 
       await db.addTeamMember(teamId, user.id);
