@@ -11,9 +11,11 @@ const { validateWebhookUrl } = require('./routes/webhooks');
 module.exports = function createWebhookDispatcher({ db, logger, eventBus }) {
   const DISPATCH_TIMEOUT_MS = 10000;
 
-  function signPayload(body, secret) {
+  function signPayload(body, secret, timestamp) {
     const hmac = crypto.createHmac('sha256', secret);
-    hmac.update(body);
+    // Include timestamp in signed data to prevent replay attacks.
+    // Receivers should reject requests where the timestamp is stale (>5 min).
+    hmac.update(`${timestamp}.${body}`);
     return `sha256=${hmac.digest('hex')}`;
   }
 
@@ -54,6 +56,7 @@ module.exports = function createWebhookDispatcher({ db, logger, eventBus }) {
         // Remove undefined keys
         Object.keys(safeData).forEach(k => safeData[k] === undefined && delete safeData[k]);
 
+        const timestamp = String(Math.floor(Date.now() / 1000));
         const body = JSON.stringify({
           event: eventType,
           timestamp: new Date().toISOString(),
@@ -73,7 +76,7 @@ module.exports = function createWebhookDispatcher({ db, logger, eventBus }) {
           continue;
         }
 
-        const signature = signPayload(body, webhook.secret);
+        const signature = signPayload(body, webhook.secret, timestamp);
 
         // Fire-and-forget — don't await
         fetch(webhook.url, {
@@ -81,6 +84,7 @@ module.exports = function createWebhookDispatcher({ db, logger, eventBus }) {
           headers: {
             'Content-Type': 'application/json',
             'X-Webhook-Signature': signature,
+            'X-Webhook-Timestamp': timestamp,
             'X-Webhook-Event': eventType
           },
           body,
