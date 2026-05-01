@@ -18,7 +18,8 @@ module.exports = function createAdminRouter({
   const stepUpAttemptTracker = new Map();
 
   function getStepUpKey(req) {
-    return `${req.user.userId}|${req.ip || 'unknown'}`;
+    // Key only on userId — IP can be spoofed or shared behind proxies.
+    return req.user.userId;
   }
 
   function getStepUpState(key) {
@@ -65,6 +66,20 @@ module.exports = function createAdminRouter({
 
     if (state.blockedUntil > now) {
       await new Promise(resolve => setTimeout(resolve, state.blockedUntil - now));
+    }
+
+    // Defense-in-depth: verify admin role even though requireAdmin middleware runs before these routes.
+    if (req.user.role !== 'admin') {
+      recordStepUpFailure(key);
+      logSecurityEvent('admin.reauth.failed', {
+        req,
+        statusCode: 403,
+        reason: 'not_admin',
+        outcome: 'denied',
+        severity: 'high'
+      });
+      res.status(403).json({ error: 'Admin access required' });
+      return false;
     }
 
     const adminPassword = String(req.body?.adminPassword || '');

@@ -212,6 +212,16 @@ module.exports = function createDocumentsRouters({
       const mimeType = getSafeDocumentMimeType(inspection.safeMimeType);
       const disposition = req.query.disposition === 'inline' ? 'inline' : 'attachment';
 
+      logSecurityEvent('document.download.success', {
+        req,
+        level: 'info',
+        outcome: 'success',
+        severity: 'low',
+        statusCode: 200,
+        documentId: req.params.id,
+        mimeType,
+        disposition
+      });
       res.setHeader('Content-Type', mimeType);
       res.setHeader('Content-Disposition', `${disposition}; filename="${safeFileName}"; filename*=UTF-8''${encodedFileName}`);
       res.setHeader('Content-Length', buffer.length);

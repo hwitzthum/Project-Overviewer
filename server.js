@@ -120,7 +120,8 @@ try {
         defaultSrc: ["'self'"],
         scriptSrc: ["'self'"],
         scriptSrcAttr: ["'none'"],
-        styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+        styleSrc: ["'self'", "https://fonts.googleapis.com"],
+        styleSrcAttr: ["'unsafe-inline'"],
         imgSrc: ["'self'", "data:"],
         connectSrc: ["'self'"],
         fontSrc: ["'self'", "https://fonts.gstatic.com"],
@@ -266,6 +267,7 @@ function injectAssetUrls(html) {
     .replaceAll('/css/theme.css', `/css/theme.css?v=${buildVersion}`)
     .replaceAll('/css/app.css', `/css/app.css?v=${buildVersion}`)
     .replaceAll('/css/auth.css', `/css/auth.css?v=${buildVersion}`)
+    .replaceAll('/css/admin.css', `/css/admin.css?v=${buildVersion}`)
     .replaceAll('/dist/boot.bundle.js', `/dist/${bundleMap['boot.bundle.js'] || 'boot.bundle.js'}`)
     .replaceAll('/dist/app-shell.bundle.js', `/dist/${bundleMap['app-shell.bundle.js'] || 'app-shell.bundle.js'}`)
     .replaceAll('/dist/app.bundle.js', `/dist/${bundleMap['app.bundle.js'] || 'app.bundle.js'}`)
@@ -276,6 +278,14 @@ function injectAssetUrls(html) {
 
 function sendHtmlPage(res, fileName, options = {}) {
   const { protectedPage = false } = options;
+
+  // Guard against path traversal: resolve and verify the target stays within PUBLIC_DIR
+  const resolvedPath = path.resolve(PUBLIC_DIR, fileName);
+  if (!resolvedPath.startsWith(path.resolve(PUBLIC_DIR) + path.sep) && resolvedPath !== path.resolve(PUBLIC_DIR)) {
+    res.status(400).end();
+    return;
+  }
+
   res.setHeader(
     'Cache-Control',
     protectedPage ? 'private, no-store, max-age=0, must-revalidate' : 'no-store, max-age=0, must-revalidate'
@@ -288,7 +298,7 @@ function sendHtmlPage(res, fileName, options = {}) {
   if (useCache && htmlTemplateCache.has(fileName)) {
     return res.type('html').send(htmlTemplateCache.get(fileName));
   }
-  const rawHtml = fs.readFileSync(path.join(PUBLIC_DIR, fileName), 'utf8');
+  const rawHtml = fs.readFileSync(resolvedPath, 'utf8');
   const processedHtml = injectAssetUrls(rawHtml);
   if (useCache) {
     htmlTemplateCache.set(fileName, processedHtml);

@@ -651,14 +651,16 @@ async function getSessionByToken(token) {
   const now = Date.now();
   const expiresAtMs = Date.parse(session.expires_at);
   if (!Number.isFinite(expiresAtMs) || expiresAtMs <= now) {
-    await run('DELETE FROM sessions WHERE id = ?', [session.id]);
+    // Atomic delete: only removes when the token still matches, avoiding TOCTOU.
+    await run('DELETE FROM sessions WHERE id = ? AND token = ?', [session.id, tokenHash]);
     return { status: 'absolute_timeout', session: null };
   }
 
   const lastSeenAt = session.last_seen_at || session.created_at || session.expires_at;
   const lastSeenAtMs = Date.parse(lastSeenAt);
   if (!Number.isFinite(lastSeenAtMs) || lastSeenAtMs <= now - SESSION_IDLE_TIMEOUT_MS) {
-    await run('DELETE FROM sessions WHERE id = ?', [session.id]);
+    // Atomic delete: only removes when the token still matches, avoiding TOCTOU.
+    await run('DELETE FROM sessions WHERE id = ? AND token = ?', [session.id, tokenHash]);
     return { status: 'idle_timeout', session: null };
   }
 
