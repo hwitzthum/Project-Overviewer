@@ -499,6 +499,14 @@ function initProjectModalDelegation() {
       updateTaskFields(projectId, taskId, { dueDate: e.target.value || null });
     }
 
+    if (e.target.classList.contains('modal-task-priority')) {
+      const projectId = e.target.dataset.projectId;
+      const taskId = e.target.dataset.taskId;
+      const priority = e.target.value;
+      e.target.className = `modal-task-priority task-priority-${priority}`;
+      updateTaskFields(projectId, taskId, { priority });
+    }
+
     if (e.target.classList.contains('docx-input')) {
       const projectId = e.target.dataset.projectId;
       const file = e.target.files && e.target.files[0];
