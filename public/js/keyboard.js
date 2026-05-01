@@ -1,4 +1,9 @@
 // Project Overviewer — Keyboard Shortcuts
+function isTypingInInput() {
+  const el = document.activeElement;
+  return el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable);
+}
+
 function initKeyboardShortcuts() {
   document.addEventListener('keydown', e => {
     const isMeta = e.metaKey || e.ctrlKey;
@@ -63,6 +68,22 @@ function initKeyboardShortcuts() {
         closeModal(topModalId);
       } else {
         document.getElementById('quickNotes').classList.remove('active');
+      }
+    }
+
+    // Single-key shortcuts — skip when typing in inputs
+    if (!isMeta && !e.altKey && !isTypingInInput()) {
+      if ((e.key === 'n' || e.key === 'N') && !e.shiftKey) {
+        e.preventDefault();
+        createProject();
+      }
+      if (e.key === '/' && !e.shiftKey) {
+        e.preventDefault();
+        document.getElementById('searchInput').focus();
+      }
+      if (e.key === '?') {
+        e.preventDefault();
+        openModal('shortcutsModal');
       }
     }
   });

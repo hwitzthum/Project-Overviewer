@@ -2286,3 +2286,69 @@
       font-size: 11px;
       padding: 6px;
     }
+
+    /* ========== Keyboard Shortcuts Modal ========== */
+    .shortcuts-section {
+      margin-bottom: 20px;
+    }
+
+    .shortcuts-section-title {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-tertiary);
+      margin-bottom: 4px;
+    }
+
+    .shortcuts-table {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .shortcut-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 5px 6px;
+      border-radius: var(--radius-sm);
+    }
+
+    .shortcut-row:hover {
+      background: var(--bg-hover);
+    }
+
+    .shortcut-desc {
+      font-size: 13px;
+      color: var(--text-primary);
+    }
+
+    .shortcut-keys {
+      display: flex;
+      gap: 3px;
+      align-items: center;
+    }
+
+    .kbd {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 22px;
+      height: 20px;
+      padding: 0 5px;
+      font-size: 11px;
+      font-family: inherit;
+      color: var(--text-secondary);
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border-color);
+      border-bottom-width: 2px;
+      border-radius: 4px;
+      white-space: nowrap;
+    }
+
+    .shortcuts-hint {
+      margin-top: 4px;
+      font-size: 11px;
+      color: var(--text-tertiary);
+      text-align: center;
+    }
