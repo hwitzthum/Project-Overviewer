@@ -246,6 +246,89 @@
       from { opacity: 0; transform: translateX(20px); }
     }
 
+    /* ========== Admin Modal ========== */
+    .admin-modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: var(--overlay);
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
+      z-index: 1000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      animation: adminOverlayIn 150ms ease;
+    }
+
+    @keyframes adminOverlayIn {
+      from { opacity: 0; }
+    }
+
+    .admin-modal-card {
+      background: var(--bg-primary);
+      border: 1px solid var(--border-light);
+      border-radius: var(--radius-lg);
+      padding: 28px 24px 24px;
+      width: 100%;
+      max-width: 380px;
+      margin: 20px;
+      box-shadow: var(--shadow-lg);
+      animation: adminModalIn 200ms cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    @keyframes adminModalIn {
+      from { opacity: 0; transform: scale(0.95) translateY(-8px); }
+    }
+
+    .admin-modal-title {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-bottom: 10px;
+      font-family: 'DM Sans', sans-serif;
+    }
+
+    .admin-modal-message {
+      font-size: 14px;
+      color: var(--text-secondary);
+      line-height: 1.5;
+    }
+
+    .admin-modal-password-wrap {
+      margin-top: 14px;
+    }
+
+    .admin-modal-password-wrap input[type="password"] {
+      width: 100%;
+      padding: 8px 12px;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 14px;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-sm);
+      color: var(--text-primary);
+      outline: none;
+      transition: border-color 150ms ease, box-shadow 150ms ease;
+    }
+
+    .admin-modal-password-wrap input[type="password"]:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.15);
+    }
+
+    .admin-modal-field-error {
+      font-size: 12px;
+      color: var(--danger);
+      margin-top: 6px;
+    }
+
+    .admin-modal-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: 20px;
+    }
+
     @media (max-width: 640px) {
       .admin-user-row {
         flex-wrap: wrap;
@@ -299,6 +382,22 @@
       <div class="admin-section-header">All Users</div>
       <div id="userList">
         <div class="admin-loading">Loading users...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Admin Modal (replaces native confirm/prompt dialogs) -->
+  <div id="adminModal" class="admin-modal-overlay" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="adminModalTitle">
+    <div class="admin-modal-card">
+      <div class="admin-modal-title" id="adminModalTitle"></div>
+      <div class="admin-modal-message" id="adminModalMessage"></div>
+      <div class="admin-modal-password-wrap" id="adminModalPasswordWrap" style="display:none;">
+        <input type="password" id="adminModalPassword" placeholder="Enter your password" autocomplete="current-password">
+        <div class="admin-modal-field-error" id="adminModalPasswordError" style="display:none;">Password is required</div>
+      </div>
+      <div class="admin-modal-actions">
+        <button id="adminModalCancel" class="admin-btn">Cancel</button>
+        <button id="adminModalConfirm" class="admin-btn">Confirm</button>
       </div>
     </div>
   </div>

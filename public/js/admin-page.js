@@ -135,13 +135,73 @@ async function loadAdminUsers() {
   }
 }
 
-function promptAdminPassword() {
-  const value = window.prompt('Confirm your admin password to continue:');
-  return typeof value === 'string' ? value : null;
+function openAdminModal({ title, message, confirmText, dangerConfirm = false, withPasswordField = false }) {
+  return new Promise(resolve => {
+    const overlay = document.getElementById('adminModal');
+    const passwordWrap = document.getElementById('adminModalPasswordWrap');
+    const passwordInput = document.getElementById('adminModalPassword');
+    const passwordError = document.getElementById('adminModalPasswordError');
+    const confirmBtn = document.getElementById('adminModalConfirm');
+
+    document.getElementById('adminModalTitle').textContent = title;
+    document.getElementById('adminModalMessage').textContent = message;
+    confirmBtn.textContent = confirmText || 'Confirm';
+    confirmBtn.className = `admin-btn${dangerConfirm ? ' danger' : ''}`;
+
+    passwordWrap.style.display = withPasswordField ? '' : 'none';
+    if (withPasswordField) {
+      passwordInput.value = '';
+      passwordError.style.display = 'none';
+    }
+
+    overlay.style.display = 'flex';
+
+    if (withPasswordField) {
+      setTimeout(() => passwordInput.focus(), 50);
+    } else {
+      confirmBtn.focus();
+    }
+
+    const ac = new AbortController();
+    const { signal } = ac;
+
+    function finish(result) {
+      overlay.style.display = 'none';
+      ac.abort();
+      resolve(result);
+    }
+
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') finish(null); }, { signal });
+    overlay.addEventListener('click', e => { if (e.target === overlay) finish(null); }, { signal });
+    document.getElementById('adminModalCancel').addEventListener('click', () => finish(null), { signal });
+
+    confirmBtn.addEventListener('click', () => {
+      if (withPasswordField) {
+        const val = passwordInput.value;
+        if (!val) {
+          passwordError.style.display = '';
+          passwordInput.focus();
+          return;
+        }
+        finish(val);
+      } else {
+        finish(true);
+      }
+    }, { signal });
+
+    if (withPasswordField) {
+      passwordInput.addEventListener('keydown', e => { if (e.key === 'Enter') confirmBtn.click(); }, { signal });
+    }
+  });
 }
 
 async function approveAdminUser(id) {
-  const adminPassword = promptAdminPassword();
+  const adminPassword = await openAdminModal({
+    title: 'Approve User',
+    message: 'Enter your admin password to approve this user:',
+    confirmText: 'Approve',
+    withPasswordField: true,
+  });
   if (!adminPassword) return;
 
   try {
@@ -153,7 +213,12 @@ async function approveAdminUser(id) {
 }
 
 async function changeAdminUserRole(id, role) {
-  const adminPassword = promptAdminPassword();
+  const adminPassword = await openAdminModal({
+    title: 'Change User Role',
+    message: `Enter your admin password to change this user's role to "${role}":`,
+    confirmText: 'Change Role',
+    withPasswordField: true,
+  });
   if (!adminPassword) return;
 
   try {
@@ -165,11 +230,21 @@ async function changeAdminUserRole(id, role) {
 }
 
 async function deleteAdminUser(id, username) {
-  if (!window.confirm(`Delete user "${username}"? This will delete all their data.`)) {
-    return;
-  }
+  const confirmed = await openAdminModal({
+    title: 'Delete User',
+    message: `Delete "${username}"? This will permanently delete all their projects, tasks, and data.`,
+    confirmText: 'Delete',
+    dangerConfirm: true,
+  });
+  if (!confirmed) return;
 
-  const adminPassword = promptAdminPassword();
+  const adminPassword = await openAdminModal({
+    title: 'Confirm Deletion',
+    message: 'Enter your admin password to complete deletion:',
+    confirmText: 'Delete',
+    dangerConfirm: true,
+    withPasswordField: true,
+  });
   if (!adminPassword) return;
 
   try {
