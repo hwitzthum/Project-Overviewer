@@ -978,8 +978,9 @@ app.get(['/api/health', '/api/v1/health'], async (req, res) => {
 
 // ========== SERVE FRONTEND ==========
 
-// SPA fallback — serve index.html for non-API routes
-app.get('*', async (req, res, next) => {
+// SPA fallback — serve index.html for non-API routes.
+// Express 5 / path-to-regexp v8 reject bare '*' at startup, so use a named wildcard.
+app.get('/*splat', async (req, res, next) => {
   if (req.path.startsWith('/api/')) {
     return res.status(404).json({ error: 'Not found' });
   }
