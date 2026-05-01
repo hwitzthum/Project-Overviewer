@@ -38,9 +38,12 @@ async function validateWebhookUrl(urlStr) {
   } catch {
     return 'Invalid URL';
   }
-  // Only allow http/https
+  // Only allow http/https; production requires https to prevent cleartext transmission
   if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
     return 'Only http and https URLs are allowed';
+  }
+  if (process.env.NODE_ENV === 'production' && parsed.protocol !== 'https:') {
+    return 'Webhook URLs must use HTTPS in production';
   }
   // Block localhost hostnames
   const hostname = parsed.hostname.toLowerCase();

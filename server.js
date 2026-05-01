@@ -133,6 +133,14 @@ try {
     },
     crossOriginEmbedderPolicy: false
   }));
+  // Permissions-Policy: restrict all sensitive browser features we don't use
+  app.use((_req, res, next) => {
+    res.setHeader(
+      'Permissions-Policy',
+      'camera=(), microphone=(), geolocation=(), payment=(), usb=(), fullscreen=(self)'
+    );
+    next();
+  });
 } catch {
   logger.error('helmet is required but not installed. Run: npm install helmet');
   process.exit(1);
@@ -1059,6 +1067,16 @@ async function startServer() {
 
 // Export app for Vercel (module import) while still supporting `node server.js` locally.
 module.exports = app;
+
+process.on('unhandledRejection', (reason) => {
+  logger.error({ err: reason }, 'Unhandled promise rejection');
+  process.exitCode = 1;
+});
+
+process.on('uncaughtException', (err) => {
+  logger.error({ err }, 'Uncaught exception — shutting down');
+  process.exit(1);
+});
 
 if (require.main === module) {
   startServer().catch(err => {
