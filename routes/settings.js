@@ -1,5 +1,10 @@
 const express = require('express');
 
+// Keys that must never appear in user-supplied settings objects.
+// Allowing these would let a caller pollute Object.prototype via
+// JSON deserialization (__proto__) or constructor/prototype assignment.
+const BANNED_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
 module.exports = function createSettingsRouter({
   db,
   logger,
@@ -41,6 +46,10 @@ module.exports = function createSettingsRouter({
       const keys = Object.keys(settings);
       if (keys.length === 0) {
         return res.json({ success: true });
+      }
+      // Reject dangerous keys before any further processing
+      if (keys.some(k => BANNED_KEYS.has(k))) {
+        return res.status(400).json({ error: 'Invalid settings key' });
       }
       if (keys.length > validSettingsKeys.length) {
         return res.status(400).json({ error: 'Too many settings keys' });
