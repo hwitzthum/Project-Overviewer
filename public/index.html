@@ -486,14 +486,19 @@
                 aria-live="polite"
                 style="display: none"
               ></div>
-              <button
-                type="submit"
-                class="btn btn-primary"
-                id="changePasswordSubmit"
-                style="width: 100%"
-              >
-                Change Password
-              </button>
+              <div class="change-password-actions">
+                <button
+                  type="submit"
+                  class="btn btn-primary change-password-submit"
+                  id="changePasswordSubmit"
+                >
+                  🔒 Save New Password
+                </button>
+                <p class="change-password-hint">
+                  Click <strong>Save</strong> or press <kbd>Enter</kbd> to
+                  update your password.
+                </p>
+              </div>
             </form>
           </div>
           <div class="settings-group team-section" id="teamSection">

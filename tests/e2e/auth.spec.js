@@ -350,20 +350,73 @@ test.describe("Authentication", () => {
     await loginUI(page, { username, password: "OriginalUiPwd99" });
     await page.waitForURL(/\/(?:index\.html)?$/, { timeout: 5000 });
     await page.click("#openSettings");
+
+    // The submit button must be obvious to a real user. Anything smaller than a
+    // typical button (~40px tall) and a real human won't find it.
+    const submit = page.locator("#changePasswordSubmit");
+    await expect(submit).toBeVisible();
+    const submitBox = await submit.boundingBox();
+    expect(submitBox).toBeTruthy();
+    expect(submitBox.height).toBeGreaterThanOrEqual(40);
+    expect(submitBox.width).toBeGreaterThanOrEqual(200);
+    expect(await submit.textContent()).toMatch(/save/i);
+
     await page.fill("#currentPassword", "OriginalUiPwd99");
     await page.fill("#newPassword", "NewUiPwd1234");
     await page.fill("#confirmPassword", "NewUiPwd1234");
-    await page.click("#changePasswordSubmit");
+    await submit.click();
 
     await expect(page.locator("#changePasswordMessage.success")).toBeVisible({
       timeout: 5000,
     });
     await expect(page.locator("#currentPassword")).toHaveValue("");
 
-    // Sign out (cookie cleared in browser is enough) and log back in with new password
+    // PROOF of persistence: old password no longer works, new one does.
+    const oldLogin = await request.post(`${BASE_URL}/api/auth/login`, {
+      data: { username, password: "OriginalUiPwd99" },
+    });
+    expect(oldLogin.status()).toBe(401);
+
+    const newLogin = await request.post(`${BASE_URL}/api/auth/login`, {
+      data: { username, password: "NewUiPwd1234" },
+    });
+    expect(newLogin.status()).toBe(200);
+
+    // Also confirm the round-trip works via UI re-login.
     await page.context().clearCookies();
     await loginUI(page, { username, password: "NewUiPwd1234" });
     await expect(page).toHaveURL(/\/(?:index\.html)?$/);
+  });
+
+  test("change password via Settings UI submits on Enter key", async ({
+    page,
+    request,
+  }) => {
+    const username = uniqueUser("uikbd");
+    const { body: regBody } = await registerAPI(request, {
+      username,
+      email: `${username}@test.com`,
+      password: "KeyboardOldPwd99",
+    });
+    const { token: adminToken } = await loginAPI(request);
+    await approveUserAPI(request, adminToken, regBody.user.id);
+
+    await loginUI(page, { username, password: "KeyboardOldPwd99" });
+    await page.waitForURL(/\/(?:index\.html)?$/, { timeout: 5000 });
+    await page.click("#openSettings");
+    await page.fill("#currentPassword", "KeyboardOldPwd99");
+    await page.fill("#newPassword", "KeyboardNewPwd99");
+    await page.fill("#confirmPassword", "KeyboardNewPwd99");
+    await page.locator("#confirmPassword").press("Enter");
+
+    await expect(page.locator("#changePasswordMessage.success")).toBeVisible({
+      timeout: 5000,
+    });
+
+    const newLogin = await request.post(`${BASE_URL}/api/auth/login`, {
+      data: { username, password: "KeyboardNewPwd99" },
+    });
+    expect(newLogin.status()).toBe(200);
   });
 
   test("Settings UI rejects mismatched confirmation", async ({ page }) => {

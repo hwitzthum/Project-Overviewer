@@ -105,24 +105,31 @@ async function handleChangePasswordSubmit(event) {
   }
 
   submitBtn.disabled = true;
+  const originalLabel = submitBtn.textContent;
+  submitBtn.textContent = "Saving…";
   setMessage("Updating password…", "info");
   try {
     await API.changePassword(currentPassword, newPassword);
     setMessage(
-      "Password updated. Other sessions have been signed out.",
+      "✅ Password saved. Use your new password next time you log in. Other sessions have been signed out.",
       "success",
     );
     currentInput.value = "";
     newInput.value = "";
     confirmInput.value = "";
     updateStrengthMeter("");
+    const messageEl = document.getElementById("changePasswordMessage");
+    if (messageEl && typeof messageEl.scrollIntoView === "function") {
+      messageEl.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
     if (typeof showToast === "function") {
-      showToast("Password updated", "success");
+      showToast("Password saved", "success");
     }
   } catch (error) {
     setMessage(error.message || "Failed to change password.", "error");
   } finally {
     submitBtn.disabled = false;
+    submitBtn.textContent = originalLabel;
   }
 }
 
