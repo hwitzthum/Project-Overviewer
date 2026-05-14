@@ -743,9 +743,13 @@ function requireSameOriginCookieWrite(req, res, next) {
     return next();
   }
 
-  const authHeader = req.headers.authorization;
-  const hasBearerAuth = typeof authHeader === 'string' && authHeader.startsWith('Bearer ');
-  if (hasBearerAuth || !req.cookies?.session_token) {
+  // Finding 8: Do NOT skip CSRF checks for Bearer-authenticated requests.
+  // A request that carries both a Bearer token and a session cookie would
+  // previously bypass origin validation entirely. The check below always
+  // runs for state-changing methods regardless of the auth method used.
+  // We only skip if there is genuinely no session cookie at all (e.g. pure
+  // API-key clients that never use cookies and therefore are not CSRF-able).
+  if (!req.cookies?.session_token) {
     return next();
   }
 
@@ -759,12 +763,13 @@ function requireSameOriginCookieWrite(req, res, next) {
     return res.status(403).json({ error: 'Cross-site request rejected' });
   }
 
-  if (secFetchSite === 'same-origin') {
-    return next();
-  }
-
+  // Finding 9: Even when Sec-Fetch-Site is 'same-origin', also verify the
+  // Origin/Referer header so that a forged Sec-Fetch-Site header (possible
+  // in non-browser clients or via a browser bug) cannot alone bypass the
+  // check. Sec-Fetch-Site is a strong signal but not a guarantee.
   const sourceOrigin = parseHeaderOrigin(req.headers.origin) || parseHeaderOrigin(req.headers.referer);
   const expectedOrigin = getExpectedOrigin(req);
+
   if (!sourceOrigin || !expectedOrigin || sourceOrigin !== expectedOrigin) {
     logSecurityEvent('request.same_origin_rejected', {
       req,
@@ -1027,6 +1032,10 @@ async function seedAdminUser() {
   const passwordHash = await bcrypt.hash(adminPass, BCRYPT_ROUNDS);
   await db.createUser(adminUser, `${adminUser}@admin.local`, passwordHash, 'admin', true);
   logger.info({ username: adminUser }, 'Admin user created');
+  // Finding 4: Warn operators to remove the bootstrap credential from the
+  // environment. ADMIN_PASS is only needed for the very first boot; keeping
+  // it in the environment afterwards is an unnecessary secret exposure.
+  console.warn('[SECURITY] Admin user seeded. REMOVE ADMIN_PASS from your environment immediately. It is no longer needed after initial setup.');
 }
 
 async function startServer() {
