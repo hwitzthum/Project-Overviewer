@@ -1,25 +1,84 @@
-const { createClient } = require('@libsql/client');
-const crypto = require('crypto');
-const logger = require('./logger');
-const { MAX_DOCUMENTS_PER_USER, VALID_SETTINGS_KEYS } = require('./app-constants');
+const { createClient } = require("@libsql/client");
+const crypto = require("crypto");
+const logger = require("./logger");
+const {
+  MAX_DOCUMENTS_PER_USER,
+  VALID_SETTINGS_KEYS,
+} = require("./app-constants");
 const {
   SESSION_ABSOLUTE_TIMEOUT_MS,
   SESSION_IDLE_TIMEOUT_MS,
   SESSION_TOUCH_INTERVAL_MS,
-  SESSION_TOKEN_BYTES
-} = require('./session-config');
+  SESSION_TOKEN_BYTES,
+} = require("./session-config");
 
 const ALLOWED_DOC_MIME_TYPES = [
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  'application/pdf',
-  'text/plain'
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/pdf",
+  "text/plain",
 ];
+
+// Schema version is bumped whenever the migration helpers below would do new
+// work on an existing database. On cold start we read this value and skip the
+// expensive PRAGMA introspection, team-membership repair, and session cleanup
+// when the database is already at the current version.
+const SCHEMA_VERSION = 1;
+
+// ========== PER-PROCESS CACHES ==========
+// These caches live for the lifetime of a single Node process / Lambda
+// invocation. They eliminate redundant DB round trips on the hot path
+// (session validation, maintenance-mode probe). All writes invalidate
+// the relevant entries so values cannot go stale across cache TTL.
+
+const SESSION_CACHE_TTL_MS = 5000;
+const SESSION_CACHE_MAX = 1000;
+const sessionCache = new Map();
+
+function cacheGetSession(tokenHash) {
+  const entry = sessionCache.get(tokenHash);
+  if (!entry) return null;
+  if (entry.expiresAt <= Date.now()) {
+    sessionCache.delete(tokenHash);
+    return null;
+  }
+  return entry.value;
+}
+
+function cacheSetSession(tokenHash, value) {
+  if (sessionCache.size >= SESSION_CACHE_MAX) {
+    const firstKey = sessionCache.keys().next().value;
+    if (firstKey !== undefined) sessionCache.delete(firstKey);
+  }
+  sessionCache.set(tokenHash, {
+    value,
+    expiresAt: Date.now() + SESSION_CACHE_TTL_MS,
+  });
+}
+
+function cacheInvalidateSession(tokenHash) {
+  sessionCache.delete(tokenHash);
+}
+
+function cacheInvalidateSessionsForUser(userId) {
+  for (const [key, entry] of sessionCache.entries()) {
+    if (entry.value?.session?.userId === userId) {
+      sessionCache.delete(key);
+    }
+  }
+}
+
+function cacheClearSessions() {
+  sessionCache.clear();
+}
+
+const MAINTENANCE_CACHE_TTL_MS = 10000;
+let cachedMaintenanceMode = null;
 
 // ========== DATABASE CONNECTION ==========
 
 const client = createClient({
-  url: process.env.TURSO_DATABASE_URL || 'file:projects.db',
-  authToken: process.env.TURSO_AUTH_TOKEN || undefined
+  url: process.env.TURSO_DATABASE_URL || "file:projects.db",
+  authToken: process.env.TURSO_AUTH_TOKEN || undefined,
 });
 
 // Promise-based initialization guard — ensures schema is ready before any
@@ -34,11 +93,11 @@ const dbReadyPromise = new Promise((resolve, reject) => {
 // Kick off initialization immediately
 initDatabase()
   .then(() => {
-    logger.info('Database ready for queries');
+    logger.info("Database ready for queries");
     dbReadyResolve();
   })
   .catch((err) => {
-    logger.error({ err }, 'Database initialization failed');
+    logger.error({ err }, "Database initialization failed");
     dbReadyReject(err);
   });
 
@@ -68,7 +127,7 @@ function generateId() {
 }
 
 function hashSessionToken(token) {
-  return crypto.createHash('sha256').update(String(token)).digest('hex');
+  return crypto.createHash("sha256").update(String(token)).digest("hex");
 }
 
 function safeJsonParse(str, fallback = null) {
@@ -81,65 +140,82 @@ function safeJsonParse(str, fallback = null) {
 }
 
 function createDocumentLimitError() {
-  const error = new Error(`Document storage limit exceeded (${MAX_DOCUMENTS_PER_USER} documents max)`);
-  error.code = 'DOCUMENT_LIMIT_EXCEEDED';
+  const error = new Error(
+    `Document storage limit exceeded (${MAX_DOCUMENTS_PER_USER} documents max)`,
+  );
+  error.code = "DOCUMENT_LIMIT_EXCEEDED";
   return error;
 }
 
 function createTeamMembershipConflict() {
-  const error = new Error('User already belongs to a team');
-  error.code = 'TEAM_MEMBERSHIP_CONFLICT';
+  const error = new Error("User already belongs to a team");
+  error.code = "TEAM_MEMBERSHIP_CONFLICT";
   return error;
 }
 
 function isSingleTeamConstraintError(error) {
-  const message = String(error?.message || '');
-  return error?.code === 'TEAM_MEMBERSHIP_CONFLICT'
-    || (message.includes('team_members.user_id') && /constraint|unique/i.test(message));
+  const message = String(error?.message || "");
+  return (
+    error?.code === "TEAM_MEMBERSHIP_CONFLICT" ||
+    (message.includes("team_members.user_id") &&
+      /constraint|unique/i.test(message))
+  );
 }
 
 function parseTimestampValue(value) {
-  const parsed = Date.parse(String(value || ''));
+  const parsed = Date.parse(String(value || ""));
   return Number.isFinite(parsed) ? parsed : Number.MAX_SAFE_INTEGER;
 }
 
 function compareMembershipPriority(userId, left, right) {
-  const leftScore = left.created_by === userId && left.role === 'owner'
-    ? 0
-    : left.role === 'owner' ? 1 : 2;
-  const rightScore = right.created_by === userId && right.role === 'owner'
-    ? 0
-    : right.role === 'owner' ? 1 : 2;
+  const leftScore =
+    left.created_by === userId && left.role === "owner"
+      ? 0
+      : left.role === "owner"
+        ? 1
+        : 2;
+  const rightScore =
+    right.created_by === userId && right.role === "owner"
+      ? 0
+      : right.role === "owner"
+        ? 1
+        : 2;
 
   if (leftScore !== rightScore) return leftScore - rightScore;
 
-  const joinedDiff = parseTimestampValue(left.joined_at) - parseTimestampValue(right.joined_at);
+  const joinedDiff =
+    parseTimestampValue(left.joined_at) - parseTimestampValue(right.joined_at);
   if (joinedDiff !== 0) return joinedDiff;
 
-  const createdDiff = parseTimestampValue(left.created_at) - parseTimestampValue(right.created_at);
+  const createdDiff =
+    parseTimestampValue(left.created_at) -
+    parseTimestampValue(right.created_at);
   if (createdDiff !== 0) return createdDiff;
 
   return String(left.team_id).localeCompare(String(right.team_id));
 }
 
 function compareOwnerPriority(team, left, right) {
-  const leftScore = left.user_id === team.created_by ? 0 : left.role === 'owner' ? 1 : 2;
-  const rightScore = right.user_id === team.created_by ? 0 : right.role === 'owner' ? 1 : 2;
+  const leftScore =
+    left.user_id === team.created_by ? 0 : left.role === "owner" ? 1 : 2;
+  const rightScore =
+    right.user_id === team.created_by ? 0 : right.role === "owner" ? 1 : 2;
 
   if (leftScore !== rightScore) return leftScore - rightScore;
 
-  const joinedDiff = parseTimestampValue(left.joined_at) - parseTimestampValue(right.joined_at);
+  const joinedDiff =
+    parseTimestampValue(left.joined_at) - parseTimestampValue(right.joined_at);
   if (joinedDiff !== 0) return joinedDiff;
 
   return String(left.user_id).localeCompare(String(right.user_id));
 }
 
 async function ensureSessionSchema() {
-  const columns = await all('PRAGMA table_info(sessions)');
-  const columnNames = new Set(columns.map(column => column.name));
+  const columns = await all("PRAGMA table_info(sessions)");
+  const columnNames = new Set(columns.map((column) => column.name));
 
-  if (!columnNames.has('last_seen_at')) {
-    await run('ALTER TABLE sessions ADD COLUMN last_seen_at TEXT');
+  if (!columnNames.has("last_seen_at")) {
+    await run("ALTER TABLE sessions ADD COLUMN last_seen_at TEXT");
   }
 
   await run(`
@@ -148,28 +224,37 @@ async function ensureSessionSchema() {
     WHERE last_seen_at IS NULL
   `);
 
-  await run('CREATE INDEX IF NOT EXISTS idx_sessions_last_seen_at ON sessions(last_seen_at)');
+  await run(
+    "CREATE INDEX IF NOT EXISTS idx_sessions_last_seen_at ON sessions(last_seen_at)",
+  );
 }
 
 async function ensureTaskSubtaskColumn() {
-  const columns = await all('PRAGMA table_info(tasks)');
-  const columnNames = new Set(columns.map(c => c.name));
-  if (!columnNames.has('parent_task_id')) {
-    await run('ALTER TABLE tasks ADD COLUMN parent_task_id TEXT');
-    await run('CREATE INDEX IF NOT EXISTS idx_tasks_parent_task_id ON tasks(parent_task_id)');
-    logger.info('Added parent_task_id column to tasks table');
+  const columns = await all("PRAGMA table_info(tasks)");
+  const columnNames = new Set(columns.map((c) => c.name));
+  if (!columnNames.has("parent_task_id")) {
+    await run("ALTER TABLE tasks ADD COLUMN parent_task_id TEXT");
+    await run(
+      "CREATE INDEX IF NOT EXISTS idx_tasks_parent_task_id ON tasks(parent_task_id)",
+    );
+    logger.info("Added parent_task_id column to tasks table");
   }
 }
 
 async function cleanupExpiredSessions() {
   const nowIso = new Date().toISOString();
-  const idleCutoffIso = new Date(Date.now() - SESSION_IDLE_TIMEOUT_MS).toISOString();
+  const idleCutoffIso = new Date(
+    Date.now() - SESSION_IDLE_TIMEOUT_MS,
+  ).toISOString();
 
-  await run(`
+  await run(
+    `
     DELETE FROM sessions
     WHERE expires_at <= ?
        OR COALESCE(last_seen_at, created_at, CURRENT_TIMESTAMP) <= ?
-  `, [nowIso, idleCutoffIso]);
+  `,
+    [nowIso, idleCutoffIso],
+  );
 }
 
 async function repairDuplicateTeamMemberships() {
@@ -188,25 +273,27 @@ async function repairDuplicateTeamMemberships() {
     membershipsByUser.get(membership.user_id).push(membership);
   }
 
-  const duplicateUsers = [...membershipsByUser.entries()]
-    .filter(([, userMemberships]) => userMemberships.length > 1);
+  const duplicateUsers = [...membershipsByUser.entries()].filter(
+    ([, userMemberships]) => userMemberships.length > 1,
+  );
 
   if (duplicateUsers.length === 0) {
     return { usersRepaired: 0, membershipsRemoved: 0 };
   }
 
-  const tx = await client.transaction('write');
+  const tx = await client.transaction("write");
   let membershipsRemoved = 0;
 
   try {
     for (const [userId, userMemberships] of duplicateUsers) {
-      const sortedMemberships = [...userMemberships]
-        .sort((left, right) => compareMembershipPriority(userId, left, right));
+      const sortedMemberships = [...userMemberships].sort((left, right) =>
+        compareMembershipPriority(userId, left, right),
+      );
 
       for (const membership of sortedMemberships.slice(1)) {
         await tx.execute({
-          sql: 'DELETE FROM team_members WHERE team_id = ? AND user_id = ?',
-          args: [membership.team_id, userId]
+          sql: "DELETE FROM team_members WHERE team_id = ? AND user_id = ?",
+          args: [membership.team_id, userId],
         });
         membershipsRemoved += 1;
       }
@@ -218,19 +305,24 @@ async function repairDuplicateTeamMemberships() {
     throw error;
   }
 
-  logger.warn({
-    usersRepaired: duplicateUsers.length,
-    membershipsRemoved
-  }, 'Repaired duplicate team memberships during startup');
+  logger.warn(
+    {
+      usersRepaired: duplicateUsers.length,
+      membershipsRemoved,
+    },
+    "Repaired duplicate team memberships during startup",
+  );
 
   return {
     usersRepaired: duplicateUsers.length,
-    membershipsRemoved
+    membershipsRemoved,
   };
 }
 
 async function normalizeTeamOwnership() {
-  const teams = await all('SELECT id, created_by, created_at FROM teams ORDER BY created_at ASC, id ASC');
+  const teams = await all(
+    "SELECT id, created_by, created_at FROM teams ORDER BY created_at ASC, id ASC",
+  );
   if (teams.length === 0) {
     return { teamsDeleted: 0, teamsReowned: 0 };
   }
@@ -248,7 +340,7 @@ async function normalizeTeamOwnership() {
     membersByTeam.get(member.team_id).push(member);
   }
 
-  const tx = await client.transaction('write');
+  const tx = await client.transaction("write");
   let teamsDeleted = 0;
   let teamsReowned = 0;
 
@@ -258,26 +350,33 @@ async function normalizeTeamOwnership() {
 
       if (teamMembers.length === 0) {
         await tx.execute({
-          sql: 'DELETE FROM teams WHERE id = ?',
-          args: [team.id]
+          sql: "DELETE FROM teams WHERE id = ?",
+          args: [team.id],
         });
         teamsDeleted += 1;
         continue;
       }
 
-      const nextOwner = [...teamMembers].sort((left, right) => compareOwnerPriority(team, left, right))[0];
-      const ownerChanged = team.created_by !== nextOwner.user_id
-        || teamMembers.some(member => member.user_id === nextOwner.user_id ? member.role !== 'owner' : member.role !== 'member');
+      const nextOwner = [...teamMembers].sort((left, right) =>
+        compareOwnerPriority(team, left, right),
+      )[0];
+      const ownerChanged =
+        team.created_by !== nextOwner.user_id ||
+        teamMembers.some((member) =>
+          member.user_id === nextOwner.user_id
+            ? member.role !== "owner"
+            : member.role !== "member",
+        );
 
       await tx.execute({
-        sql: 'UPDATE teams SET created_by = ? WHERE id = ?',
-        args: [nextOwner.user_id, team.id]
+        sql: "UPDATE teams SET created_by = ? WHERE id = ?",
+        args: [nextOwner.user_id, team.id],
       });
       await tx.execute({
         sql: `UPDATE team_members
               SET role = CASE WHEN user_id = ? THEN 'owner' ELSE 'member' END
               WHERE team_id = ?`,
-        args: [nextOwner.user_id, team.id]
+        args: [nextOwner.user_id, team.id],
       });
 
       if (ownerChanged) {
@@ -292,10 +391,13 @@ async function normalizeTeamOwnership() {
   }
 
   if (teamsDeleted > 0 || teamsReowned > 0) {
-    logger.warn({
-      teamsDeleted,
-      teamsReowned
-    }, 'Normalized team ownership during startup');
+    logger.warn(
+      {
+        teamsDeleted,
+        teamsReowned,
+      },
+      "Normalized team ownership during startup",
+    );
   }
 
   return { teamsDeleted, teamsReowned };
@@ -316,26 +418,66 @@ async function ensureSingleTeamMembershipIndex() {
   `);
 
   if (duplicates.length > 0) {
-    logger.error({ duplicates }, 'Duplicate team memberships remain after startup repair');
-    throw new Error('Unable to enforce single-team membership integrity');
+    logger.error(
+      { duplicates },
+      "Duplicate team memberships remain after startup repair",
+    );
+    throw new Error("Unable to enforce single-team membership integrity");
   }
 
-  await run('CREATE UNIQUE INDEX IF NOT EXISTS idx_team_members_user_id_unique ON team_members(user_id)');
+  await run(
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_team_members_user_id_unique ON team_members(user_id)",
+  );
 }
 
 // ========== SCHEMA INITIALIZATION ==========
 
+async function readSchemaVersion() {
+  // Cheap probe — succeeds only once global_settings exists with the row.
+  // On a brand-new database this throws (table missing); on an initialized
+  // database that pre-dates the version row it returns null.
+  try {
+    const row = await get("SELECT value FROM global_settings WHERE key = ?", [
+      "schema_version",
+    ]);
+    if (!row) return 0;
+    const parsed = Number.parseInt(safeJsonParse(row.value), 10);
+    return Number.isFinite(parsed) ? parsed : 0;
+  } catch {
+    return 0;
+  }
+}
+
 async function initDatabase() {
-  logger.info('Connected to LibSQL/Turso database');
+  logger.info("Connected to LibSQL/Turso database");
 
   // foreign_keys must be set outside a batch (PRAGMA not allowed in batches)
-  await client.execute({ sql: 'PRAGMA foreign_keys = ON', args: [] });
+  await client.execute({ sql: "PRAGMA foreign_keys = ON", args: [] });
+
+  // Hot-path optimization: on Vercel serverless every cold start re-runs this
+  // function. The CREATE TABLE batch is one round trip, but the helpers
+  // below (PRAGMA introspection, team-membership repair, session cleanup)
+  // are several more. When the schema version matches we skip all of it.
+  const existingVersion = await readSchemaVersion();
+  if (existingVersion >= SCHEMA_VERSION) {
+    logger.info(
+      { schemaVersion: existingVersion },
+      "Database schema already current — skipping migrations",
+    );
+    return;
+  }
+
+  logger.info(
+    { from: existingVersion, to: SCHEMA_VERSION },
+    "Running schema initialization / migration",
+  );
 
   // All CREATE TABLE and CREATE INDEX statements in a single atomic batch
-  await client.batch([
-    // Users table
-    {
-      sql: `CREATE TABLE IF NOT EXISTS users (
+  await client.batch(
+    [
+      // Users table
+      {
+        sql: `CREATE TABLE IF NOT EXISTS users (
         id TEXT PRIMARY KEY,
         username TEXT UNIQUE NOT NULL,
         email TEXT UNIQUE NOT NULL,
@@ -345,11 +487,11 @@ async function initDatabase() {
         created_at TEXT DEFAULT CURRENT_TIMESTAMP,
         updated_at TEXT DEFAULT CURRENT_TIMESTAMP
       )`,
-      args: []
-    },
-    // Sessions table
-    {
-      sql: `CREATE TABLE IF NOT EXISTS sessions (
+        args: [],
+      },
+      // Sessions table
+      {
+        sql: `CREATE TABLE IF NOT EXISTS sessions (
         id TEXT PRIMARY KEY,
         user_id TEXT NOT NULL,
         token TEXT UNIQUE NOT NULL,
@@ -358,11 +500,11 @@ async function initDatabase() {
         created_at TEXT DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       )`,
-      args: []
-    },
-    // Projects table (user-scoped)
-    {
-      sql: `CREATE TABLE IF NOT EXISTS projects (
+        args: [],
+      },
+      // Projects table (user-scoped)
+      {
+        sql: `CREATE TABLE IF NOT EXISTS projects (
         id TEXT PRIMARY KEY,
         user_id TEXT NOT NULL,
         title TEXT NOT NULL,
@@ -380,11 +522,11 @@ async function initDatabase() {
         updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       )`,
-      args: []
-    },
-    // Tasks table
-    {
-      sql: `CREATE TABLE IF NOT EXISTS tasks (
+        args: [],
+      },
+      // Tasks table
+      {
+        sql: `CREATE TABLE IF NOT EXISTS tasks (
         id TEXT PRIMARY KEY,
         project_id TEXT NOT NULL,
         title TEXT NOT NULL,
@@ -398,11 +540,11 @@ async function initDatabase() {
         created_at TEXT DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
       )`,
-      args: []
-    },
-    // Documents table
-    {
-      sql: `CREATE TABLE IF NOT EXISTS documents (
+        args: [],
+      },
+      // Documents table
+      {
+        sql: `CREATE TABLE IF NOT EXISTS documents (
         id TEXT PRIMARY KEY,
         project_id TEXT NOT NULL,
         doc_type TEXT NOT NULL,
@@ -414,30 +556,30 @@ async function initDatabase() {
         created_at TEXT DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
       )`,
-      args: []
-    },
-    // Global settings (admin-controlled)
-    {
-      sql: `CREATE TABLE IF NOT EXISTS global_settings (
+        args: [],
+      },
+      // Global settings (admin-controlled)
+      {
+        sql: `CREATE TABLE IF NOT EXISTS global_settings (
         key TEXT PRIMARY KEY,
         value TEXT
       )`,
-      args: []
-    },
-    // User settings (per-user)
-    {
-      sql: `CREATE TABLE IF NOT EXISTS user_settings (
+        args: [],
+      },
+      // User settings (per-user)
+      {
+        sql: `CREATE TABLE IF NOT EXISTS user_settings (
         user_id TEXT NOT NULL,
         key TEXT NOT NULL,
         value TEXT,
         PRIMARY KEY (user_id, key),
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       )`,
-      args: []
-    },
-    // Quick notes (user-scoped)
-    {
-      sql: `CREATE TABLE IF NOT EXISTS quick_notes (
+        args: [],
+      },
+      // Quick notes (user-scoped)
+      {
+        sql: `CREATE TABLE IF NOT EXISTS quick_notes (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id TEXT NOT NULL,
         content TEXT DEFAULT '',
@@ -445,31 +587,31 @@ async function initDatabase() {
         updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       )`,
-      args: []
-    },
-    // Templates table (shared)
-    {
-      sql: `CREATE TABLE IF NOT EXISTS templates (
+        args: [],
+      },
+      // Templates table (shared)
+      {
+        sql: `CREATE TABLE IF NOT EXISTS templates (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
         tasks TEXT NOT NULL
       )`,
-      args: []
-    },
-    // Teams table
-    {
-      sql: `CREATE TABLE IF NOT EXISTS teams (
+        args: [],
+      },
+      // Teams table
+      {
+        sql: `CREATE TABLE IF NOT EXISTS teams (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
         created_by TEXT NOT NULL,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE CASCADE
       )`,
-      args: []
-    },
-    // Team members table
-    {
-      sql: `CREATE TABLE IF NOT EXISTS team_members (
+        args: [],
+      },
+      // Team members table
+      {
+        sql: `CREATE TABLE IF NOT EXISTS team_members (
         team_id TEXT NOT NULL,
         user_id TEXT NOT NULL,
         role TEXT NOT NULL DEFAULT 'member',
@@ -478,11 +620,11 @@ async function initDatabase() {
         FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       )`,
-      args: []
-    },
-    // Webhooks table
-    {
-      sql: `CREATE TABLE IF NOT EXISTS webhooks (
+        args: [],
+      },
+      // Webhooks table
+      {
+        sql: `CREATE TABLE IF NOT EXISTS webhooks (
         id TEXT PRIMARY KEY,
         user_id TEXT NOT NULL,
         url TEXT NOT NULL,
@@ -492,27 +634,80 @@ async function initDatabase() {
         created_at TEXT DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       )`,
-      args: []
-    },
-    // Indexes
-    { sql: 'CREATE INDEX IF NOT EXISTS idx_webhooks_user_id ON webhooks(user_id)', args: [] },
-    { sql: 'CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token)', args: [] },
-    { sql: 'CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id)', args: [] },
-    { sql: 'CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at)', args: [] },
-    { sql: 'CREATE INDEX IF NOT EXISTS idx_projects_user_id ON projects(user_id)', args: [] },
-    { sql: 'CREATE INDEX IF NOT EXISTS idx_projects_status ON projects(status)', args: [] },
-    { sql: 'CREATE INDEX IF NOT EXISTS idx_projects_archived ON projects(archived)', args: [] },
-    { sql: 'CREATE INDEX IF NOT EXISTS idx_projects_due_date ON projects(due_date)', args: [] },
-    { sql: 'CREATE INDEX IF NOT EXISTS idx_tasks_project_id ON tasks(project_id)', args: [] },
-    { sql: 'CREATE INDEX IF NOT EXISTS idx_tasks_completed ON tasks(completed)', args: [] },
-    { sql: 'CREATE INDEX IF NOT EXISTS idx_documents_project_id ON documents(project_id)', args: [] },
-    { sql: 'CREATE INDEX IF NOT EXISTS idx_quick_notes_user_id ON quick_notes(user_id)', args: [] },
-    { sql: 'CREATE INDEX IF NOT EXISTS idx_user_settings_user_id ON user_settings(user_id)', args: [] },
-    { sql: 'CREATE INDEX IF NOT EXISTS idx_user_settings_user_key ON user_settings(user_id, key)', args: [] },
-    { sql: 'CREATE INDEX IF NOT EXISTS idx_team_members_user_id ON team_members(user_id)', args: [] },
-    { sql: 'CREATE UNIQUE INDEX IF NOT EXISTS idx_quick_notes_user_id_unique ON quick_notes(user_id)', args: [] },
-    { sql: 'CREATE INDEX IF NOT EXISTS idx_projects_user_id_archived ON projects(user_id, archived)', args: [] }
-  ], 'write');
+        args: [],
+      },
+      // Indexes
+      {
+        sql: "CREATE INDEX IF NOT EXISTS idx_webhooks_user_id ON webhooks(user_id)",
+        args: [],
+      },
+      {
+        sql: "CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token)",
+        args: [],
+      },
+      {
+        sql: "CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id)",
+        args: [],
+      },
+      {
+        sql: "CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at)",
+        args: [],
+      },
+      {
+        sql: "CREATE INDEX IF NOT EXISTS idx_projects_user_id ON projects(user_id)",
+        args: [],
+      },
+      {
+        sql: "CREATE INDEX IF NOT EXISTS idx_projects_status ON projects(status)",
+        args: [],
+      },
+      {
+        sql: "CREATE INDEX IF NOT EXISTS idx_projects_archived ON projects(archived)",
+        args: [],
+      },
+      {
+        sql: "CREATE INDEX IF NOT EXISTS idx_projects_due_date ON projects(due_date)",
+        args: [],
+      },
+      {
+        sql: "CREATE INDEX IF NOT EXISTS idx_tasks_project_id ON tasks(project_id)",
+        args: [],
+      },
+      {
+        sql: "CREATE INDEX IF NOT EXISTS idx_tasks_completed ON tasks(completed)",
+        args: [],
+      },
+      {
+        sql: "CREATE INDEX IF NOT EXISTS idx_documents_project_id ON documents(project_id)",
+        args: [],
+      },
+      {
+        sql: "CREATE INDEX IF NOT EXISTS idx_quick_notes_user_id ON quick_notes(user_id)",
+        args: [],
+      },
+      {
+        sql: "CREATE INDEX IF NOT EXISTS idx_user_settings_user_id ON user_settings(user_id)",
+        args: [],
+      },
+      {
+        sql: "CREATE INDEX IF NOT EXISTS idx_user_settings_user_key ON user_settings(user_id, key)",
+        args: [],
+      },
+      {
+        sql: "CREATE INDEX IF NOT EXISTS idx_team_members_user_id ON team_members(user_id)",
+        args: [],
+      },
+      {
+        sql: "CREATE UNIQUE INDEX IF NOT EXISTS idx_quick_notes_user_id_unique ON quick_notes(user_id)",
+        args: [],
+      },
+      {
+        sql: "CREATE INDEX IF NOT EXISTS idx_projects_user_id_archived ON projects(user_id, archived)",
+        args: [],
+      },
+    ],
+    "write",
+  );
 
   await ensureSessionSchema();
   await ensureTaskSubtaskColumn();
@@ -523,59 +718,103 @@ async function initDatabase() {
   // ========== SEED DEFAULTS ==========
 
   // Default templates
-  const templateCount = await get('SELECT COUNT(*) as count FROM templates');
+  const templateCount = await get("SELECT COUNT(*) as count FROM templates");
   if (templateCount.count === 0) {
     const defaults = [
-      { name: 'Bug Report', tasks: ['Reproduce issue', 'Identify root cause', 'Write fix', 'Add tests', 'Deploy'] },
-      { name: 'Feature Request', tasks: ['Define requirements', 'Design solution', 'Implement', 'Test', 'Document'] },
-      { name: 'Meeting Notes', tasks: ['Review agenda', 'Take notes', 'Action items', 'Follow up'] }
+      {
+        name: "Bug Report",
+        tasks: [
+          "Reproduce issue",
+          "Identify root cause",
+          "Write fix",
+          "Add tests",
+          "Deploy",
+        ],
+      },
+      {
+        name: "Feature Request",
+        tasks: [
+          "Define requirements",
+          "Design solution",
+          "Implement",
+          "Test",
+          "Document",
+        ],
+      },
+      {
+        name: "Meeting Notes",
+        tasks: ["Review agenda", "Take notes", "Action items", "Follow up"],
+      },
     ];
     for (const t of defaults) {
-      await run('INSERT INTO templates (id, name, tasks) VALUES (?, ?, ?)',
-        [generateId(), t.name, JSON.stringify(t.tasks)]);
+      await run("INSERT INTO templates (id, name, tasks) VALUES (?, ?, ?)", [
+        generateId(),
+        t.name,
+        JSON.stringify(t.tasks),
+      ]);
     }
   }
 
   // Clean expired and idle sessions on startup.
   await cleanupExpiredSessions();
 
-  logger.info('Database initialized successfully');
+  // Mark schema as current so the next cold start can skip all of this work.
+  await run(
+    "INSERT OR REPLACE INTO global_settings (key, value) VALUES (?, ?)",
+    ["schema_version", JSON.stringify(SCHEMA_VERSION)],
+  );
+
+  logger.info("Database initialized successfully");
 }
 
 // ========== USER QUERIES ==========
 
-async function createUser(username, email, passwordHash, role = 'user', approved = false) {
+async function createUser(
+  username,
+  email,
+  passwordHash,
+  role = "user",
+  approved = false,
+) {
   await waitForDb();
   const id = generateId();
-  await run(`
+  await run(
+    `
     INSERT INTO users (id, username, email, password_hash, role, approved)
     VALUES (?, ?, ?, ?, ?, ?)
-  `, [id, username, email, passwordHash, role, approved ? 1 : 0]);
+  `,
+    [id, username, email, passwordHash, role, approved ? 1 : 0],
+  );
 
   // Initialize quick notes for new user
-  await run('INSERT INTO quick_notes (user_id, content) VALUES (?, ?)', [id, '']);
+  await run("INSERT INTO quick_notes (user_id, content) VALUES (?, ?)", [
+    id,
+    "",
+  ]);
 
   return { id, username, email, role, approved };
 }
 
 async function getUserByUsername(username) {
   await waitForDb();
-  return await get('SELECT * FROM users WHERE username = ?', [username]);
+  return await get("SELECT * FROM users WHERE username = ?", [username]);
 }
 
 async function getUserByEmail(email) {
   await waitForDb();
-  return await get('SELECT * FROM users WHERE email = ?', [email]);
+  return await get("SELECT * FROM users WHERE email = ?", [email]);
 }
 
 async function getUserById(id) {
   await waitForDb();
-  return await get('SELECT * FROM users WHERE id = ?', [id]);
+  return await get("SELECT * FROM users WHERE id = ?", [id]);
 }
 
 async function getAllUsers() {
   await waitForDb();
-  return await all('SELECT id, username, email, role, approved, created_at, updated_at FROM users ORDER BY created_at DESC');
+  return await all(
+    "SELECT id, username, email, role, approved, created_at, updated_at FROM users ORDER BY created_at DESC",
+  );
 }
 
 async function updateUser(id, updates) {
@@ -584,33 +823,33 @@ async function updateUser(id, updates) {
   const values = [];
 
   if (updates.approved !== undefined) {
-    fields.push('approved = ?');
+    fields.push("approved = ?");
     values.push(updates.approved ? 1 : 0);
   }
   if (updates.role !== undefined) {
-    fields.push('role = ?');
+    fields.push("role = ?");
     values.push(updates.role);
   }
   if (updates.passwordHash !== undefined) {
-    fields.push('password_hash = ?');
+    fields.push("password_hash = ?");
     values.push(updates.passwordHash);
   }
   if (updates.email !== undefined) {
-    fields.push('email = ?');
+    fields.push("email = ?");
     values.push(updates.email);
   }
 
   if (fields.length === 0) return;
 
-  fields.push('updated_at = CURRENT_TIMESTAMP');
+  fields.push("updated_at = CURRENT_TIMESTAMP");
   values.push(id);
 
-  await run(`UPDATE users SET ${fields.join(', ')} WHERE id = ?`, values);
+  await run(`UPDATE users SET ${fields.join(", ")} WHERE id = ?`, values);
 }
 
 async function deleteUser(id) {
   await waitForDb();
-  const result = await run('DELETE FROM users WHERE id = ?', [id]);
+  const result = await run("DELETE FROM users WHERE id = ?", [id]);
   return result.changes > 0;
 }
 
@@ -619,15 +858,20 @@ async function deleteUser(id) {
 async function createSession(userId) {
   await waitForDb();
   const id = generateId();
-  const token = crypto.randomBytes(SESSION_TOKEN_BYTES).toString('hex');
+  const token = crypto.randomBytes(SESSION_TOKEN_BYTES).toString("hex");
   const tokenHash = hashSessionToken(token);
   const lastSeenAt = new Date().toISOString();
-  const expiresAt = new Date(Date.now() + SESSION_ABSOLUTE_TIMEOUT_MS).toISOString();
+  const expiresAt = new Date(
+    Date.now() + SESSION_ABSOLUTE_TIMEOUT_MS,
+  ).toISOString();
 
-  await run(`
+  await run(
+    `
     INSERT INTO sessions (id, user_id, token, expires_at, last_seen_at)
     VALUES (?, ?, ?, ?, ?)
-  `, [id, userId, tokenHash, expiresAt, lastSeenAt]);
+  `,
+    [id, userId, tokenHash, expiresAt, lastSeenAt],
+  );
 
   return { token, expiresAt, lastSeenAt };
 }
@@ -635,41 +879,64 @@ async function createSession(userId) {
 async function getSessionByToken(token) {
   await waitForDb();
   const tokenHash = hashSessionToken(token);
-  const session = await get(`
+
+  // Hot path: short-TTL in-memory cache. On every authenticated page load
+  // the browser fires the page request + several parallel API calls in
+  // quick succession; without this cache each one re-runs the join below
+  // against Turso. The cache is invalidated by every session/user/team
+  // mutation, so stale data cannot exceed the ~5s TTL window.
+  const cached = cacheGetSession(tokenHash);
+  if (cached) return cached;
+
+  const session = await get(
+    `
     SELECT s.*, u.id as uid, u.username, u.email, u.role, u.approved,
-           us.value AS workspace_mode_raw
+           us_ws.value AS workspace_mode_raw,
+           us_th.value AS theme_raw,
+           tm.team_id AS team_id
     FROM sessions s
     JOIN users u ON s.user_id = u.id
-    LEFT JOIN user_settings us ON us.user_id = u.id AND us.key = 'workspaceMode'
+    LEFT JOIN user_settings us_ws ON us_ws.user_id = u.id AND us_ws.key = 'workspaceMode'
+    LEFT JOIN user_settings us_th ON us_th.user_id = u.id AND us_th.key = 'theme'
+    LEFT JOIN team_members tm ON tm.user_id = u.id
     WHERE s.token = ?
-  `, [tokenHash]);
+  `,
+    [tokenHash],
+  );
 
   if (!session) {
-    return { status: 'not_found', session: null };
+    return { status: "not_found", session: null };
   }
 
   const now = Date.now();
   const expiresAtMs = Date.parse(session.expires_at);
   if (!Number.isFinite(expiresAtMs) || expiresAtMs <= now) {
-    await run('DELETE FROM sessions WHERE id = ?', [session.id]);
-    return { status: 'absolute_timeout', session: null };
+    await run("DELETE FROM sessions WHERE id = ?", [session.id]);
+    return { status: "absolute_timeout", session: null };
   }
 
-  const lastSeenAt = session.last_seen_at || session.created_at || session.expires_at;
+  const lastSeenAt =
+    session.last_seen_at || session.created_at || session.expires_at;
   const lastSeenAtMs = Date.parse(lastSeenAt);
-  if (!Number.isFinite(lastSeenAtMs) || lastSeenAtMs <= now - SESSION_IDLE_TIMEOUT_MS) {
-    await run('DELETE FROM sessions WHERE id = ?', [session.id]);
-    return { status: 'idle_timeout', session: null };
+  if (
+    !Number.isFinite(lastSeenAtMs) ||
+    lastSeenAtMs <= now - SESSION_IDLE_TIMEOUT_MS
+  ) {
+    await run("DELETE FROM sessions WHERE id = ?", [session.id]);
+    return { status: "idle_timeout", session: null };
   }
 
   let effectiveLastSeenAt = lastSeenAt;
   if (now - lastSeenAtMs >= SESSION_TOUCH_INTERVAL_MS) {
     effectiveLastSeenAt = new Date(now).toISOString();
-    await run('UPDATE sessions SET last_seen_at = ? WHERE id = ?', [effectiveLastSeenAt, session.id]);
+    await run("UPDATE sessions SET last_seen_at = ? WHERE id = ?", [
+      effectiveLastSeenAt,
+      session.id,
+    ]);
   }
 
-  return {
-    status: 'ok',
+  const result = {
+    status: "ok",
     session: {
       sessionId: session.id,
       userId: session.uid,
@@ -679,19 +946,29 @@ async function getSessionByToken(token) {
       approved: session.approved === 1,
       expiresAt: session.expires_at,
       lastSeenAt: effectiveLastSeenAt,
-      workspaceMode: session.workspace_mode_raw ? safeJsonParse(session.workspace_mode_raw) : null
-    }
+      workspaceMode: session.workspace_mode_raw
+        ? safeJsonParse(session.workspace_mode_raw)
+        : null,
+      theme: session.theme_raw ? safeJsonParse(session.theme_raw) : null,
+      teamId: session.team_id || null,
+    },
   };
+
+  cacheSetSession(tokenHash, result);
+  return result;
 }
 
 async function deleteSession(token) {
   await waitForDb();
-  await run('DELETE FROM sessions WHERE token = ?', [hashSessionToken(token)]);
+  const tokenHash = hashSessionToken(token);
+  cacheInvalidateSession(tokenHash);
+  await run("DELETE FROM sessions WHERE token = ?", [tokenHash]);
 }
 
 async function deleteUserSessions(userId) {
   await waitForDb();
-  await run('DELETE FROM sessions WHERE user_id = ?', [userId]);
+  cacheInvalidateSessionsForUser(userId);
+  await run("DELETE FROM sessions WHERE user_id = ?", [userId]);
 }
 
 // ========== PROJECT QUERIES (user-scoped) ==========
@@ -699,13 +976,13 @@ async function deleteUserSessions(userId) {
 function mapProject(project) {
   return {
     ...project,
-    ownerName: project.owner_name || project.ownerName || '',
-    stakeholder: project.stakeholder || '',
+    ownerName: project.owner_name || project.ownerName || "",
+    stakeholder: project.stakeholder || "",
     archived: project.archived === 1,
     archivedAt: project.archived_at || null,
     tags: safeJsonParse(project.tags, []),
     dueDate: project.due_date,
-    statusChangedAt: project.status_changed_at || null
+    statusChangedAt: project.status_changed_at || null,
   };
 }
 
@@ -720,7 +997,7 @@ function mapTask(task) {
     recurring: task.recurring,
     blockedBy: task.blocked_by || null,
     parentTaskId: task.parent_task_id || null,
-    subtasks: []
+    subtasks: [],
   };
 }
 
@@ -769,7 +1046,7 @@ function mapDocument(row, includeContent = false) {
     mimeType: row.mime_type,
     email: safeJsonParse(row.payload, null),
     hasContent: Boolean(row.content_base64),
-    contentBase64: includeContent ? row.content_base64 : undefined
+    contentBase64: includeContent ? row.content_base64 : undefined,
   };
 }
 
@@ -781,14 +1058,14 @@ async function getAllProjects(userId, options = {}) {
 
   let projects;
   if (teamUserIds && teamUserIds.length > 1) {
-    const userPlaceholders = teamUserIds.map(() => '?').join(',');
+    const userPlaceholders = teamUserIds.map(() => "?").join(",");
     projects = await all(
       `SELECT p.*, u.username AS owner_name
        FROM projects p
        JOIN users u ON p.user_id = u.id
        WHERE p.user_id IN (${userPlaceholders})
        ORDER BY p.project_order ASC, p.created_at DESC`,
-      teamUserIds
+      teamUserIds,
     );
   } else {
     projects = await all(
@@ -797,33 +1074,34 @@ async function getAllProjects(userId, options = {}) {
        JOIN users u ON p.user_id = u.id
        WHERE p.user_id = ?
        ORDER BY p.project_order ASC, p.created_at DESC`,
-      [userId]
+      [userId],
     );
   }
 
   if (projects.length === 0) return [];
 
   // Bulk fetch all tasks for these projects
-  const projectIds = projects.map(p => p.id);
-  const placeholders = projectIds.map(() => '?').join(',');
+  const projectIds = projects.map((p) => p.id);
+  const placeholders = projectIds.map(() => "?").join(",");
 
   const allTasks = await all(
     `SELECT * FROM tasks WHERE project_id IN (${placeholders}) ORDER BY task_order ASC, created_at ASC`,
-    projectIds
+    projectIds,
   );
 
   const docSelect = includeDocumentContent
-    ? 'SELECT * FROM documents'
-    : 'SELECT id, project_id, doc_type, title, file_name, mime_type, created_at, (content_base64 IS NOT NULL) as has_content FROM documents';
+    ? "SELECT * FROM documents"
+    : "SELECT id, project_id, doc_type, title, file_name, mime_type, created_at, (content_base64 IS NOT NULL) as has_content FROM documents";
   const allDocs = await all(
     `${docSelect} WHERE project_id IN (${placeholders}) ORDER BY created_at ASC`,
-    projectIds
+    projectIds,
   );
 
   // Group by project_id, then nest subtasks under parents
   const flatByProject = new Map();
   for (const task of allTasks) {
-    if (!flatByProject.has(task.project_id)) flatByProject.set(task.project_id, []);
+    if (!flatByProject.has(task.project_id))
+      flatByProject.set(task.project_id, []);
     flatByProject.get(task.project_id).push(mapTask(task));
   }
   const tasksByProject = new Map();
@@ -833,7 +1111,8 @@ async function getAllProjects(userId, options = {}) {
 
   const docsByProject = new Map();
   for (const doc of allDocs) {
-    if (!docsByProject.has(doc.project_id)) docsByProject.set(doc.project_id, []);
+    if (!docsByProject.has(doc.project_id))
+      docsByProject.set(doc.project_id, []);
     if (includeDocumentContent) {
       docsByProject.get(doc.project_id).push(mapDocument(doc, true));
     } else {
@@ -845,15 +1124,15 @@ async function getAllProjects(userId, options = {}) {
         createdAt: doc.created_at,
         fileName: doc.file_name,
         mimeType: doc.mime_type,
-        hasContent: Boolean(doc.has_content)
+        hasContent: Boolean(doc.has_content),
       });
     }
   }
 
-  return projects.map(project => ({
+  return projects.map((project) => ({
     ...mapProject(project),
     tasks: tasksByProject.get(project.id) || [],
-    documents: docsByProject.get(project.id) || []
+    documents: docsByProject.get(project.id) || [],
   }));
 }
 
@@ -863,13 +1142,13 @@ async function getProjectById(id, userId, options = {}) {
 
   let project;
   if (teamUserIds && teamUserIds.length > 1) {
-    const userPlaceholders = teamUserIds.map(() => '?').join(',');
+    const userPlaceholders = teamUserIds.map(() => "?").join(",");
     project = await get(
       `SELECT p.*, u.username AS owner_name
        FROM projects p
        JOIN users u ON p.user_id = u.id
        WHERE p.id = ? AND p.user_id IN (${userPlaceholders})`,
-      [id, ...teamUserIds]
+      [id, ...teamUserIds],
     );
   } else {
     project = await get(
@@ -877,68 +1156,88 @@ async function getProjectById(id, userId, options = {}) {
        FROM projects p
        JOIN users u ON p.user_id = u.id
        WHERE p.id = ? AND p.user_id = ?`,
-      [id, userId]
+      [id, userId],
     );
   }
   if (!project) return null;
 
   const [tasks, docs] = await Promise.all([
-    all('SELECT * FROM tasks WHERE project_id = ? ORDER BY task_order ASC, created_at ASC', [id]),
-    all('SELECT id, project_id, doc_type, title, payload, file_name, mime_type, created_at FROM documents WHERE project_id = ? ORDER BY created_at ASC', [id])
+    all(
+      "SELECT * FROM tasks WHERE project_id = ? ORDER BY task_order ASC, created_at ASC",
+      [id],
+    ),
+    all(
+      "SELECT id, project_id, doc_type, title, payload, file_name, mime_type, created_at FROM documents WHERE project_id = ? ORDER BY created_at ASC",
+      [id],
+    ),
   ]);
 
   return {
     ...mapProject(project),
     tasks: nestTasks(tasks.map(mapTask)),
-    documents: docs.map(d => mapDocument(d, false))
+    documents: docs.map((d) => mapDocument(d, false)),
   };
 }
 
-async function createProject(userId, project) {
+async function createProject(userId, project, ownerUsername) {
   await waitForDb();
   const id = project.id || generateId();
-  const owner = await getUserById(userId);
-  await run(`
+  // Callers pass ownerUsername (from req.user.username) to avoid an extra
+  // users SELECT on every project creation. Fall back to a lookup only if
+  // not provided (kept for backwards compatibility with any in-process
+  // callers that don't have a session).
+  let resolvedOwnerName = ownerUsername;
+  if (!resolvedOwnerName) {
+    const owner = await getUserById(userId);
+    resolvedOwnerName = owner?.username || "";
+  }
+  await run(
+    `
     INSERT INTO projects (id, user_id, title, stakeholder, description, status, priority, due_date, tags, project_order, archived, archived_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `, [
-    id,
-    userId,
-    project.title,
-    project.stakeholder || '',
-    project.description || '',
-    project.status || 'not-started',
-    project.priority || 'medium',
-    project.dueDate || null,
-    JSON.stringify(project.tags || []),
-    project.order || 0,
-    project.archived ? 1 : 0,
-    project.archivedAt || null
-  ]);
+  `,
+    [
+      id,
+      userId,
+      project.title,
+      project.stakeholder || "",
+      project.description || "",
+      project.status || "not-started",
+      project.priority || "medium",
+      project.dueDate || null,
+      JSON.stringify(project.tags || []),
+      project.order || 0,
+      project.archived ? 1 : 0,
+      project.archivedAt || null,
+    ],
+  );
 
   // Return the created project directly (no re-fetch)
   return {
     id,
     user_id: userId,
-    ownerName: owner?.username || '',
+    ownerName: resolvedOwnerName,
     title: project.title,
-    stakeholder: project.stakeholder || '',
-    description: project.description || '',
-    status: project.status || 'not-started',
-    priority: project.priority || 'medium',
+    stakeholder: project.stakeholder || "",
+    description: project.description || "",
+    status: project.status || "not-started",
+    priority: project.priority || "medium",
     dueDate: project.dueDate || null,
     tags: project.tags || [],
     order: project.order || 0,
     archived: project.archived || false,
     archivedAt: project.archivedAt || null,
     tasks: [],
-    documents: []
+    documents: [],
   };
 }
 
 async function countProjectsByUser(userId) {
   await waitForDb();
-  const row = await get('SELECT COUNT(*) AS count FROM projects WHERE user_id = ?', [userId]);
+  const row = await get(
+    "SELECT COUNT(*) AS count FROM projects WHERE user_id = ?",
+    [userId],
+  );
   return Number(row?.count || 0);
 }
 
@@ -948,59 +1247,59 @@ async function updateProject(id, userId, updates) {
   const values = [];
 
   if (updates.title !== undefined) {
-    fields.push('title = ?');
+    fields.push("title = ?");
     values.push(updates.title);
   }
   if (updates.stakeholder !== undefined) {
-    fields.push('stakeholder = ?');
-    values.push(updates.stakeholder || '');
+    fields.push("stakeholder = ?");
+    values.push(updates.stakeholder || "");
   }
   if (updates.description !== undefined) {
-    fields.push('description = ?');
+    fields.push("description = ?");
     values.push(updates.description);
   }
   if (updates.status !== undefined) {
-    fields.push('status = ?');
+    fields.push("status = ?");
     values.push(updates.status);
     // Track when status last changed for cycle time calculation
-    fields.push('status_changed_at = ?');
+    fields.push("status_changed_at = ?");
     values.push(new Date().toISOString());
   }
   if (updates.priority !== undefined) {
-    fields.push('priority = ?');
+    fields.push("priority = ?");
     values.push(updates.priority);
   }
   if (updates.dueDate !== undefined) {
-    fields.push('due_date = ?');
+    fields.push("due_date = ?");
     values.push(updates.dueDate);
   }
   if (updates.tags !== undefined) {
-    fields.push('tags = ?');
+    fields.push("tags = ?");
     values.push(JSON.stringify(updates.tags));
   }
   if (updates.order !== undefined) {
-    fields.push('project_order = ?');
+    fields.push("project_order = ?");
     values.push(updates.order);
   }
   if (updates.archived !== undefined) {
-    fields.push('archived = ?');
+    fields.push("archived = ?");
     values.push(updates.archived ? 1 : 0);
     if (updates.archived) {
-      fields.push('archived_at = ?');
+      fields.push("archived_at = ?");
       values.push(updates.archivedAt || new Date().toISOString());
     } else {
-      fields.push('archived_at = NULL');
+      fields.push("archived_at = NULL");
     }
   }
 
   if (fields.length === 0) return await getProjectById(id, userId);
 
-  fields.push('updated_at = CURRENT_TIMESTAMP');
+  fields.push("updated_at = CURRENT_TIMESTAMP");
   values.push(id, userId);
 
   const result = await run(
-    `UPDATE projects SET ${fields.join(', ')} WHERE id = ? AND user_id = ?`,
-    values
+    `UPDATE projects SET ${fields.join(", ")} WHERE id = ? AND user_id = ?`,
+    values,
   );
 
   if (result.changes === 0) return null;
@@ -1011,7 +1310,10 @@ async function updateProject(id, userId, updates) {
 
 async function deleteProject(id, userId) {
   await waitForDb();
-  const result = await run('DELETE FROM projects WHERE id = ? AND user_id = ?', [id, userId]);
+  const result = await run(
+    "DELETE FROM projects WHERE id = ? AND user_id = ?",
+    [id, userId],
+  );
   return result.changes > 0;
 }
 
@@ -1019,16 +1321,16 @@ async function reorderProjects(userId, projectOrders) {
   await waitForDb();
   if (!projectOrders || projectOrders.length === 0) return;
 
-  const tx = await client.transaction('write');
+  const tx = await client.transaction("write");
   try {
-    const cases = projectOrders.map(() => 'WHEN ? THEN ?').join(' ');
-    const caseParams = projectOrders.flatMap(p => [p.id, p.order]);
-    const ids = projectOrders.map(p => p.id);
-    const placeholders = ids.map(() => '?').join(',');
+    const cases = projectOrders.map(() => "WHEN ? THEN ?").join(" ");
+    const caseParams = projectOrders.flatMap((p) => [p.id, p.order]);
+    const ids = projectOrders.map((p) => p.id);
+    const placeholders = ids.map(() => "?").join(",");
 
     await tx.execute({
       sql: `UPDATE projects SET project_order = CASE id ${cases} END WHERE id IN (${placeholders}) AND user_id = ?`,
-      args: [...caseParams, ...ids, userId]
+      args: [...caseParams, ...ids, userId],
     });
     await tx.commit();
   } catch (error) {
@@ -1041,36 +1343,45 @@ async function reorderProjects(userId, projectOrders) {
 
 // Verify task belongs to user's project
 async function verifyTaskOwnership(taskId, userId) {
-  const row = await get(`
+  const row = await get(
+    `
     SELECT t.id FROM tasks t
     JOIN projects p ON t.project_id = p.id
     WHERE t.id = ? AND p.user_id = ?
-  `, [taskId, userId]);
+  `,
+    [taskId, userId],
+  );
   return Boolean(row);
 }
 
 async function getProjectTasks(projectId, userId) {
   await waitForDb();
   // Verify project ownership
-  const project = await get('SELECT id FROM projects WHERE id = ? AND user_id = ?', [projectId, userId]);
+  const project = await get(
+    "SELECT id FROM projects WHERE id = ? AND user_id = ?",
+    [projectId, userId],
+  );
   if (!project) return null;
 
   const tasks = await all(
-    'SELECT * FROM tasks WHERE project_id = ? ORDER BY task_order ASC, created_at ASC',
-    [projectId]
+    "SELECT * FROM tasks WHERE project_id = ? ORDER BY task_order ASC, created_at ASC",
+    [projectId],
   );
   return nestTasks(tasks.map(mapTask));
 }
 
 async function countTasksByProject(projectId, userId) {
   await waitForDb();
-  const row = await get(`
+  const row = await get(
+    `
     SELECT p.id AS project_id, COUNT(t.id) AS count
     FROM projects p
     LEFT JOIN tasks t ON t.project_id = p.id AND t.parent_task_id IS NULL
     WHERE p.id = ? AND p.user_id = ?
     GROUP BY p.id
-  `, [projectId, userId]);
+  `,
+    [projectId, userId],
+  );
 
   if (!row) return null;
   return Number(row.count || 0);
@@ -1079,19 +1390,22 @@ async function countTasksByProject(projectId, userId) {
 async function createTask(projectId, userId, task) {
   await waitForDb();
   // Verify project ownership
-  const project = await get('SELECT id FROM projects WHERE id = ? AND user_id = ?', [projectId, userId]);
+  const project = await get(
+    "SELECT id FROM projects WHERE id = ? AND user_id = ?",
+    [projectId, userId],
+  );
   if (!project) return null;
 
   // Validate subtask nesting (1-level max)
   const parentTaskId = task.parentTaskId || null;
   if (parentTaskId) {
     const parent = await get(
-      'SELECT id, parent_task_id FROM tasks WHERE id = ? AND project_id = ?',
-      [parentTaskId, projectId]
+      "SELECT id, parent_task_id FROM tasks WHERE id = ? AND project_id = ?",
+      [parentTaskId, projectId],
     );
     if (!parent) return null; // parent doesn't exist in this project
     if (parent.parent_task_id) {
-      throw new Error('Cannot nest subtasks more than one level');
+      throw new Error("Cannot nest subtasks more than one level");
     }
   }
 
@@ -1100,39 +1414,47 @@ async function createTask(projectId, userId, task) {
   let taskOrder = Number.isInteger(task.order) ? task.order : null;
   if (taskOrder === null) {
     const row = await get(
-      'SELECT COALESCE(MAX(task_order), -1) AS max_order FROM tasks WHERE project_id = ?',
-      [projectId]
+      "SELECT COALESCE(MAX(task_order), -1) AS max_order FROM tasks WHERE project_id = ?",
+      [projectId],
     );
     taskOrder = (row?.max_order ?? -1) + 1;
   }
 
-  await run(`
+  await run(
+    `
     INSERT INTO tasks (id, project_id, title, completed, due_date, notes, priority, recurring, blocked_by, task_order, parent_task_id)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `, [
-    id, projectId, task.title,
-    task.completed ? 1 : 0,
-    task.dueDate || null,
-    task.notes || '',
-    task.priority || 'none',
-    task.recurring || null,
-    task.blockedBy || null,
-    taskOrder,
-    parentTaskId
-  ]);
+  `,
+    [
+      id,
+      projectId,
+      task.title,
+      task.completed ? 1 : 0,
+      task.dueDate || null,
+      task.notes || "",
+      task.priority || "none",
+      task.recurring || null,
+      task.blockedBy || null,
+      taskOrder,
+      parentTaskId,
+    ],
+  );
 
   return id;
 }
 
 async function createTasksBulk(projectId, userId, tasks) {
   await waitForDb();
-  const project = await get('SELECT id FROM projects WHERE id = ? AND user_id = ?', [projectId, userId]);
+  const project = await get(
+    "SELECT id FROM projects WHERE id = ? AND user_id = ?",
+    [projectId, userId],
+  );
   if (!project) return null;
 
   // Phase 1: Assign real IDs and compute order offsets
   const row = await get(
-    'SELECT COALESCE(MAX(task_order), -1) AS max_order FROM tasks WHERE project_id = ?',
-    [projectId]
+    "SELECT COALESCE(MAX(task_order), -1) AS max_order FROM tasks WHERE project_id = ?",
+    [projectId],
   );
   let nextOrder = (row?.max_order ?? -1) + 1;
 
@@ -1147,32 +1469,34 @@ async function createTasksBulk(projectId, userId, tasks) {
     const realId = task.tempId ? tempToReal.get(task.tempId) : generateId();
 
     const parentTaskId = task.parentTempId
-      ? (tempToReal.get(task.parentTempId) || null)
-      : (task.parentTaskId || null);
+      ? tempToReal.get(task.parentTempId) || null
+      : task.parentTaskId || null;
 
     const blockedBy = task.blockedByTempId
-      ? (tempToReal.get(task.blockedByTempId) || null)
-      : (task.blockedBy || null);
+      ? tempToReal.get(task.blockedByTempId) || null
+      : task.blockedBy || null;
 
     const order = Number.isInteger(task.order) ? task.order : nextOrder++;
     insertStmts.push({
       sql: `INSERT INTO tasks (id, project_id, title, completed, due_date, notes, priority, recurring, blocked_by, task_order, parent_task_id)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       args: [
-        realId, projectId, task.title,
+        realId,
+        projectId,
+        task.title,
         task.completed ? 1 : 0,
         task.dueDate || null,
-        task.notes || '',
-        task.priority || 'none',
+        task.notes || "",
+        task.priority || "none",
         task.recurring || null,
         blockedBy,
         order,
-        parentTaskId
-      ]
+        parentTaskId,
+      ],
     });
   }
 
-  await client.batch(insertStmts, 'write');
+  await client.batch(insertStmts, "write");
 
   return Object.fromEntries(tempToReal);
 }
@@ -1185,64 +1509,69 @@ async function updateTask(taskId, userId, updates) {
   const values = [];
 
   if (updates.title !== undefined) {
-    fields.push('title = ?');
+    fields.push("title = ?");
     values.push(updates.title);
   }
   if (updates.completed !== undefined) {
-    fields.push('completed = ?');
+    fields.push("completed = ?");
     values.push(updates.completed ? 1 : 0);
   }
   if (updates.dueDate !== undefined) {
-    fields.push('due_date = ?');
+    fields.push("due_date = ?");
     values.push(updates.dueDate);
   }
   if (updates.notes !== undefined) {
-    fields.push('notes = ?');
+    fields.push("notes = ?");
     values.push(updates.notes);
   }
   if (updates.priority !== undefined) {
-    fields.push('priority = ?');
+    fields.push("priority = ?");
     values.push(updates.priority);
   }
   if (updates.recurring !== undefined) {
-    fields.push('recurring = ?');
+    fields.push("recurring = ?");
     values.push(updates.recurring);
   }
   if (updates.blockedBy !== undefined) {
-    fields.push('blocked_by = ?');
+    fields.push("blocked_by = ?");
     values.push(updates.blockedBy || null);
   }
   if (updates.parentTaskId !== undefined) {
     const newParentId = updates.parentTaskId || null;
     if (newParentId) {
       // Look up this task's project so we can scope the parent check
-      const thisTask = await get('SELECT project_id FROM tasks WHERE id = ?', [taskId]);
+      const thisTask = await get("SELECT project_id FROM tasks WHERE id = ?", [
+        taskId,
+      ]);
       if (!thisTask) return false;
       // Enforce 1-level nesting: parent must exist in the same project and not itself be a subtask
       const parent = await get(
-        'SELECT parent_task_id FROM tasks WHERE id = ? AND project_id = ?',
-        [newParentId, thisTask.project_id]
+        "SELECT parent_task_id FROM tasks WHERE id = ? AND project_id = ?",
+        [newParentId, thisTask.project_id],
       );
       if (!parent) return false;
       if (parent.parent_task_id) {
-        throw new Error('Cannot nest subtasks more than one level');
+        throw new Error("Cannot nest subtasks more than one level");
       }
       // Cannot make a task its own parent
       if (newParentId === taskId) return false;
       // Reject if this task already has children — would create a 2-level chain
-      const childCount = await get('SELECT COUNT(*) AS count FROM tasks WHERE parent_task_id = ?', [taskId]);
+      const childCount = await get(
+        "SELECT COUNT(*) AS count FROM tasks WHERE parent_task_id = ?",
+        [taskId],
+      );
       if (Number(childCount?.count) > 0) {
-        throw new Error('Cannot reparent a task that already has subtasks');
+        throw new Error("Cannot reparent a task that already has subtasks");
       }
     }
-    fields.push('parent_task_id = ?');
+    fields.push("parent_task_id = ?");
     values.push(newParentId);
   }
 
   if (fields.length === 0) return true;
 
   values.push(taskId);
-  await run(`UPDATE tasks SET ${fields.join(', ')} WHERE id = ?`, values);
+  await run(`UPDATE tasks SET ${fields.join(", ")} WHERE id = ?`, values);
   return true;
 }
 
@@ -1251,28 +1580,31 @@ async function deleteTask(taskId, userId) {
   if (!(await verifyTaskOwnership(taskId, userId))) return false;
 
   // Delete subtasks first (FK cascade not enforced for columns added via ALTER TABLE)
-  await run('DELETE FROM tasks WHERE parent_task_id = ?', [taskId]);
-  const result = await run('DELETE FROM tasks WHERE id = ?', [taskId]);
+  await run("DELETE FROM tasks WHERE parent_task_id = ?", [taskId]);
+  const result = await run("DELETE FROM tasks WHERE id = ?", [taskId]);
   return result.changes > 0;
 }
 
 async function reorderTasks(projectId, userId, taskOrders) {
   await waitForDb();
   // Verify project ownership
-  const project = await get('SELECT id FROM projects WHERE id = ? AND user_id = ?', [projectId, userId]);
+  const project = await get(
+    "SELECT id FROM projects WHERE id = ? AND user_id = ?",
+    [projectId, userId],
+  );
   if (!project) return false;
   if (!taskOrders || taskOrders.length === 0) return true;
 
-  const tx = await client.transaction('write');
+  const tx = await client.transaction("write");
   try {
-    const cases = taskOrders.map(() => 'WHEN ? THEN ?').join(' ');
-    const caseParams = taskOrders.flatMap(t => [t.id, t.order]);
-    const ids = taskOrders.map(t => t.id);
-    const placeholders = ids.map(() => '?').join(',');
+    const cases = taskOrders.map(() => "WHEN ? THEN ?").join(" ");
+    const caseParams = taskOrders.flatMap((t) => [t.id, t.order]);
+    const ids = taskOrders.map((t) => t.id);
+    const placeholders = ids.map(() => "?").join(",");
 
     await tx.execute({
       sql: `UPDATE tasks SET task_order = CASE id ${cases} END WHERE id IN (${placeholders}) AND project_id = ?`,
-      args: [...caseParams, ...ids, projectId]
+      args: [...caseParams, ...ids, projectId],
     });
     await tx.commit();
     return true;
@@ -1290,24 +1622,27 @@ async function getProjectDocuments(projectId, userId, options = {}) {
 
   let project;
   if (teamUserIds && teamUserIds.length > 1) {
-    const userPlaceholders = teamUserIds.map(() => '?').join(',');
+    const userPlaceholders = teamUserIds.map(() => "?").join(",");
     project = await get(
       `SELECT id FROM projects WHERE id = ? AND user_id IN (${userPlaceholders})`,
-      [projectId, ...teamUserIds]
+      [projectId, ...teamUserIds],
     );
   } else {
-    project = await get('SELECT id FROM projects WHERE id = ? AND user_id = ?', [projectId, userId]);
+    project = await get(
+      "SELECT id FROM projects WHERE id = ? AND user_id = ?",
+      [projectId, userId],
+    );
   }
   if (!project) return null;
 
   const select = includeContent
-    ? 'SELECT * FROM documents'
-    : 'SELECT id, project_id, doc_type, title, payload, file_name, mime_type, created_at FROM documents';
+    ? "SELECT * FROM documents"
+    : "SELECT id, project_id, doc_type, title, payload, file_name, mime_type, created_at FROM documents";
   const rows = await all(
     `${select} WHERE project_id = ? ORDER BY created_at ASC`,
-    [projectId]
+    [projectId],
   );
-  return rows.map(row => mapDocument(row, includeContent));
+  return rows.map((row) => mapDocument(row, includeContent));
 }
 
 async function getDocumentById(id, userId, options = {}) {
@@ -1315,18 +1650,24 @@ async function getDocumentById(id, userId, options = {}) {
   await waitForDb();
   let row;
   if (teamUserIds && teamUserIds.length > 1) {
-    const userPlaceholders = teamUserIds.map(() => '?').join(',');
-    row = await get(`
+    const userPlaceholders = teamUserIds.map(() => "?").join(",");
+    row = await get(
+      `
       SELECT d.* FROM documents d
       JOIN projects p ON d.project_id = p.id
       WHERE d.id = ? AND p.user_id IN (${userPlaceholders})
-    `, [id, ...teamUserIds]);
+    `,
+      [id, ...teamUserIds],
+    );
   } else {
-    row = await get(`
+    row = await get(
+      `
       SELECT d.* FROM documents d
       JOIN projects p ON d.project_id = p.id
       WHERE d.id = ? AND p.user_id = ?
-    `, [id, userId]);
+    `,
+      [id, userId],
+    );
   }
 
   if (!row) return null;
@@ -1336,7 +1677,10 @@ async function getDocumentById(id, userId, options = {}) {
 async function createDocument(projectId, userId, doc) {
   await waitForDb();
   // Verify project ownership
-  const project = await get('SELECT id FROM projects WHERE id = ? AND user_id = ?', [projectId, userId]);
+  const project = await get(
+    "SELECT id FROM projects WHERE id = ? AND user_id = ?",
+    [projectId, userId],
+  );
   if (!project) return null;
 
   const documentCount = await countDocumentsByUser(userId);
@@ -1346,64 +1690,75 @@ async function createDocument(projectId, userId, doc) {
 
   const id = generateId();
   const docType = doc.type;
-  let title = doc.title || '';
+  let title = doc.title || "";
   let payload = null;
   let fileName = null;
   let mimeType = null;
   let contentBase64 = null;
 
-  if (docType === 'email') {
+  if (docType === "email") {
     const email = doc.email || {};
     payload = JSON.stringify({
-      subject: email.subject || '',
-      from: email.from || '',
-      to: email.to || '',
-      date: email.date || '',
-      body: email.body || ''
+      subject: email.subject || "",
+      from: email.from || "",
+      to: email.to || "",
+      date: email.date || "",
+      body: email.body || "",
     });
-    title = title || email.subject || 'Email';
-  } else if (docType === 'docx') {
-    fileName = doc.fileName || '';
-    const requestedMime = doc.mimeType || 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    title = title || email.subject || "Email";
+  } else if (docType === "docx") {
+    fileName = doc.fileName || "";
+    const requestedMime =
+      doc.mimeType ||
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
     mimeType = ALLOWED_DOC_MIME_TYPES.includes(requestedMime)
       ? requestedMime
-      : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-    contentBase64 = doc.contentBase64 || '';
-    title = title || fileName || 'Document';
+      : "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    contentBase64 = doc.contentBase64 || "";
+    title = title || fileName || "Document";
   } else {
-    throw new Error('Unsupported document type');
+    throw new Error("Unsupported document type");
   }
 
-  await run(`
+  await run(
+    `
     INSERT INTO documents (id, project_id, doc_type, title, payload, file_name, mime_type, content_base64)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `, [id, projectId, docType, title, payload, fileName, mimeType, contentBase64]);
+  `,
+    [id, projectId, docType, title, payload, fileName, mimeType, contentBase64],
+  );
 
   return id;
 }
 
 async function countDocumentsByUser(userId) {
   await waitForDb();
-  const row = await get(`
+  const row = await get(
+    `
     SELECT COUNT(d.id) AS count
     FROM documents d
     JOIN projects p ON d.project_id = p.id
     WHERE p.user_id = ?
-  `, [userId]);
+  `,
+    [userId],
+  );
   return Number(row?.count || 0);
 }
 
 async function deleteDocument(id, userId) {
   await waitForDb();
   // Verify ownership via project
-  const doc = await get(`
+  const doc = await get(
+    `
     SELECT d.id FROM documents d
     JOIN projects p ON d.project_id = p.id
     WHERE d.id = ? AND p.user_id = ?
-  `, [id, userId]);
+  `,
+    [id, userId],
+  );
   if (!doc) return false;
 
-  const result = await run('DELETE FROM documents WHERE id = ?', [id]);
+  const result = await run("DELETE FROM documents WHERE id = ?", [id]);
   return result.changes > 0;
 }
 
@@ -1411,22 +1766,44 @@ async function deleteDocument(id, userId) {
 
 // Global settings (admin only)
 async function getGlobalSetting(key) {
+  // maintenanceMode is hit on every request via the middleware in server.js.
+  // A short TTL cache avoids the round trip on the hot path; writes through
+  // setGlobalSetting invalidate it so admin toggles take effect promptly.
+  if (
+    key === "maintenanceMode" &&
+    cachedMaintenanceMode &&
+    cachedMaintenanceMode.expiresAt > Date.now()
+  ) {
+    return cachedMaintenanceMode.value;
+  }
   await waitForDb();
-  const row = await get('SELECT value FROM global_settings WHERE key = ?', [key]);
-  return row ? safeJsonParse(row.value) : null;
+  const row = await get("SELECT value FROM global_settings WHERE key = ?", [
+    key,
+  ]);
+  const value = row ? safeJsonParse(row.value) : null;
+  if (key === "maintenanceMode") {
+    cachedMaintenanceMode = {
+      value,
+      expiresAt: Date.now() + MAINTENANCE_CACHE_TTL_MS,
+    };
+  }
+  return value;
 }
 
 async function setGlobalSetting(key, value) {
   await waitForDb();
   await run(
-    'INSERT OR REPLACE INTO global_settings (key, value) VALUES (?, ?)',
-    [key, JSON.stringify(value)]
+    "INSERT OR REPLACE INTO global_settings (key, value) VALUES (?, ?)",
+    [key, JSON.stringify(value)],
   );
+  if (key === "maintenanceMode") {
+    cachedMaintenanceMode = null;
+  }
 }
 
 async function getAllGlobalSettings() {
   await waitForDb();
-  const rows = await all('SELECT * FROM global_settings');
+  const rows = await all("SELECT * FROM global_settings");
   const settings = {};
   for (const row of rows) {
     settings[row.key] = safeJsonParse(row.value);
@@ -1437,16 +1814,24 @@ async function getAllGlobalSettings() {
 // User settings
 async function getUserSetting(userId, key) {
   await waitForDb();
-  const row = await get('SELECT value FROM user_settings WHERE user_id = ? AND key = ?', [userId, key]);
+  const row = await get(
+    "SELECT value FROM user_settings WHERE user_id = ? AND key = ?",
+    [userId, key],
+  );
   return row ? safeJsonParse(row.value) : null;
 }
 
 async function setUserSetting(userId, key, value) {
   await waitForDb();
   await run(
-    'INSERT OR REPLACE INTO user_settings (user_id, key, value) VALUES (?, ?, ?)',
-    [userId, key, JSON.stringify(value)]
+    "INSERT OR REPLACE INTO user_settings (user_id, key, value) VALUES (?, ?, ?)",
+    [userId, key, JSON.stringify(value)],
   );
+  // workspaceMode and theme are embedded in the cached session record.
+  // Invalidate so the next request reads the new value.
+  if (key === "workspaceMode" || key === "theme") {
+    cacheInvalidateSessionsForUser(userId);
+  }
 }
 
 async function setUserSettingsBulk(userId, settings) {
@@ -1455,16 +1840,21 @@ async function setUserSettingsBulk(userId, settings) {
   if (entries.length === 0) return;
   await client.batch(
     entries.map(([key, value]) => ({
-      sql: 'INSERT OR REPLACE INTO user_settings (user_id, key, value) VALUES (?, ?, ?)',
-      args: [userId, key, JSON.stringify(value)]
+      sql: "INSERT OR REPLACE INTO user_settings (user_id, key, value) VALUES (?, ?, ?)",
+      args: [userId, key, JSON.stringify(value)],
     })),
-    'write'
+    "write",
   );
+  if (entries.some(([key]) => key === "workspaceMode" || key === "theme")) {
+    cacheInvalidateSessionsForUser(userId);
+  }
 }
 
 async function getAllUserSettings(userId) {
   await waitForDb();
-  const rows = await all('SELECT * FROM user_settings WHERE user_id = ?', [userId]);
+  const rows = await all("SELECT * FROM user_settings WHERE user_id = ?", [
+    userId,
+  ]);
   const settings = {};
   for (const row of rows) {
     settings[row.key] = safeJsonParse(row.value);
@@ -1476,8 +1866,11 @@ async function getAllUserSettings(userId) {
 
 async function getQuickNotes(userId) {
   await waitForDb();
-  const note = await get('SELECT content FROM quick_notes WHERE user_id = ? LIMIT 1', [userId]);
-  return note ? note.content : '';
+  const note = await get(
+    "SELECT content FROM quick_notes WHERE user_id = ? LIMIT 1",
+    [userId],
+  );
+  return note ? note.content : "";
 }
 
 async function saveQuickNotes(userId, content) {
@@ -1485,7 +1878,7 @@ async function saveQuickNotes(userId, content) {
   await run(
     `INSERT INTO quick_notes (user_id, content, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)
      ON CONFLICT(user_id) DO UPDATE SET content = excluded.content, updated_at = CURRENT_TIMESTAMP`,
-    [userId, content]
+    [userId, content],
   );
 }
 
@@ -1493,11 +1886,11 @@ async function saveQuickNotes(userId, content) {
 
 async function getAllTemplates() {
   await waitForDb();
-  const templates = await all('SELECT * FROM templates');
-  return templates.map(t => ({
+  const templates = await all("SELECT * FROM templates");
+  return templates.map((t) => ({
     id: t.id,
     name: t.name,
-    tasks: safeJsonParse(t.tasks, [])
+    tasks: safeJsonParse(t.tasks, []),
   }));
 }
 
@@ -1506,26 +1899,27 @@ async function getAllTemplates() {
 async function createTeam(name, userId) {
   await waitForDb();
   const id = generateId();
-  const tx = await client.transaction('write');
+  const tx = await client.transaction("write");
 
   try {
     const existing = await tx.execute({
-      sql: 'SELECT team_id FROM team_members WHERE user_id = ? LIMIT 1',
-      args: [userId]
+      sql: "SELECT team_id FROM team_members WHERE user_id = ? LIMIT 1",
+      args: [userId],
     });
     if (existing.rows.length > 0) {
       throw createTeamMembershipConflict();
     }
 
     await tx.execute({
-      sql: 'INSERT INTO teams (id, name, created_by) VALUES (?, ?, ?)',
-      args: [id, name, userId]
+      sql: "INSERT INTO teams (id, name, created_by) VALUES (?, ?, ?)",
+      args: [id, name, userId],
     });
     await tx.execute({
-      sql: 'INSERT INTO team_members (team_id, user_id, role) VALUES (?, ?, ?)',
-      args: [id, userId, 'owner']
+      sql: "INSERT INTO team_members (team_id, user_id, role) VALUES (?, ?, ?)",
+      args: [id, userId, "owner"],
     });
     await tx.commit();
+    cacheInvalidateSessionsForUser(userId);
     return { id, name, createdBy: userId };
   } catch (error) {
     await tx.rollback().catch(() => {});
@@ -1538,22 +1932,28 @@ async function createTeam(name, userId) {
 
 async function getTeamByUserId(userId) {
   await waitForDb();
-  const membership = await get(`
+  const membership = await get(
+    `
     SELECT t.id, t.name, t.created_by, t.created_at, tm.role as my_role
     FROM team_members tm
     JOIN teams t ON tm.team_id = t.id
     WHERE tm.user_id = ?
-  `, [userId]);
+  `,
+    [userId],
+  );
 
   if (!membership) return null;
 
-  const members = await all(`
+  const members = await all(
+    `
     SELECT tm.user_id, tm.role, tm.joined_at, u.username, u.email
     FROM team_members tm
     JOIN users u ON tm.user_id = u.id
     WHERE tm.team_id = ?
     ORDER BY tm.role DESC, tm.joined_at ASC
-  `, [membership.id]);
+  `,
+    [membership.id],
+  );
 
   return {
     id: membership.id,
@@ -1561,34 +1961,35 @@ async function getTeamByUserId(userId) {
     createdBy: membership.created_by,
     createdAt: membership.created_at,
     myRole: membership.my_role,
-    members: members.map(m => ({
+    members: members.map((m) => ({
       userId: m.user_id,
       username: m.username,
       email: m.email,
       role: m.role,
-      joinedAt: m.joined_at
-    }))
+      joinedAt: m.joined_at,
+    })),
   };
 }
 
 async function addTeamMember(teamId, userId) {
   await waitForDb();
-  const tx = await client.transaction('write');
+  const tx = await client.transaction("write");
 
   try {
     const existing = await tx.execute({
-      sql: 'SELECT team_id FROM team_members WHERE user_id = ? LIMIT 1',
-      args: [userId]
+      sql: "SELECT team_id FROM team_members WHERE user_id = ? LIMIT 1",
+      args: [userId],
     });
     if (existing.rows.length > 0) {
       throw createTeamMembershipConflict();
     }
 
     await tx.execute({
-      sql: 'INSERT INTO team_members (team_id, user_id, role) VALUES (?, ?, ?)',
-      args: [teamId, userId, 'member']
+      sql: "INSERT INTO team_members (team_id, user_id, role) VALUES (?, ?, ?)",
+      args: [teamId, userId, "member"],
     });
     await tx.commit();
+    cacheInvalidateSessionsForUser(userId);
   } catch (error) {
     await tx.rollback().catch(() => {});
     if (isSingleTeamConstraintError(error)) {
@@ -1600,14 +2001,25 @@ async function addTeamMember(teamId, userId) {
 
 async function removeTeamMember(teamId, userId) {
   await waitForDb();
-  const result = await run('DELETE FROM team_members WHERE team_id = ? AND user_id = ?',
-    [teamId, userId]);
+  const result = await run(
+    "DELETE FROM team_members WHERE team_id = ? AND user_id = ?",
+    [teamId, userId],
+  );
+  if (result.changes > 0) {
+    cacheInvalidateSessionsForUser(userId);
+  }
   return result.changes > 0;
 }
 
 async function deleteTeam(teamId) {
   await waitForDb();
-  const result = await run('DELETE FROM teams WHERE id = ?', [teamId]);
+  const result = await run("DELETE FROM teams WHERE id = ?", [teamId]);
+  // Multiple members may have had this team cached on their sessions; we
+  // don't have the membership list here so clear all session cache entries.
+  // Team deletions are rare so the warm-cache hit is acceptable.
+  if (result.changes > 0) {
+    cacheClearSessions();
+  }
   return result.changes > 0;
 }
 
@@ -1617,34 +2029,36 @@ async function getTeamUserIds(userId) {
     `SELECT tm2.user_id FROM team_members tm1
      JOIN team_members tm2 ON tm1.team_id = tm2.team_id
      WHERE tm1.user_id = ?`,
-    [userId]
+    [userId],
   );
-  return members.length > 0 ? members.map(m => m.user_id) : [userId];
+  return members.length > 0 ? members.map((m) => m.user_id) : [userId];
 }
 
 // ========== EXPORT/IMPORT (user-scoped) ==========
 
 async function exportData(userId) {
   await waitForDb();
-  const projects = await getAllProjects(userId, { includeDocumentContent: true });
+  const projects = await getAllProjects(userId, {
+    includeDocumentContent: true,
+  });
   const settings = await getAllUserSettings(userId);
   const quickNotes = await getQuickNotes(userId);
   const templates = await getAllTemplates();
 
   return {
-    version: '2.0',
+    version: "2.0",
     projects,
     settings,
     quickNotes,
     templates,
-    exportedAt: new Date().toISOString()
+    exportedAt: new Date().toISOString(),
   };
 }
 
 async function importData(userId, data) {
   await waitForDb();
 
-  const tx = await client.transaction('write');
+  const tx = await client.transaction("write");
 
   // Local helpers that route through the transaction instead of the shared client
   async function txRun(sql, params = []) {
@@ -1658,56 +2072,78 @@ async function importData(userId, data) {
   }
 
   try {
-    const importedDocumentCount = (data.projects || []).reduce((count, project) => (
-      count + (project.documents || []).length
-    ), 0);
+    const importedDocumentCount = (data.projects || []).reduce(
+      (count, project) => count + (project.documents || []).length,
+      0,
+    );
     if (importedDocumentCount > MAX_DOCUMENTS_PER_USER) {
       throw createDocumentLimitError();
     }
 
     // Delete only this user's data
-    const userProjectsResult = await tx.execute({ sql: 'SELECT id FROM projects WHERE user_id = ?', args: [userId] });
-    const projectIds = userProjectsResult.rows.map(p => p.id);
+    const userProjectsResult = await tx.execute({
+      sql: "SELECT id FROM projects WHERE user_id = ?",
+      args: [userId],
+    });
+    const projectIds = userProjectsResult.rows.map((p) => p.id);
 
     if (projectIds.length > 0) {
-      const placeholders = projectIds.map(() => '?').join(',');
-      await txRun(`DELETE FROM tasks WHERE project_id IN (${placeholders})`, projectIds);
-      await txRun(`DELETE FROM documents WHERE project_id IN (${placeholders})`, projectIds);
+      const placeholders = projectIds.map(() => "?").join(",");
+      await txRun(
+        `DELETE FROM tasks WHERE project_id IN (${placeholders})`,
+        projectIds,
+      );
+      await txRun(
+        `DELETE FROM documents WHERE project_id IN (${placeholders})`,
+        projectIds,
+      );
     }
-    await txRun('DELETE FROM projects WHERE user_id = ?', [userId]);
-    await txRun('DELETE FROM user_settings WHERE user_id = ?', [userId]);
+    await txRun("DELETE FROM projects WHERE user_id = ?", [userId]);
+    await txRun("DELETE FROM user_settings WHERE user_id = ?", [userId]);
 
     // Import projects with direct inserts (no re-fetch)
     if (data.projects) {
       for (const project of data.projects) {
         const projectId = generateId();
-        await txRun(`
+        await txRun(
+          `
           INSERT INTO projects (id, user_id, title, stakeholder, description, status, priority, due_date, tags, project_order, archived, archived_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `, [
-          projectId, userId,
-          project.title || 'Untitled',
-          project.stakeholder || '',
-          project.description || '',
-          project.status || 'not-started',
-          project.priority || 'medium',
-          project.dueDate || null,
-          JSON.stringify(project.tags || []),
-          project.order || project.project_order || 0,
-          project.archived ? 1 : 0,
-          project.archivedAt || null
-        ]);
+        `,
+          [
+            projectId,
+            userId,
+            project.title || "Untitled",
+            project.stakeholder || "",
+            project.description || "",
+            project.status || "not-started",
+            project.priority || "medium",
+            project.dueDate || null,
+            JSON.stringify(project.tags || []),
+            project.order || project.project_order || 0,
+            project.archived ? 1 : 0,
+            project.archivedAt || null,
+          ],
+        );
 
         if (project.tasks) {
           // Flatten nested subtasks for import (exported format has subtasks arrays)
           const flatTasks = [];
           for (let i = 0; i < project.tasks.length; i++) {
             const task = project.tasks[i];
-            flatTasks.push({ ...task, _order: task.order ?? i, _parentRef: task.parentTaskId || null });
+            flatTasks.push({
+              ...task,
+              _order: task.order ?? i,
+              _parentRef: task.parentTaskId || null,
+            });
             if (task.subtasks && task.subtasks.length > 0) {
               for (let j = 0; j < task.subtasks.length; j++) {
                 const sub = task.subtasks[j];
-                flatTasks.push({ ...sub, _order: sub.order ?? j, _parentRef: task.id || '__parent_' + i });
+                flatTasks.push({
+                  ...sub,
+                  _order: sub.order ?? j,
+                  _parentRef: task.id || "__parent_" + i,
+                });
               }
             }
           }
@@ -1717,20 +2153,24 @@ async function importData(userId, data) {
           for (const task of flatTasks) {
             const newId = generateId();
             if (task.id) taskIdMap.set(task.id, newId);
-            await txRun(`
+            await txRun(
+              `
               INSERT INTO tasks (id, project_id, title, completed, due_date, notes, priority, recurring, blocked_by, task_order)
               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            `, [
-              newId, projectId,
-              task.title || 'Untitled',
-              task.completed ? 1 : 0,
-              task.dueDate || null,
-              task.notes || '',
-              task.priority || 'none',
-              task.recurring || null,
-              task.blockedBy || null,
-              task._order
-            ]);
+            `,
+              [
+                newId,
+                projectId,
+                task.title || "Untitled",
+                task.completed ? 1 : 0,
+                task.dueDate || null,
+                task.notes || "",
+                task.priority || "none",
+                task.recurring || null,
+                task.blockedBy || null,
+                task._order,
+              ],
+            );
           }
 
           // Pass 2: Set parent_task_id for subtasks using ID map
@@ -1739,7 +2179,10 @@ async function importData(userId, data) {
               const newParentId = taskIdMap.get(task._parentRef);
               const newTaskId = task.id ? taskIdMap.get(task.id) : null;
               if (newParentId && newTaskId) {
-                await txRun('UPDATE tasks SET parent_task_id = ? WHERE id = ?', [newParentId, newTaskId]);
+                await txRun(
+                  "UPDATE tasks SET parent_task_id = ? WHERE id = ?",
+                  [newParentId, newTaskId],
+                );
               }
             }
           }
@@ -1748,35 +2191,49 @@ async function importData(userId, data) {
         if (project.documents) {
           for (const doc of project.documents) {
             const docType = doc.type;
-            if (docType !== 'email' && docType !== 'docx') continue;
+            if (docType !== "email" && docType !== "docx") continue;
 
             let payload = null;
             let fileName = null;
             let mimeType = null;
             let contentBase64 = null;
 
-            if (docType === 'email') {
+            if (docType === "email") {
               const email = doc.email || {};
               payload = JSON.stringify({
-                subject: email.subject || '',
-                from: email.from || '',
-                to: email.to || '',
-                date: email.date || '',
-                body: email.body || ''
+                subject: email.subject || "",
+                from: email.from || "",
+                to: email.to || "",
+                date: email.date || "",
+                body: email.body || "",
               });
-            } else if (docType === 'docx') {
-              fileName = doc.fileName || '';
-              const requestedMime = doc.mimeType || 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+            } else if (docType === "docx") {
+              fileName = doc.fileName || "";
+              const requestedMime =
+                doc.mimeType ||
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
               mimeType = ALLOWED_DOC_MIME_TYPES.includes(requestedMime)
                 ? requestedMime
-                : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-              contentBase64 = doc.contentBase64 || '';
+                : "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+              contentBase64 = doc.contentBase64 || "";
             }
 
-            await txRun(`
+            await txRun(
+              `
               INSERT INTO documents (id, project_id, doc_type, title, payload, file_name, mime_type, content_base64)
               VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            `, [generateId(), projectId, docType, doc.title || '', payload, fileName, mimeType, contentBase64]);
+            `,
+              [
+                generateId(),
+                projectId,
+                docType,
+                doc.title || "",
+                payload,
+                fileName,
+                mimeType,
+                contentBase64,
+              ],
+            );
           }
         }
       }
@@ -1787,19 +2244,28 @@ async function importData(userId, data) {
       for (const [key, value] of Object.entries(data.settings)) {
         if (!VALID_SETTINGS_KEYS.includes(key)) continue;
         await txRun(
-          'INSERT OR REPLACE INTO user_settings (user_id, key, value) VALUES (?, ?, ?)',
-          [userId, key, JSON.stringify(value)]
+          "INSERT OR REPLACE INTO user_settings (user_id, key, value) VALUES (?, ?, ?)",
+          [userId, key, JSON.stringify(value)],
         );
       }
     }
 
     // Import quick notes
     if (data.quickNotes !== undefined) {
-      const existing = await txGet('SELECT id FROM quick_notes WHERE user_id = ? ORDER BY id DESC LIMIT 1', [userId]);
+      const existing = await txGet(
+        "SELECT id FROM quick_notes WHERE user_id = ? ORDER BY id DESC LIMIT 1",
+        [userId],
+      );
       if (existing) {
-        await txRun('UPDATE quick_notes SET content = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [data.quickNotes, existing.id]);
+        await txRun(
+          "UPDATE quick_notes SET content = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+          [data.quickNotes, existing.id],
+        );
       } else {
-        await txRun('INSERT INTO quick_notes (user_id, content) VALUES (?, ?)', [userId, data.quickNotes]);
+        await txRun(
+          "INSERT INTO quick_notes (user_id, content) VALUES (?, ?)",
+          [userId, data.quickNotes],
+        );
       }
     }
 
@@ -1814,47 +2280,55 @@ async function importData(userId, data) {
 
 async function createWebhook(userId, data) {
   await waitForDb();
-  const { MAX_WEBHOOKS_PER_USER } = require('./app-constants');
-  const existing = await get('SELECT COUNT(*) AS count FROM webhooks WHERE user_id = ?', [userId]);
+  const { MAX_WEBHOOKS_PER_USER } = require("./app-constants");
+  const existing = await get(
+    "SELECT COUNT(*) AS count FROM webhooks WHERE user_id = ?",
+    [userId],
+  );
   if (Number(existing?.count) >= MAX_WEBHOOKS_PER_USER) {
-    const err = new Error(`Webhook limit reached (max ${MAX_WEBHOOKS_PER_USER})`);
-    err.code = 'WEBHOOK_LIMIT_EXCEEDED';
+    const err = new Error(
+      `Webhook limit reached (max ${MAX_WEBHOOKS_PER_USER})`,
+    );
+    err.code = "WEBHOOK_LIMIT_EXCEEDED";
     throw err;
   }
   const id = generateId();
-  const secret = require('crypto').randomBytes(32).toString('hex');
+  const secret = require("crypto").randomBytes(32).toString("hex");
   const events = JSON.stringify(data.events);
   await run(
-    'INSERT INTO webhooks (id, user_id, url, secret, events) VALUES (?, ?, ?, ?, ?)',
-    [id, userId, data.url, secret, events]
+    "INSERT INTO webhooks (id, user_id, url, secret, events) VALUES (?, ?, ?, ?, ?)",
+    [id, userId, data.url, secret, events],
   );
   return { id, url: data.url, secret, events: data.events, active: true };
 }
 
 async function getWebhooksByUser(userId) {
   await waitForDb();
-  const rows = await all('SELECT * FROM webhooks WHERE user_id = ? ORDER BY created_at DESC', [userId]);
-  return rows.map(w => ({
+  const rows = await all(
+    "SELECT * FROM webhooks WHERE user_id = ? ORDER BY created_at DESC",
+    [userId],
+  );
+  return rows.map((w) => ({
     id: w.id,
     url: w.url,
     secret: w.secret,
-    events: safeJsonParse(w.events, ['*']),
+    events: safeJsonParse(w.events, ["*"]),
     active: w.active === 1,
-    createdAt: w.created_at
+    createdAt: w.created_at,
   }));
 }
 
 async function getActiveWebhooksForUser(userId) {
   await waitForDb();
   const rows = await all(
-    'SELECT * FROM webhooks WHERE user_id = ? AND active = 1',
-    [userId]
+    "SELECT * FROM webhooks WHERE user_id = ? AND active = 1",
+    [userId],
   );
-  return rows.map(w => ({
+  return rows.map((w) => ({
     id: w.id,
     url: w.url,
     secret: w.secret,
-    events: w.events
+    events: w.events,
   }));
 }
 
@@ -1863,23 +2337,35 @@ async function updateWebhook(webhookId, userId, updates) {
   const fields = [];
   const params = [];
 
-  if (updates.url !== undefined) { fields.push('url = ?'); params.push(updates.url); }
-  if (updates.events !== undefined) { fields.push('events = ?'); params.push(JSON.stringify(updates.events)); }
-  if (updates.active !== undefined) { fields.push('active = ?'); params.push(updates.active ? 1 : 0); }
+  if (updates.url !== undefined) {
+    fields.push("url = ?");
+    params.push(updates.url);
+  }
+  if (updates.events !== undefined) {
+    fields.push("events = ?");
+    params.push(JSON.stringify(updates.events));
+  }
+  if (updates.active !== undefined) {
+    fields.push("active = ?");
+    params.push(updates.active ? 1 : 0);
+  }
 
   if (fields.length === 0) return false;
 
   params.push(webhookId, userId);
   const result = await run(
-    `UPDATE webhooks SET ${fields.join(', ')} WHERE id = ? AND user_id = ?`,
-    params
+    `UPDATE webhooks SET ${fields.join(", ")} WHERE id = ? AND user_id = ?`,
+    params,
   );
   return result.changes > 0;
 }
 
 async function deleteWebhook(webhookId, userId) {
   await waitForDb();
-  const result = await run('DELETE FROM webhooks WHERE id = ? AND user_id = ?', [webhookId, userId]);
+  const result = await run(
+    "DELETE FROM webhooks WHERE id = ? AND user_id = ?",
+    [webhookId, userId],
+  );
   return result.changes > 0;
 }
 
@@ -1888,11 +2374,11 @@ async function deleteWebhook(webhookId, userId) {
 async function healthCheck() {
   try {
     await waitForDb();
-    await get('SELECT 1');
-    return { status: 'ok' };
+    await get("SELECT 1");
+    return { status: "ok" };
   } catch (error) {
-    logger.error({ err: error }, 'Health check failed');
-    return { status: 'error', message: 'Database unavailable' };
+    logger.error({ err: error }, "Health check failed");
+    return { status: "error", message: "Database unavailable" };
   }
 }
 
@@ -1901,9 +2387,9 @@ async function healthCheck() {
 function closeDatabase() {
   try {
     client.close();
-    logger.info('Database connection closed');
+    logger.info("Database connection closed");
   } catch (err) {
-    logger.error({ err }, 'Error closing database');
+    logger.error({ err }, "Error closing database");
   }
 }
 
@@ -1978,5 +2464,5 @@ module.exports = {
   // Utility
   generateId,
   closeDatabase,
-  waitForDb
+  waitForDb,
 };

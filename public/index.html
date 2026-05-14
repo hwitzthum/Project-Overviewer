@@ -9,7 +9,8 @@
     <script src="/dist/boot.bundle.js"></script>
     <link rel="stylesheet" href="/css/theme.css" />
     <link rel="stylesheet" href="/css/app.css" />
-    <script src="/dist/app-shell.bundle.js"></script>
+    <meta name="x-realtime" content="ws" />
+    <script src="/dist/app-shell.bundle.js" defer></script>
   </head>
   <body>
     <div class="app" id="app">
@@ -797,6 +798,6 @@
     <!-- Hidden file input for import -->
     <input type="file" id="fileInput" accept=".json" style="display: none" />
 
-    <script src="/dist/app.bundle.js"></script>
+    <script src="/dist/app.bundle.js" defer></script>
   </body>
 </html>

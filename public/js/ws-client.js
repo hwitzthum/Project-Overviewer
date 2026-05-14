@@ -13,14 +13,35 @@ var WS = (function () {
   var reconnectTimer = null;
   var intentionalClose = false;
   var visibilityHandler = null;
+  var disabled = null;
+
+  function isDisabled() {
+    if (disabled !== null) return disabled;
+    if (typeof document === "undefined") {
+      disabled = true;
+      return true;
+    }
+    var meta = document.querySelector('meta[name="x-realtime"]');
+    // Server sets content="polling" on platforms without a long-lived WS
+    // server (Vercel and other serverless targets). Without this guard the
+    // client would burn an upgrade request + exponential reconnect loop
+    // every time the tab is visible.
+    disabled = meta && meta.getAttribute("content") === "polling";
+    return disabled;
+  }
 
   function getWsUrl() {
-    var protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    return protocol + '//' + location.host + '/ws';
+    var protocol = location.protocol === "https:" ? "wss:" : "ws:";
+    return protocol + "//" + location.host + "/ws";
   }
 
   function connect() {
-    if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
+    if (isDisabled()) return;
+    if (
+      socket &&
+      (socket.readyState === WebSocket.OPEN ||
+        socket.readyState === WebSocket.CONNECTING)
+    ) {
       return;
     }
 
@@ -35,7 +56,7 @@ var WS = (function () {
 
     socket.onopen = function () {
       reconnectDelay = 1000;
-      console.debug('[WS] Connected');
+      console.debug("[WS] Connected");
     };
 
     socket.onmessage = function (e) {
@@ -63,11 +84,11 @@ var WS = (function () {
     if (!msg.event) return;
 
     // Any domain event triggers an immediate poll cycle
-    var domainPrefixes = ['project.', 'task.', 'document.'];
+    var domainPrefixes = ["project.", "task.", "document."];
     for (var i = 0; i < domainPrefixes.length; i++) {
       if (msg.event.indexOf(domainPrefixes[i]) === 0) {
         // Use the existing polling infrastructure
-        if (typeof window.markSharedDataMutation === 'function') {
+        if (typeof window.markSharedDataMutation === "function") {
           window.markSharedDataMutation();
         }
         return;
@@ -76,13 +97,17 @@ var WS = (function () {
   }
 
   function scheduleReconnect() {
+    if (isDisabled()) return;
     if (reconnectTimer) return;
     reconnectTimer = setTimeout(function () {
       reconnectTimer = null;
       connect();
     }, reconnectDelay);
     // Exponential backoff with jitter
-    reconnectDelay = Math.min(reconnectDelay * 2 + Math.random() * 500, maxDelay);
+    reconnectDelay = Math.min(
+      reconnectDelay * 2 + Math.random() * 500,
+      maxDelay,
+    );
   }
 
   function disconnect() {
@@ -96,7 +121,7 @@ var WS = (function () {
       socket = null;
     }
     if (visibilityHandler) {
-      document.removeEventListener('visibilitychange', visibilityHandler);
+      document.removeEventListener("visibilitychange", visibilityHandler);
       visibilityHandler = null;
     }
   }
@@ -106,22 +131,24 @@ var WS = (function () {
   }
 
   // Reconnect immediately when tab becomes visible
-  visibilityHandler = function () {
-    if (!document.hidden && !isConnected() && !intentionalClose) {
-      if (reconnectTimer) {
-        clearTimeout(reconnectTimer);
-        reconnectTimer = null;
+  if (!isDisabled()) {
+    visibilityHandler = function () {
+      if (!document.hidden && !isConnected() && !intentionalClose) {
+        if (reconnectTimer) {
+          clearTimeout(reconnectTimer);
+          reconnectTimer = null;
+        }
+        reconnectDelay = 1000;
+        connect();
       }
-      reconnectDelay = 1000;
-      connect();
-    }
-  };
-  document.addEventListener('visibilitychange', visibilityHandler);
+    };
+    document.addEventListener("visibilitychange", visibilityHandler);
+  }
 
   return {
     connect: connect,
     disconnect: disconnect,
-    isConnected: isConnected
+    isConnected: isConnected,
   };
 })();
 

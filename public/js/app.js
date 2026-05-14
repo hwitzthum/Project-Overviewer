@@ -1,9 +1,12 @@
 // Project Overviewer — App Initialization
 let notesSaveTimeout = null;
 
-async function init() {
-  // Load data from API
-  await loadFromStorage();
+async function init(options) {
+  // Allow bootApp to pre-fetch data in parallel with the auth probe so we
+  // don't serialize two full round trips on the critical path.
+  if (!(options && options.dataPreloaded)) {
+    await loadFromStorage();
+  }
 
   // Apply theme — prefer explicit server theme, then local preference
   // persist: true keeps localStorage in sync so boot.js shows the correct theme on next navigation
@@ -340,11 +343,23 @@ async function init() {
 
 // Start the app
 async function bootApp() {
+  let preloadPromise = null;
   try {
     if (typeof window.ensureProtectedPageAuth === "function") {
+      // Server-side already validated the session before serving this HTML,
+      // so we can optimistically start fetching data while the client-side
+      // /api/auth/me probe completes in parallel. If auth has somehow gone
+      // stale, api-client's 401 handler will redirect to /login.html before
+      // the preloaded fetches can do any harm.
+      preloadPromise = loadFromStorage();
       await window.ensureProtectedPageAuth();
     }
-    await init();
+    if (preloadPromise) {
+      await preloadPromise;
+      await init({ dataPreloaded: true });
+    } else {
+      await init();
+    }
   } catch {
     // Redirect handled by the auth guard.
   } finally {
