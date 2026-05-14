@@ -388,6 +388,52 @@ test.describe("Authentication", () => {
     await expect(page).toHaveURL(/\/(?:index\.html)?$/);
   });
 
+  test("Save New Password button is visible inside the viewport at common laptop sizes", async ({
+    page,
+  }) => {
+    const sizes = [
+      { width: 1280, height: 800 },
+      { width: 1366, height: 768 },
+      { width: 1024, height: 768 },
+      { width: 1280, height: 720 },
+    ];
+    for (const size of sizes) {
+      await page.setViewportSize(size);
+      if (page.url() === "about:blank") {
+        await loginUI(page);
+        await page.waitForURL(/\/(?:index\.html)?$/, { timeout: 5000 });
+      } else if (!page.url().includes("3099/")) {
+        await loginUI(page);
+        await page.waitForURL(/\/(?:index\.html)?$/, { timeout: 5000 });
+      }
+      // Ensure we are on the app shell, not still inside settings from prior iteration
+      await page.keyboard.press("Escape").catch(() => {});
+      await page.click("#openSettings");
+      await page.waitForTimeout(200);
+
+      const btn = page.locator("#changePasswordSubmit");
+      const box = await btn.boundingBox();
+      expect(
+        box,
+        `button missing at ${size.width}x${size.height}`,
+      ).toBeTruthy();
+      // Bottom edge must sit inside the viewport without scrolling.
+      expect(
+        box.y + box.height,
+        `button overflows viewport at ${size.width}x${size.height}`,
+      ).toBeLessThanOrEqual(size.height);
+      // Top edge must be on-screen too.
+      expect(
+        box.y,
+        `button top off-screen at ${size.width}x${size.height}`,
+      ).toBeGreaterThanOrEqual(0);
+
+      // Close modal for next iteration
+      await page.locator("#settingsModal .modal-close").first().click();
+      await page.waitForTimeout(150);
+    }
+  });
+
   test("change password via Settings UI submits on Enter key", async ({
     page,
     request,

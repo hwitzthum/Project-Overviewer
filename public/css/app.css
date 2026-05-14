@@ -1648,6 +1648,9 @@ textarea:focus {
   overflow: hidden;
   transform: scale(0.95);
   transition: transform var(--transition-normal);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 .modal-overlay.active .modal {
@@ -1684,6 +1687,23 @@ textarea:focus {
 .modal-body {
   padding: 20px;
   overflow-y: auto;
+  flex: 1 1 auto;
+  min-height: 0;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+}
+
+.modal-body::-webkit-scrollbar {
+  width: 8px;
+}
+
+.modal-body::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 4px;
+}
+
+.modal-body::-webkit-scrollbar-thumb:hover {
+  background: var(--text-tertiary);
 }
 
 .modal-footer {
@@ -2583,13 +2603,18 @@ textarea:focus {
 }
 
 .change-password-actions {
+  position: sticky;
+  bottom: -20px;
   margin-top: 8px;
-  padding-top: 14px;
+  margin-bottom: -20px;
+  padding: 14px 0 20px;
   border-top: 1px solid var(--border-light);
+  background: var(--bg-primary);
   display: flex;
   flex-direction: column;
   align-items: stretch;
   gap: 8px;
+  z-index: 2;
 }
 
 .change-password-submit {
