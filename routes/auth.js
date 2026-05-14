@@ -23,6 +23,16 @@ module.exports = function createAuthRouter({
   const MAX_LOGIN_DELAY_MS = 1500;
   const LOGIN_TRACK_CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
   const MAX_LOGIN_TRACKER_SIZE = 10000;
+
+  // SECURITY NOTE: loginAttemptTracker is an in-process Map. This means:
+  //   1. Throttle state is lost on every process restart, allowing an attacker
+  //      to bypass rate limits by restarting (or targeting multiple instances).
+  //   2. In multi-instance (clustered/serverless) deployments each instance
+  //      maintains a separate counter, so the effective threshold is multiplied
+  //      by the number of instances.
+  // For production deployments that require persistent, cross-instance throttling,
+  // move this state to a shared store (e.g. Redis, or the SQLite DB via
+  // db.recordLoginAttempt / db.getLoginAttempts helper functions).
   const loginAttemptTracker = new Map();
   const dummyPasswordHash = bcrypt.hashSync('project-overviewer-dummy-password', bcryptRounds);
 
@@ -49,13 +59,16 @@ module.exports = function createAuthRouter({
       return;
     }
 
-    const overflow = loginAttemptTracker.size - MAX_LOGIN_TRACKER_SIZE;
-    const oldestKeys = [...loginAttemptTracker.entries()]
+    // Tracker is over capacity. To avoid an O(n log n) sort on a potentially
+    // large Map, evict the oldest 50% of entries by lastFailureAt rather than
+    // sorting the entire set. This keeps the worst-case work bounded while
+    // still preferring to retain the most-recently-active keys.
+    const half = Math.floor(loginAttemptTracker.size / 2);
+    const entries = [...loginAttemptTracker.entries()]
       .sort((left, right) => (left[1]?.lastFailureAt || 0) - (right[1]?.lastFailureAt || 0))
-      .slice(0, overflow)
-      .map(([key]) => key);
+      .slice(0, half);
 
-    for (const key of oldestKeys) {
+    for (const [key] of entries) {
       loginAttemptTracker.delete(key);
     }
   }
@@ -274,8 +287,9 @@ module.exports = function createAuthRouter({
       const session = await db.createSession(user.id);
       setSessionCookie(res, session.token);
 
+      // Do not include the raw session token in the response body.
+      // The token is already delivered via the HttpOnly session cookie set above.
       res.json({
-        token: session.token,
         expiresAt: session.expiresAt,
         user: {
           id: user.id,
@@ -400,7 +414,9 @@ module.exports = function createAuthRouter({
         severity: 'medium',
         statusCode: 200
       });
-      res.json({ success: true, token: session.token });
+      // Do not include the raw session token in the response body.
+      // The new token is already delivered via the HttpOnly session cookie set above.
+      res.json({ success: true });
     } catch (error) {
       logger.error({ err: error }, 'Password change error');
       logSecurityEvent('auth.password_change.error', {
