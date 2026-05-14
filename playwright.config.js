@@ -1,4 +1,4 @@
-const { defineConfig } = require('@playwright/test');
+const { defineConfig } = require("@playwright/test");
 
 // Playwright sets FORCE_COLOR in some environments. If NO_COLOR is also
 // present, Node warns that one overrides the other, so drop the conflicting
@@ -8,31 +8,49 @@ if (process.env.FORCE_COLOR && process.env.NO_COLOR) {
 }
 
 module.exports = defineConfig({
-  testDir: './tests/e2e',
+  testDir: "./tests/e2e",
   fullyParallel: false, // Sequential — tests share server state
   retries: 0,
   workers: 1,
-  reporter: [['list'], ['html', { open: 'never', outputFolder: '/tmp/project-overviewer-playwright-report' }]],
-  outputDir: '/tmp/project-overviewer-test-results',
+  reporter: [
+    ["list"],
+    [
+      "html",
+      {
+        open: "never",
+        outputFolder: "/tmp/project-overviewer-playwright-report",
+      },
+    ],
+  ],
+  outputDir: "/tmp/project-overviewer-test-results",
   timeout: 30000,
   use: {
-    baseURL: 'http://localhost:3099',
-    trace: 'on-first-retry',
-    screenshot: 'only-on-failure',
+    baseURL: "http://localhost:3099",
+    trace: "on-first-retry",
+    screenshot: "only-on-failure",
+    // The server's CSRF middleware requires same-origin requests when a
+    // session_token cookie is present. Playwright's request fixture stores
+    // cookies automatically, so subsequent state-changing requests would be
+    // rejected without an Origin header. Tests that need to assert the
+    // cross-site path (security.spec.js) override this per-request.
+    extraHTTPHeaders: {
+      Origin: "http://localhost:3099",
+    },
   },
   webServer: {
-    command: 'rm -f /tmp/project-overviewer-e2e.db /tmp/project-overviewer-e2e.db-wal /tmp/project-overviewer-e2e.db-shm && env -u NO_COLOR NODE_ENV=test ADMIN_USER=testadmin ADMIN_PASS=SecureTestPass123 PORT=3099 APP_ORIGIN=http://localhost:3099 TURSO_DATABASE_URL=file:/tmp/project-overviewer-e2e.db SECURITY_LOG_PATH=/tmp/project-overviewer-security.log node server.js',
+    command:
+      "rm -f /tmp/project-overviewer-e2e.db /tmp/project-overviewer-e2e.db-wal /tmp/project-overviewer-e2e.db-shm && env -u NO_COLOR NODE_ENV=test ADMIN_USER=testadmin ADMIN_PASS=SecureTestPass123 PORT=3099 APP_ORIGIN=http://localhost:3099 TURSO_DATABASE_URL=file:/tmp/project-overviewer-e2e.db SECURITY_LOG_PATH=./logs/test-security.log node server.js",
     port: 3099,
     timeout: 15000,
     reuseExistingServer: false,
     env: {
-      NODE_ENV: 'test',
-      ADMIN_USER: 'testadmin',
-      ADMIN_PASS: 'SecureTestPass123',
-      PORT: '3099',
-      APP_ORIGIN: 'http://localhost:3099',
-      TURSO_DATABASE_URL: 'file:/tmp/project-overviewer-e2e.db',
-      SECURITY_LOG_PATH: '/tmp/project-overviewer-security.log',
+      NODE_ENV: "test",
+      ADMIN_USER: "testadmin",
+      ADMIN_PASS: "SecureTestPass123",
+      PORT: "3099",
+      APP_ORIGIN: "http://localhost:3099",
+      TURSO_DATABASE_URL: "file:/tmp/project-overviewer-e2e.db",
+      SECURITY_LOG_PATH: "./logs/test-security.log",
     },
   },
 });

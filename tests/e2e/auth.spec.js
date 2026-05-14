@@ -9,6 +9,7 @@ const {
   approveUserAPI,
   uniqueUser,
   loginUI,
+  extractSessionTokenFromHeaders,
 } = require("./helpers");
 
 test.describe("Authentication", () => {
@@ -139,8 +140,8 @@ test.describe("Authentication", () => {
       data: { username: user, password: "SecurePass123" },
     });
     expect(res.status()).toBe(200);
-    const body = await res.json();
-    expect(body.token).toBeTruthy();
+    const token = extractSessionTokenFromHeaders(res.headers());
+    expect(token).toBeTruthy();
   });
 
   test("repeated failed logins for the same account are throttled", async ({
@@ -274,7 +275,7 @@ test.describe("Authentication", () => {
     const loginRes = await request.post(`${BASE_URL}/api/auth/login`, {
       data: { username: user, password: "OldPass12345" },
     });
-    const { token: userToken } = await loginRes.json();
+    const userToken = extractSessionTokenFromHeaders(loginRes.headers());
 
     // Change password
     const changeRes = await request.put(`${BASE_URL}/api/auth/password`, {

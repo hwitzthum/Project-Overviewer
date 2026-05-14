@@ -9,6 +9,7 @@ const {
   uniqueUser,
   authHeaders,
   adminStepUpPayload,
+  extractSessionTokenFromHeaders,
 } = require("./helpers");
 
 test.describe("Role-Based Access Control", () => {
@@ -29,7 +30,7 @@ test.describe("Role-Based Access Control", () => {
     const loginRes = await request.post(`${BASE_URL}/api/auth/login`, {
       data: { username: user, password: "SecurePass123" },
     });
-    const { token: userToken } = await loginRes.json();
+    const userToken = extractSessionTokenFromHeaders(loginRes.headers());
     return { adminToken, userToken, userId };
   }
 
@@ -278,12 +279,14 @@ test.describe("Role-Based Access Control", () => {
       },
     );
     expect(loginAfterApproval.status()).toBe(200);
-    const loginBody = await loginAfterApproval.json();
-    expect(loginBody.token).toBeTruthy();
+    const approvedToken = extractSessionTokenFromHeaders(
+      loginAfterApproval.headers(),
+    );
+    expect(approvedToken).toBeTruthy();
 
     // 7. Approved user can access their own data
     const meRes = await request.get(`${BASE_URL}/api/auth/me`, {
-      headers: authHeaders(loginBody.token),
+      headers: authHeaders(approvedToken),
     });
     expect(meRes.status()).toBe(200);
     const me = await meRes.json();
@@ -328,7 +331,7 @@ test.describe("Role-Based Access Control", () => {
     const loginRes = await request.post(`${BASE_URL}/api/auth/login`, {
       data: { username: newUser, password: "PromotePass123" },
     });
-    const { token: userToken } = await loginRes.json();
+    const userToken = extractSessionTokenFromHeaders(loginRes.headers());
 
     const adminUsersRes = await request.get(`${BASE_URL}/api/admin/users`, {
       headers: authHeaders(userToken),

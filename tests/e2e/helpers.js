@@ -2,23 +2,44 @@
  * Shared test helpers for Playwright E2E tests
  */
 
-const BASE_URL = 'http://localhost:3099';
+const BASE_URL = "http://localhost:3099";
 
-const ADMIN = { username: 'testadmin', password: 'SecureTestPass123' };
+const ADMIN = { username: "testadmin", password: "SecureTestPass123" };
 
 function adminStepUpPayload(data = {}) {
   return { adminPassword: ADMIN.password, ...data };
 }
 
 /**
- * Login via API and return the auth token
+ * Login via API and return the auth token.
+ *
+ * The login endpoint no longer returns the token in the JSON body (it ships
+ * only via the HttpOnly session_token cookie). For tests that need a Bearer
+ * token, parse it out of the Set-Cookie header.
  */
+function extractSessionTokenFromHeaders(headers) {
+  const raw = headers["set-cookie"];
+  if (!raw) return undefined;
+  const cookies = Array.isArray(raw) ? raw : String(raw).split(/,(?=[^ ]+=)/);
+  for (const cookie of cookies) {
+    const parts = cookie.split(";");
+    for (const part of parts) {
+      const trimmed = part.trim();
+      if (trimmed.startsWith("session_token=")) {
+        return decodeURIComponent(trimmed.slice("session_token=".length));
+      }
+    }
+  }
+  return undefined;
+}
+
 async function loginAPI(request, { username, password } = ADMIN) {
   const res = await request.post(`${BASE_URL}/api/auth/login`, {
     data: { username, password },
   });
-  const body = await res.json();
-  return { token: body.token, user: body.user, response: res };
+  const body = await res.json().catch(() => ({}));
+  const token = extractSessionTokenFromHeaders(res.headers());
+  return { token, user: body.user, response: res };
 }
 
 /**
@@ -47,7 +68,12 @@ async function approveUserAPI(request, adminToken, userId) {
 async function createProjectAPI(request, token, data = {}) {
   const res = await request.post(`${BASE_URL}/api/projects`, {
     headers: { Authorization: `Bearer ${token}` },
-    data: { title: 'Test Project', status: 'not-started', priority: 'medium', ...data },
+    data: {
+      title: "Test Project",
+      status: "not-started",
+      priority: "medium",
+      ...data,
+    },
   });
   return { response: res, body: await res.json() };
 }
@@ -56,10 +82,13 @@ async function createProjectAPI(request, token, data = {}) {
  * Create a task via API
  */
 async function createTaskAPI(request, token, projectId, data = {}) {
-  const res = await request.post(`${BASE_URL}/api/projects/${projectId}/tasks`, {
-    headers: { Authorization: `Bearer ${token}` },
-    data: { title: 'Test Task', ...data },
-  });
+  const res = await request.post(
+    `${BASE_URL}/api/projects/${projectId}/tasks`,
+    {
+      headers: { Authorization: `Bearer ${token}` },
+      data: { title: "Test Task", ...data },
+    },
+  );
   return { response: res, body: await res.json() };
 }
 
@@ -67,10 +96,13 @@ async function createTaskAPI(request, token, projectId, data = {}) {
  * Create a document via API
  */
 async function createDocumentAPI(request, token, projectId, data) {
-  const res = await request.post(`${BASE_URL}/api/projects/${projectId}/documents`, {
-    headers: { Authorization: `Bearer ${token}` },
-    data,
-  });
+  const res = await request.post(
+    `${BASE_URL}/api/projects/${projectId}/documents`,
+    {
+      headers: { Authorization: `Bearer ${token}` },
+      data,
+    },
+  );
   return { response: res, body: await res.json() };
 }
 
@@ -85,16 +117,16 @@ function authHeaders(token) {
  * Login via browser UI — fills the login form and submits
  */
 async function loginUI(page, { username, password } = ADMIN) {
-  await page.goto('/login.html');
-  await page.fill('#username', username);
-  await page.fill('#password', password);
-  await page.click('#submitBtn');
+  await page.goto("/login.html");
+  await page.fill("#username", username);
+  await page.fill("#password", password);
+  await page.click("#submitBtn");
 }
 
 /**
  * Generate a unique username for test isolation
  */
-function uniqueUser(prefix = 'testuser') {
+function uniqueUser(prefix = "testuser") {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
 }
 
@@ -111,4 +143,5 @@ module.exports = {
   loginUI,
   uniqueUser,
   adminStepUpPayload,
+  extractSessionTokenFromHeaders,
 };
