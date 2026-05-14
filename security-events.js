@@ -4,6 +4,20 @@ const path = require('path');
 const logger = require('./logger');
 
 const SECURITY_LOG_PATH = process.env.SECURITY_LOG_PATH || '';
+
+// Validate that SECURITY_LOG_PATH (when set) resolves within the allowed logs/
+// directory. This prevents an operator misconfiguration — or a malicious env
+// injection — from redirecting security events to an arbitrary filesystem path.
+if (SECURITY_LOG_PATH) {
+  const resolved = path.resolve(SECURITY_LOG_PATH);
+  const allowed = path.resolve('./logs');
+  if (!resolved.startsWith(allowed + path.sep) && resolved !== allowed) {
+    throw new Error(
+      `SECURITY_LOG_PATH must be within the logs/ directory. Got: ${resolved}`
+    );
+  }
+}
+
 const securityLogger = logger.child({ logCategory: 'security' });
 
 function compact(value) {
