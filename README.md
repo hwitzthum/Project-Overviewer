@@ -205,6 +205,10 @@ TRUST_PROXY=false
 
 # Logging
 LOG_LEVEL=info
+
+# Realtime mode override — set to 1 to force polling instead of WebSocket
+# (auto-enabled on Vercel; only needed for other serverless platforms)
+# DISABLE_WEBSOCKET=1
 ```
 
 #### Production Setup
@@ -213,9 +217,15 @@ LOG_LEVEL=info
 NODE_ENV=production
 APP_ORIGIN=https://your-domain.example
 TRUST_PROXY=1  # If behind a reverse proxy
+
+# Vercel + Turso (recommended for serverless deployments)
+TURSO_DATABASE_URL=libsql://your-db.turso.io
+TURSO_AUTH_TOKEN=your-auth-token
 ```
 
 **Important:** In production, cookies require HTTPS (`Secure` flag) and rate limiting is fully enforced.
+
+**Serverless deployments (Vercel):** When `process.env.VERCEL === '1'`, the server automatically tells the client to skip the WebSocket upgrade (serverless platforms can't host long-lived connections) and falls back to long-polling. Set `TURSO_DATABASE_URL` for a remote LibSQL/Turso database — the default `file:projects.db` won't survive Vercel's ephemeral filesystem.
 
 ### Building & Development
 
@@ -680,6 +690,7 @@ All themes preserve full readability and WCAG AA contrast.
 - When a teammate updates a project, your browser receives live WebSocket notification
 - Project cards update automatically on Kanban board
 - No stale data; always in sync with latest state
+- On serverless platforms (Vercel) where WebSocket isn't viable, the client transparently falls back to long-polling — same UX, slightly higher latency
 
 **Experience:**
 
@@ -835,6 +846,23 @@ Source modules in `public/js/` are bundled by esbuild into 3 content-hashed bund
 | **Authorization** | Every endpoint verifies user ownership or team membership     |
 | **Input**         | Zod schemas on all inputs; allowlisted settings keys          |
 | **Files**         | MIME type allowlisting; filename sanitization                 |
+
+### Performance & Deployment
+
+Tuned for serverless (Vercel + Turso) where every cold start re-imports the process and round trips to the database dominate latency. The optimisations below collapse a typical cold load from ~5s to ~1–1.5s.
+
+| Optimisation                | What it does                                                                                                                                                                                                                          |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Schema-version gate**     | `initDatabase()` writes a `schema_version` row after first init; subsequent cold starts skip PRAGMA introspection, team-membership repair, and session cleanup entirely (~6–8 round trips saved).                                     |
+| **Session cache**           | 5-second in-process TTL cache keyed on token hash. Invalidated on every session / user-setting / team mutation, so stale data can't outlive the window. Removes ~4 redundant `getSessionByToken` lookups per authenticated page load. |
+| **Maintenance-mode cache**  | 10-second TTL cache for the per-request `getGlobalSetting('maintenanceMode')` probe; invalidated on admin writes.                                                                                                                     |
+| **Session-embedded fields** | `getSessionByToken` joins `theme`, `workspaceMode`, and `team_id` into the session record. `/api/auth/me` and `resolveTeamScope` read directly from `req.user` instead of re-querying `user_settings` / `team_members`.               |
+| **Parallel boot**           | `bootApp` fires `loadFromStorage()` concurrently with the `/api/auth/me` probe — one full round trip removed from the critical path.                                                                                                  |
+| **Deferred bundles**        | Both `app-shell.bundle.js` and `app.bundle.js` use `defer` so HTML parsing isn't blocked while they download.                                                                                                                         |
+| **Adaptive realtime**       | Server sets `<meta name="x-realtime">` to `polling` on Vercel (or when `DISABLE_WEBSOCKET=1`); client skips the WS upgrade + reconnect loop and relies on long-polling.                                                               |
+| **Bulk project fetch**      | `GET /api/projects` uses 3 queries (projects, tasks, documents) joined in JavaScript instead of the 2N+1 pattern.                                                                                                                     |
+
+**Cold start budget on Vercel + Turso (steady state):** ~150ms init + ~200ms first authenticated request. Subsequent page loads in the same Lambda warm window serve sessions from cache.
 
 ---
 
