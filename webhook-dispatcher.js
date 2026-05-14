@@ -4,7 +4,7 @@ const crypto = require('crypto');
 const dns = require('dns').promises;
 const http = require('http');
 const https = require('https');
-const { validateWebhookUrl, isPrivateIp } = require('./routes/webhooks');
+const { validateWebhookUrl, isPrivateIP } = require('./routes/webhooks');
 
 /**
  * Fire-and-forget webhook dispatcher.
@@ -66,9 +66,9 @@ module.exports = function createWebhookDispatcher({ db, logger, eventBus }) {
     }
 
     for (const ip of addresses) {
-      // isPrivateIp is exported from routes/webhooks — same blocklist used
+      // isPrivateIP is exported from routes/webhooks — same blocklist used
       // at registration time so we stay consistent.
-      if (isPrivateIp(ip)) {
+      if (isPrivateIP(ip)) {
         throw new Error(`Resolved IP ${ip} for ${hostname} is in a private/reserved range`);
       }
     }
