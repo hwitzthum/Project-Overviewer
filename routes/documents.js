@@ -28,7 +28,7 @@ module.exports = function createDocumentsRouters({
 
   projectDocumentsRouter.get('/', requireAuth, async (req, res) => {
     try {
-      const teamUserIds = await resolveTeamScope(db, req.user.userId, req.user.workspaceMode);
+      const teamUserIds = await resolveTeamScope(db, req.user.userId, req.user.workspaceMode, req.user.teamId);
       const documents = await db.getProjectDocuments(req.params.projectId, req.user.userId, {
         includeContent: false,
         teamUserIds
@@ -94,7 +94,7 @@ module.exports = function createDocumentsRouters({
 
   documentsRouter.get('/:id/preview', requireAuth, async (req, res) => {
     try {
-      const teamUserIds = await resolveTeamScope(db, req.user.userId, req.user.workspaceMode);
+      const teamUserIds = await resolveTeamScope(db, req.user.userId, req.user.workspaceMode, req.user.teamId);
       const document = await db.getDocumentById(req.params.id, req.user.userId, { teamUserIds });
       if (!document) {
         return res.status(404).json({ error: 'Document not found' });
@@ -186,7 +186,7 @@ module.exports = function createDocumentsRouters({
 
   documentsRouter.get('/:id/download', requireAuth, async (req, res) => {
     try {
-      const teamUserIds = await resolveTeamScope(db, req.user.userId, req.user.workspaceMode);
+      const teamUserIds = await resolveTeamScope(db, req.user.userId, req.user.workspaceMode, req.user.teamId);
       const document = await db.getDocumentById(req.params.id, req.user.userId, { teamUserIds });
       if (!document) {
         return res.status(404).json({ error: 'Document not found' });

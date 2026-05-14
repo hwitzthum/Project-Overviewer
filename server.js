@@ -294,12 +294,26 @@ function getAssetManifest() {
   }
 }
 
+// Realtime mode is decided at boot. On Vercel (and explicit opt-out via
+// DISABLE_WEBSOCKET) we tell the client to skip the WS upgrade attempt and
+// rely on polling — the long-lived WS server never gets started on serverless
+// anyway, and the client's exponential reconnect loop would otherwise waste
+// requests and add a connection-timeout to every cold load.
+const REALTIME_MODE =
+  process.env.VERCEL === "1" || process.env.DISABLE_WEBSOCKET === "1"
+    ? "polling"
+    : "ws";
+
 function injectAssetUrls(html) {
   const manifest = getAssetManifest();
   const buildVersion = encodeURIComponent(manifest.buildId || "dev");
   const bundleMap = manifest.bundles || {};
 
   return html
+    .replace(
+      '<meta name="x-realtime" content="ws" />',
+      `<meta name="x-realtime" content="${REALTIME_MODE}" />`,
+    )
     .replaceAll("/css/theme.css", `/css/theme.css?v=${buildVersion}`)
     .replaceAll("/css/app.css", `/css/app.css?v=${buildVersion}`)
     .replaceAll("/css/auth.css", `/css/auth.css?v=${buildVersion}`)
