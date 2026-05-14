@@ -1,123 +1,156 @@
-const { test, expect } = require('@playwright/test');
-const { createClient } = require('@libsql/client');
-const crypto = require('crypto');
-const { BASE_URL, ADMIN, loginAPI, registerAPI, approveUserAPI, uniqueUser, loginUI } = require('./helpers');
+const { test, expect } = require("@playwright/test");
+const { createClient } = require("@libsql/client");
+const crypto = require("crypto");
+const {
+  BASE_URL,
+  ADMIN,
+  loginAPI,
+  registerAPI,
+  approveUserAPI,
+  uniqueUser,
+  loginUI,
+} = require("./helpers");
 
-test.describe('Authentication', () => {
-
+test.describe("Authentication", () => {
   // ─── Registration ───────────────────────────────────────────
 
-  test('register new user successfully', async ({ request }) => {
+  test("register new user successfully", async ({ request }) => {
     const user = uniqueUser();
     const { response, body } = await registerAPI(request, {
       username: user,
       email: `${user}@test.com`,
-      password: 'SecurePass123',
+      password: "SecurePass123",
     });
     expect(response.status()).toBe(201);
-    expect(body.message).toContain('pending');
+    expect(body.message).toContain("pending");
     expect(body.user.username).toBe(user);
   });
 
-  test('reject duplicate username', async ({ request }) => {
+  test("reject duplicate username", async ({ request }) => {
     const user = uniqueUser();
-    await registerAPI(request, { username: user, email: `${user}@test.com`, password: 'SecurePass123' });
-    const { response } = await registerAPI(request, { username: user, email: `${user}2@test.com`, password: 'SecurePass123' });
-    expect(response.status()).toBe(409);
-  });
-
-  test('reject duplicate email', async ({ request }) => {
-    const user1 = uniqueUser('dup1');
-    const user2 = uniqueUser('dup2');
-    const email = `shared_${Date.now()}@test.com`;
-    await registerAPI(request, { username: user1, email, password: 'SecurePass123' });
-    const { response } = await registerAPI(request, { username: user2, email, password: 'SecurePass123' });
-    expect(response.status()).toBe(409);
-  });
-
-  test('reject short username', async ({ request }) => {
+    await registerAPI(request, {
+      username: user,
+      email: `${user}@test.com`,
+      password: "SecurePass123",
+    });
     const { response } = await registerAPI(request, {
-      username: 'ab',
-      email: 'short@test.com',
-      password: 'SecurePass123',
+      username: user,
+      email: `${user}2@test.com`,
+      password: "SecurePass123",
+    });
+    expect(response.status()).toBe(409);
+  });
+
+  test("reject duplicate email", async ({ request }) => {
+    const user1 = uniqueUser("dup1");
+    const user2 = uniqueUser("dup2");
+    const email = `shared_${Date.now()}@test.com`;
+    await registerAPI(request, {
+      username: user1,
+      email,
+      password: "SecurePass123",
+    });
+    const { response } = await registerAPI(request, {
+      username: user2,
+      email,
+      password: "SecurePass123",
+    });
+    expect(response.status()).toBe(409);
+  });
+
+  test("reject short username", async ({ request }) => {
+    const { response } = await registerAPI(request, {
+      username: "ab",
+      email: "short@test.com",
+      password: "SecurePass123",
     });
     expect(response.status()).toBe(400);
   });
 
-  test('reject short password', async ({ request }) => {
+  test("reject short password", async ({ request }) => {
     const { response } = await registerAPI(request, {
       username: uniqueUser(),
-      email: 'short@test.com',
-      password: '1234567', // 7 chars
+      email: "short@test.com",
+      password: "1234567", // 7 chars
     });
     expect(response.status()).toBe(400);
   });
 
-  test('reject common password', async ({ request }) => {
+  test("reject common password", async ({ request }) => {
     const { response, body } = await registerAPI(request, {
       username: uniqueUser(),
-      email: 'common@test.com',
-      password: 'Password1234',
+      email: "common@test.com",
+      password: "Password1234",
     });
     expect(response.status()).toBe(400);
-    expect(body.error).toContain('common');
+    expect(body.error).toContain("common");
   });
 
   // ─── Login ──────────────────────────────────────────────────
 
-  test('admin can login', async ({ request }) => {
+  test("admin can login", async ({ request }) => {
     const { token, user, response } = await loginAPI(request);
     expect(response.status()).toBe(200);
     expect(token).toBeTruthy();
     expect(token).toMatch(/^[a-f0-9]{64}$/);
-    expect(user.role).toBe('admin');
+    expect(user.role).toBe("admin");
   });
 
-  test('reject wrong password', async ({ request }) => {
+  test("reject wrong password", async ({ request }) => {
     const res = await request.post(`${BASE_URL}/api/auth/login`, {
-      data: { username: ADMIN.username, password: 'wrongpassword' },
+      data: { username: ADMIN.username, password: "wrongpassword" },
     });
     expect(res.status()).toBe(401);
   });
 
-  test('reject non-existent user', async ({ request }) => {
+  test("reject non-existent user", async ({ request }) => {
     const res = await request.post(`${BASE_URL}/api/auth/login`, {
-      data: { username: 'nosuchuser', password: 'SecurePass123' },
+      data: { username: "nosuchuser", password: "SecurePass123" },
     });
     expect(res.status()).toBe(401);
   });
 
-  test('unapproved user cannot login', async ({ request }) => {
-    const user = uniqueUser('unapproved');
-    await registerAPI(request, { username: user, email: `${user}@test.com`, password: 'SecurePass123' });
+  test("unapproved user cannot login", async ({ request }) => {
+    const user = uniqueUser("unapproved");
+    await registerAPI(request, {
+      username: user,
+      email: `${user}@test.com`,
+      password: "SecurePass123",
+    });
     const res = await request.post(`${BASE_URL}/api/auth/login`, {
-      data: { username: user, password: 'SecurePass123' },
+      data: { username: user, password: "SecurePass123" },
     });
     expect(res.status()).toBe(401);
     const body = await res.json();
-    expect(body.error).toBe('Invalid username or password');
+    expect(body.error).toBe("Invalid username or password");
   });
 
-  test('approved user can login', async ({ request }) => {
-    const user = uniqueUser('approved');
-    const { body: regBody } = await registerAPI(request, { username: user, email: `${user}@test.com`, password: 'SecurePass123' });
+  test("approved user can login", async ({ request }) => {
+    const user = uniqueUser("approved");
+    const { body: regBody } = await registerAPI(request, {
+      username: user,
+      email: `${user}@test.com`,
+      password: "SecurePass123",
+    });
     const { token: adminToken } = await loginAPI(request);
     await approveUserAPI(request, adminToken, regBody.user.id);
 
     const res = await request.post(`${BASE_URL}/api/auth/login`, {
-      data: { username: user, password: 'SecurePass123' },
+      data: { username: user, password: "SecurePass123" },
     });
     expect(res.status()).toBe(200);
     const body = await res.json();
     expect(body.token).toBeTruthy();
   });
 
-  test('repeated failed logins for the same account are throttled', async ({ request }) => {
-    const user = uniqueUser('throttle');
+  test("repeated failed logins for the same account are throttled", async ({
+    request,
+  }) => {
+    const user = uniqueUser("throttle");
     const { body: regBody } = await registerAPI(request, {
       username: user,
       email: `${user}@test.com`,
-      password: 'ThrottlePass123',
+      password: "ThrottlePass123",
     });
     const { token: adminToken } = await loginAPI(request);
     await approveUserAPI(request, adminToken, regBody.user.id);
@@ -125,7 +158,7 @@ test.describe('Authentication', () => {
     let lastStatus = 0;
     for (let i = 0; i < 9; i += 1) {
       const res = await request.post(`${BASE_URL}/api/auth/login`, {
-        data: { username: user, password: 'wrong-password-value' },
+        data: { username: user, password: "wrong-password-value" },
       });
       lastStatus = res.status();
     }
@@ -135,7 +168,7 @@ test.describe('Authentication', () => {
 
   // ─── Session / Me ───────────────────────────────────────────
 
-  test('GET /api/auth/me returns current user', async ({ request }) => {
+  test("GET /api/auth/me returns current user", async ({ request }) => {
     const { token } = await loginAPI(request);
     const res = await request.get(`${BASE_URL}/api/auth/me`, {
       headers: { Authorization: `Bearer ${token}` },
@@ -143,17 +176,18 @@ test.describe('Authentication', () => {
     expect(res.status()).toBe(200);
     const body = await res.json();
     expect(body.username).toBe(ADMIN.username);
-    expect(body.role).toBe('admin');
+    expect(body.role).toBe("admin");
   });
 
-  test('session tokens are hashed at rest', async ({ request }) => {
+  test("session tokens are hashed at rest", async ({ request }) => {
     const { token, user } = await loginAPI(request);
     const client = createClient({
-      url: process.env.TURSO_DATABASE_URL || 'file:/tmp/project-overviewer-e2e.db'
+      url:
+        process.env.TURSO_DATABASE_URL || "file:/tmp/project-overviewer-e2e.db",
     });
     const result = await client.execute({
-      sql: 'SELECT token FROM sessions WHERE user_id = ? ORDER BY created_at DESC LIMIT 1',
-      args: [user.id]
+      sql: "SELECT token FROM sessions WHERE user_id = ? ORDER BY created_at DESC LIMIT 1",
+      args: [user.id],
     });
     client.close();
 
@@ -163,17 +197,21 @@ test.describe('Authentication', () => {
     expect(storedToken).toMatch(/^[a-f0-9]{64}$/);
   });
 
-  test('idle sessions expire server-side', async ({ request }) => {
+  test("idle sessions expire server-side", async ({ request }) => {
     const { token, user } = await loginAPI(request);
     const client = createClient({
-      url: process.env.TURSO_DATABASE_URL || 'file:/tmp/project-overviewer-e2e.db'
+      url:
+        process.env.TURSO_DATABASE_URL || "file:/tmp/project-overviewer-e2e.db",
     });
-    const tokenHash = crypto.createHash('sha256').update(String(token)).digest('hex');
+    const tokenHash = crypto
+      .createHash("sha256")
+      .update(String(token))
+      .digest("hex");
     const staleTimestamp = new Date(Date.now() - 31 * 60 * 1000).toISOString();
 
     await client.execute({
-      sql: 'UPDATE sessions SET last_seen_at = ? WHERE user_id = ? AND token = ?',
-      args: [staleTimestamp, user.id, tokenHash]
+      sql: "UPDATE sessions SET last_seen_at = ? WHERE user_id = ? AND token = ?",
+      args: [staleTimestamp, user.id, tokenHash],
     });
 
     const meRes = await request.get(`${BASE_URL}/api/auth/me`, {
@@ -182,29 +220,29 @@ test.describe('Authentication', () => {
     expect(meRes.status()).toBe(401);
 
     const sessionCheck = await client.execute({
-      sql: 'SELECT id FROM sessions WHERE user_id = ? AND token = ?',
-      args: [user.id, tokenHash]
+      sql: "SELECT id FROM sessions WHERE user_id = ? AND token = ?",
+      args: [user.id, tokenHash],
     });
     client.close();
 
     expect(sessionCheck.rows).toHaveLength(0);
   });
 
-  test('reject request without auth token', async ({ request }) => {
+  test("reject request without auth token", async ({ request }) => {
     const res = await request.get(`${BASE_URL}/api/projects`);
     expect(res.status()).toBe(401);
   });
 
-  test('reject request with invalid token', async ({ request }) => {
+  test("reject request with invalid token", async ({ request }) => {
     const res = await request.get(`${BASE_URL}/api/projects`, {
-      headers: { Authorization: 'Bearer fake-token-12345' },
+      headers: { Authorization: "Bearer fake-token-12345" },
     });
     expect(res.status()).toBe(401);
   });
 
   // ─── Logout ─────────────────────────────────────────────────
 
-  test('logout invalidates session', async ({ request }) => {
+  test("logout invalidates session", async ({ request }) => {
     const { token } = await loginAPI(request);
 
     // Logout
@@ -222,22 +260,26 @@ test.describe('Authentication', () => {
 
   // ─── Password Change ───────────────────────────────────────
 
-  test('change password', async ({ request }) => {
-    const user = uniqueUser('pwdchange');
-    const { body: regBody } = await registerAPI(request, { username: user, email: `${user}@test.com`, password: 'OldPass12345' });
+  test("change password", async ({ request }) => {
+    const user = uniqueUser("pwdchange");
+    const { body: regBody } = await registerAPI(request, {
+      username: user,
+      email: `${user}@test.com`,
+      password: "OldPass12345",
+    });
     const { token: adminToken } = await loginAPI(request);
     await approveUserAPI(request, adminToken, regBody.user.id);
 
     // Login as user
     const loginRes = await request.post(`${BASE_URL}/api/auth/login`, {
-      data: { username: user, password: 'OldPass12345' },
+      data: { username: user, password: "OldPass12345" },
     });
     const { token: userToken } = await loginRes.json();
 
     // Change password
     const changeRes = await request.put(`${BASE_URL}/api/auth/password`, {
       headers: { Authorization: `Bearer ${userToken}` },
-      data: { currentPassword: 'OldPass12345', newPassword: 'NewPass67890' },
+      data: { currentPassword: "OldPass12345", newPassword: "NewPass67890" },
     });
     expect(changeRes.status()).toBe(200);
 
@@ -249,35 +291,103 @@ test.describe('Authentication', () => {
 
     // Can login with new password
     const newLoginRes = await request.post(`${BASE_URL}/api/auth/login`, {
-      data: { username: user, password: 'NewPass67890' },
+      data: { username: user, password: "NewPass67890" },
     });
     expect(newLoginRes.status()).toBe(200);
   });
 
-  test('reject password change with wrong current password', async ({ request }) => {
+  test("reject password change with wrong current password", async ({
+    request,
+  }) => {
     const { token } = await loginAPI(request);
     const res = await request.put(`${BASE_URL}/api/auth/password`, {
       headers: { Authorization: `Bearer ${token}` },
-      data: { currentPassword: 'wrongpassword', newPassword: 'NewPass67890' },
+      data: { currentPassword: "wrongpassword", newPassword: "NewPass67890" },
     });
     expect(res.status()).toBe(401);
   });
 
-  test('reject password reuse on change', async ({ request }) => {
+  test("reject password reuse on change", async ({ request }) => {
     const { token } = await loginAPI(request);
     const res = await request.put(`${BASE_URL}/api/auth/password`, {
       headers: { Authorization: `Bearer ${token}` },
-      data: { currentPassword: 'SecureTestPass123', newPassword: 'SecureTestPass123' },
+      data: {
+        currentPassword: "SecureTestPass123",
+        newPassword: "SecureTestPass123",
+      },
     });
     expect(res.status()).toBe(400);
   });
 
-  test('reject common password on change', async ({ request }) => {
+  test("reject common password on change", async ({ request }) => {
     const { token } = await loginAPI(request);
     const res = await request.put(`${BASE_URL}/api/auth/password`, {
       headers: { Authorization: `Bearer ${token}` },
-      data: { currentPassword: 'SecureTestPass123', newPassword: 'Password123' },
+      data: {
+        currentPassword: "SecureTestPass123",
+        newPassword: "Password123",
+      },
     });
     expect(res.status()).toBe(400);
+  });
+
+  // ─── Settings UI: Change Password ──────────────────────────
+
+  test("change password via Settings UI (self-service)", async ({
+    page,
+    request,
+  }) => {
+    const username = uniqueUser("uipwd");
+    const { body: regBody } = await registerAPI(request, {
+      username,
+      email: `${username}@test.com`,
+      password: "OriginalUiPwd99",
+    });
+    const { token: adminToken } = await loginAPI(request);
+    await approveUserAPI(request, adminToken, regBody.user.id);
+
+    await loginUI(page, { username, password: "OriginalUiPwd99" });
+    await page.waitForURL(/\/(?:index\.html)?$/, { timeout: 5000 });
+    await page.click("#openSettings");
+    await page.fill("#currentPassword", "OriginalUiPwd99");
+    await page.fill("#newPassword", "NewUiPwd1234");
+    await page.fill("#confirmPassword", "NewUiPwd1234");
+    await page.click("#changePasswordSubmit");
+
+    await expect(page.locator("#changePasswordMessage.success")).toBeVisible({
+      timeout: 5000,
+    });
+    await expect(page.locator("#currentPassword")).toHaveValue("");
+
+    // Sign out (cookie cleared in browser is enough) and log back in with new password
+    await page.context().clearCookies();
+    await loginUI(page, { username, password: "NewUiPwd1234" });
+    await expect(page).toHaveURL(/\/(?:index\.html)?$/);
+  });
+
+  test("Settings UI rejects mismatched confirmation", async ({ page }) => {
+    await loginUI(page);
+    await page.waitForURL(/\/(?:index\.html)?$/, { timeout: 5000 });
+    await page.click("#openSettings");
+    await page.fill("#currentPassword", ADMIN.password);
+    await page.fill("#newPassword", "AnotherStrongPwd11");
+    await page.fill("#confirmPassword", "DifferentPwd1234");
+    await page.click("#changePasswordSubmit");
+    await expect(page.locator("#changePasswordMessage.error")).toContainText(
+      /do not match/i,
+    );
+  });
+
+  test("Settings UI rejects too-short new password", async ({ page }) => {
+    await loginUI(page);
+    await page.waitForURL(/\/(?:index\.html)?$/, { timeout: 5000 });
+    await page.click("#openSettings");
+    await page.fill("#currentPassword", ADMIN.password);
+    await page.fill("#newPassword", "short");
+    await page.fill("#confirmPassword", "short");
+    await page.click("#changePasswordSubmit");
+    await expect(page.locator("#changePasswordMessage.error")).toContainText(
+      /at least 12/i,
+    );
   });
 });

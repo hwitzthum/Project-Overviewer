@@ -7,9 +7,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Project Overviewer is a multi-user project and task management application with session-based authentication, role-based access control (RBAC), and team collaboration. It uses a client-server architecture with Express.js serving a modular single-page application (SPA) built with vanilla JavaScript.
 
 **Technology Stack:**
+
 - **Backend**: Node.js with Express.js
 - **Database**: LibSQL (`@libsql/client`) — SQLite-compatible; connects to local file or remote Turso cloud DB
-- **Frontend**: Modular vanilla JavaScript (23 JS modules, no framework), bundled by esbuild
+- **Frontend**: Modular vanilla JavaScript (24 JS modules, no framework), bundled by esbuild
 - **Build**: esbuild — content-hashed bundles in `public/dist/`
 - **Real-time**: WebSocket (`ws`) with long-polling fallback
 - **Auth**: Session-based with Bearer tokens and HttpOnly cookies (bcryptjs for password hashing)
@@ -21,6 +22,7 @@ Project Overviewer is a multi-user project and task management application with 
 - **Deployment**: Vercel-ready (`vercel.json`, serverless export in `api/index.js`)
 
 **Key Features:**
+
 - Multi-user authentication with admin approval workflow
 - Role-based access control (admin, user roles)
 - Team collaboration with workspace toggle (personal/team views)
@@ -48,12 +50,12 @@ Project Overviewer is a multi-user project and task management application with 
 
 ### Views and Navigation
 
-| View | What It Shows |
-|------|--------------|
-| All Projects | Every project, sorted and filtered to your preferences |
-| Kanban | Four drag-and-drop lanes (`backlog → completed`) with configurable WIP limits |
-| Focus | Your highest-priority in-progress work |
-| Status filters | Jump directly to any status bucket |
+| View           | What It Shows                                                                 |
+| -------------- | ----------------------------------------------------------------------------- |
+| All Projects   | Every project, sorted and filtered to your preferences                        |
+| Kanban         | Four drag-and-drop lanes (`backlog → completed`) with configurable WIP limits |
+| Focus          | Your highest-priority in-progress work                                        |
+| Status filters | Jump directly to any status bucket                                            |
 
 **Filters available:** status, priority, stakeholder, tag, smart filters (Overdue, Due Today, Due This Week)
 
@@ -61,15 +63,15 @@ Project Overviewer is a multi-user project and task management application with 
 
 ### Keyboard Shortcuts
 
-| Shortcut | Action |
-|----------|--------|
-| `N` | New project |
-| `Cmd+K` / `Ctrl+K` | Command palette |
-| `/` | Focus search |
-| `Cmd+I` / `Ctrl+I` | Statistics |
-| `Cmd+,` / `Ctrl+,` | Settings |
-| `Esc` | Close modal |
-| `?` | Show all shortcuts |
+| Shortcut           | Action             |
+| ------------------ | ------------------ |
+| `N`                | New project        |
+| `Cmd+K` / `Ctrl+K` | Command palette    |
+| `/`                | Focus search       |
+| `Cmd+I` / `Ctrl+I` | Statistics         |
+| `Cmd+,` / `Ctrl+,` | Settings           |
+| `Esc`              | Close modal        |
+| `?`                | Show all shortcuts |
 
 ### Solo Use Workflow
 
@@ -130,7 +132,7 @@ Project Overviewer is intentionally simple. The goal is a tool you can run, unde
    - `public/css/auth.css` — Auth page styles
    - `public/css/theme.css` — Theme variables
    - `public/dist/` — esbuild content-hashed bundles (3 bundles: boot, app-shell, app)
-   - 23 JS source modules in `public/js/` (see Frontend Modules below)
+   - 24 JS source modules in `public/js/` (see Frontend Modules below)
 
 2. **Auth & Middleware Layer** (`server.js`)
    - `requireAuth` middleware — validates session tokens (Bearer header or cookie)
@@ -156,12 +158,14 @@ Project Overviewer is intentionally simple. The goal is a tool you can run, unde
 ### Key Design Patterns
 
 **Database Access Pattern:**
+
 - All database functions are async and await `waitForDb()` before executing
 - This ensures the database schema is initialized before any queries run
 - UUID-based IDs for all entities (generated via `crypto.randomUUID()`)
 - SQLite WAL mode with performance PRAGMAs (`synchronous = NORMAL`, `cache_size = -8000`, `busy_timeout = 5000`)
 
 **Authentication Pattern:**
+
 - Registration requires admin approval before login is allowed
 - Sessions stored in database with 24-hour expiry
 - Token passed via `Authorization: Bearer <token>` header or `session_token` HttpOnly cookie
@@ -169,16 +173,19 @@ Project Overviewer is intentionally simple. The goal is a tool you can run, unde
 - Expired sessions cleaned on startup
 
 **Data Isolation Pattern:**
+
 - All project/task/note/setting queries include `user_id` parameter
 - Team mode: queries expand to include all team members' user IDs
 - Workspace mode setting (`personal` or `team`) controls data scope
 
 **API Response Pattern:**
+
 - Success: Returns JSON data with appropriate HTTP status codes
 - Error: Returns `{ error: "message" }` with 4xx/5xx status codes
 - All endpoints follow RESTful conventions
 
 **Frontend Module Pattern:**
+
 - Each module attaches its exports to `window` (e.g., `window.API`, `window.AppState`, `window.WS`, `window.Polling`)
 - Modules are bundled by esbuild into 3 bundles (boot, app-shell, app); globals make inter-module communication explicit
 - State managed in `state.js` closure, accessed via `window.AppState`
@@ -190,6 +197,7 @@ The frontend is a **modular vanilla JavaScript SPA bundled by esbuild**. 23 sour
 **State management**: `state.js` is a closure holding the application state (projects array, user settings, current user, active filters). Modules mutate state through explicit setters (`AppState.setProjects()`, `AppState.updateSettings()`) and then call render functions directly. No reactive system — data flow is explicit and debugger-traceable.
 
 **Event handling**: `events.js` uses **event delegation** — a single listener per major container (`#app`, `#projectModal`, etc.) handles all interactions via `event.target` matching. Two shared helpers inside `events.js` prevent duplication:
+
 - `handleDocAction(e, projectId)` — processes document-related clicks in both content area and modal
 - `wireTaskDrag(container)` — sets up task drag-and-drop in both card view and modal view
 
@@ -197,47 +205,51 @@ The frontend is a **modular vanilla JavaScript SPA bundled by esbuild**. 23 sour
 
 Located in `public/js/`, bundled into 3 esbuild outputs:
 
-| Module | Responsibility |
-|--------|---------------|
-| `boot.js` | Entry-point router: detects page (login, register, admin, main) and loads the correct bundle |
-| `index-guard.js` | Auth guard for protected pages — verifies session before rendering |
-| `api-client.js` | All `fetch()` calls with auth headers and error handling (`window.API`) |
-| `utils.js` | Date formatting, debounce, DOM helpers |
-| `state.js` | Central app state: projects, settings, current user (`window.AppState`) |
-| `toast.js` | Toast notification system |
-| `theme.js` | CSS custom property swapping for 5 themes |
-| `filters.js` | Search, filter, and sort logic (pure functions, no side effects) |
-| `render.js` | DOM construction: project cards, kanban lanes, task lists |
-| `projects.js` | Project CRUD: create, update, delete, reorder |
-| `tasks.js` | Task CRUD: create, toggle, update, delete, reorder |
-| `modals.js` | Modal lifecycle: open, populate, close, form submission |
-| `commands.js` | Command palette (`Cmd+K`) |
-| `dragdrop.js` | Kanban drag-and-drop (projects and tasks) |
-| `keyboard.js` | Keyboard shortcut registry |
-| `events.js` | Event delegation setup |
-| `team.js` | Team management UI and workspace toggle |
-| `ws-client.js` | WebSocket client for real-time sync (`window.WS`) |
-| `polling.js` | Long-polling fallback when WebSocket is unavailable (`window.Polling`) |
-| `app.js` | Bootstrap: load state, wire modules, initial render |
-| `login-page.js` | Login page initialization and form handling |
-| `register-page.js` | Registration page initialization and form handling |
-| `admin-page.js` | Admin panel: user management, approvals, global settings |
+| Module                | Responsibility                                                                               |
+| --------------------- | -------------------------------------------------------------------------------------------- |
+| `boot.js`             | Entry-point router: detects page (login, register, admin, main) and loads the correct bundle |
+| `index-guard.js`      | Auth guard for protected pages — verifies session before rendering                           |
+| `api-client.js`       | All `fetch()` calls with auth headers and error handling (`window.API`)                      |
+| `utils.js`            | Date formatting, debounce, DOM helpers                                                       |
+| `state.js`            | Central app state: projects, settings, current user (`window.AppState`)                      |
+| `toast.js`            | Toast notification system                                                                    |
+| `theme.js`            | CSS custom property swapping for 5 themes                                                    |
+| `filters.js`          | Search, filter, and sort logic (pure functions, no side effects)                             |
+| `render.js`           | DOM construction: project cards, kanban lanes, task lists                                    |
+| `projects.js`         | Project CRUD: create, update, delete, reorder                                                |
+| `tasks.js`            | Task CRUD: create, toggle, update, delete, reorder                                           |
+| `modals.js`           | Modal lifecycle: open, populate, close, form submission                                      |
+| `commands.js`         | Command palette (`Cmd+K`)                                                                    |
+| `dragdrop.js`         | Kanban drag-and-drop (projects and tasks)                                                    |
+| `keyboard.js`         | Keyboard shortcut registry                                                                   |
+| `events.js`           | Event delegation setup                                                                       |
+| `team.js`             | Team management UI and workspace toggle                                                      |
+| `account-settings.js` | Self-service Change Password form inside the Settings modal (`window.AccountSettings`)       |
+| `ws-client.js`        | WebSocket client for real-time sync (`window.WS`)                                            |
+| `polling.js`          | Long-polling fallback when WebSocket is unavailable (`window.Polling`)                       |
+| `app.js`              | Bootstrap: load state, wire modules, initial render                                          |
+| `login-page.js`       | Login page initialization and form handling                                                  |
+| `register-page.js`    | Registration page initialization and form handling                                           |
+| `admin-page.js`       | Admin panel: user management, approvals, password resets, global settings                    |
 
 ## Development Commands
 
 ### Starting the Application
 
 **Mac/Linux:**
+
 ```bash
 ./start.sh
 ```
 
 **Windows:**
+
 ```bash
 start.bat
 ```
 
 **Direct start (after dependencies installed):**
+
 ```bash
 npm start
 # or
@@ -249,11 +261,13 @@ The server runs on `http://localhost:3001` by default (configurable via `PORT` e
 ### Environment Configuration
 
 Copy `.env.example` to `.env` and configure:
+
 ```bash
 cp .env.example .env
 ```
 
 Key variables:
+
 - `ADMIN_USER` / `ADMIN_PASS` — Admin account created on first startup
 - `PORT` — Server port (default: 3001)
 - `NODE_ENV` — `development` or `production` (controls Secure cookie flag, rate limiting)
@@ -265,6 +279,7 @@ npm install
 ```
 
 Required dependencies:
+
 - `express` — Web server framework
 - `@libsql/client` — LibSQL/Turso database driver (SQLite-compatible, supports remote Turso or local file)
 - `bcryptjs` — Password hashing (pure JS, no native binaries)
@@ -278,6 +293,7 @@ Required dependencies:
 - `mammoth` — DOCX document parsing
 
 Dev dependencies:
+
 - `@playwright/test` — E2E testing framework
 - `esbuild` — Frontend bundler
 - `pino-pretty` — Dev-friendly log formatting
@@ -301,6 +317,7 @@ npx playwright test --headed
 ```
 
 Test files in `tests/e2e/` (216 tests across 15 spec files):
+
 - `auth.spec.js` — Authentication flows (register, login, logout, password change)
 - `projects-tasks.spec.js` — Project and task CRUD
 - `rbac.spec.js` — Role-based access control
@@ -319,6 +336,7 @@ Test files in `tests/e2e/` (216 tests across 15 spec files):
 - `helpers.js` — Shared test utilities
 
 Additional test files:
+
 - `tests/team-membership-migration.test.js` — Team membership data migration
 
 ### Database Operations
@@ -326,12 +344,14 @@ Additional test files:
 **Database file location:** `projects.db` in the project root
 
 **Reset database:**
+
 ```bash
 rm projects.db
 # Restart server to recreate with fresh schema
 ```
 
 **Inspect database:**
+
 ```bash
 sqlite3 projects.db
 sqlite> .tables
@@ -345,6 +365,7 @@ sqlite> .quit
 ### Backend Files
 
 **`server.js`** — Express application entry point. Mounts middleware and route modules from `routes/`. Every request passes through the same middleware stack:
+
 1. **Helmet** — security headers (CSP, X-Frame-Options, HSTS in production)
 2. **Rate limiting** — 200 req/15 min general, 20 req/15 min auth, 5/hr imports
 3. **Compression + body limits** — 2 MB general, 10 MB for uploads and imports
@@ -353,6 +374,7 @@ sqlite> .quit
 6. **Zod validation** — every endpoint that accepts input has a schema; invalid input returns 400 before business logic runs
 
 **`routes/`** — Modular route handlers (12 files):
+
 - `auth.js` — Registration, login, logout, password change, `/me`
 - `admin.js` — User management, approvals, global settings
 - `projects.js` — Project CRUD, reordering
@@ -375,6 +397,7 @@ Schema initialization uses `CREATE TABLE IF NOT EXISTS` throughout — every sta
 The project list endpoint uses a **bulk-fetch pattern**: 3 queries (all projects, all tasks, all documents) joined in JavaScript — replaces a 2N+1 query pattern.
 
 SQLite performance configuration:
+
 - WAL mode — readers don't block writers
 - `synchronous = NORMAL` — durable without full `FULL` overhead
 - `cache_size = -8000` — 8 MB page cache
@@ -401,6 +424,7 @@ SQLite performance configuration:
 ### Frontend Files
 
 **`public/index.html`** — SPA HTML shell
+
 - Loads esbuild bundles from `public/dist/` (boot, app-shell, app)
 - Loads CSS from `public/css/` (app.css, theme.css)
 - No inline JavaScript or CSS
@@ -410,12 +434,14 @@ SQLite performance configuration:
 **`public/admin.html`** — Admin panel (user management)
 
 **`public/css/app.css`** — Main application styles
+
 - CSS custom properties for theming
 - Five themes: Light, Dark, Ocean, Forest, Auto
 
 **`public/css/auth.css`** — Auth page styles (login, register, admin)
 
 **`public/js/api-client.js`** — Frontend API wrapper
+
 - Centralizes all fetch calls with auth token headers
 - Error handling and JSON parsing
 - Exported as global `window.API` object
@@ -435,25 +461,28 @@ SQLite performance configuration:
 ### Startup Scripts
 
 **`start.sh`** — Mac/Linux startup script
+
 - Checks for Node.js installation
 - Installs dependencies if `node_modules` missing
 - Starts the server
 
 **`start.bat`** — Windows startup script
+
 - Same functionality as `start.sh` for Windows
 
 ## Database Schema
 
 Ten tables in four logical groups:
 
-| Group | Tables | Purpose |
-|-------|--------|---------|
-| Auth | `users`, `sessions` | Accounts, session tokens |
-| Content | `projects`, `tasks`, `documents` | The actual work |
-| Collaboration | `teams`, `team_members` | Team and membership |
+| Group         | Tables                                                         | Purpose                    |
+| ------------- | -------------------------------------------------------------- | -------------------------- |
+| Auth          | `users`, `sessions`                                            | Accounts, session tokens   |
+| Content       | `projects`, `tasks`, `documents`                               | The actual work            |
+| Collaboration | `teams`, `team_members`                                        | Team and membership        |
 | Configuration | `global_settings`, `user_settings`, `quick_notes`, `templates` | Per-user and global config |
 
 **Key schema decisions:**
+
 - **UUID primary keys** (`crypto.randomUUID()`) everywhere — avoids sequential ID enumeration attacks and simplifies data portability
 - **User-scoped queries** — every content table has a `user_id` column; every read query filters by it (or expands to team member list in team mode)
 - **JSON columns** for `tags`, template `tasks`, and email `payload` — avoids schema migrations for list/object-shaped fields
@@ -461,6 +490,7 @@ Ten tables in four logical groups:
 - **`project_order` / `task_order` integers** per record — manual ordering without a separate join table
 
 ### users table
+
 ```sql
 id TEXT PRIMARY KEY              -- UUID
 username TEXT UNIQUE NOT NULL
@@ -473,6 +503,7 @@ updated_at TEXT DEFAULT CURRENT_TIMESTAMP
 ```
 
 ### sessions table
+
 ```sql
 id TEXT PRIMARY KEY
 user_id TEXT NOT NULL             -- Foreign key to users(id)
@@ -483,6 +514,7 @@ FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ```
 
 ### projects table
+
 ```sql
 id TEXT PRIMARY KEY              -- UUID
 user_id TEXT NOT NULL            -- Foreign key to users(id), data isolation
@@ -502,6 +534,7 @@ FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ```
 
 ### tasks table
+
 ```sql
 id TEXT PRIMARY KEY
 project_id TEXT NOT NULL          -- Foreign key to projects(id)
@@ -518,6 +551,7 @@ FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
 ```
 
 ### documents table
+
 ```sql
 id TEXT PRIMARY KEY
 project_id TEXT NOT NULL          -- Foreign key to projects(id)
@@ -532,6 +566,7 @@ FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
 ```
 
 ### teams table
+
 ```sql
 id TEXT PRIMARY KEY
 name TEXT NOT NULL
@@ -541,6 +576,7 @@ FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE CASCADE
 ```
 
 ### team_members table
+
 ```sql
 team_id TEXT NOT NULL
 user_id TEXT NOT NULL
@@ -552,6 +588,7 @@ FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ```
 
 ### global_settings table
+
 ```sql
 key TEXT PRIMARY KEY              -- Allowlisted keys only
 value TEXT                        -- JSON-encoded value
@@ -560,6 +597,7 @@ value TEXT                        -- JSON-encoded value
 Allowed keys: `registrationEnabled`, `maxProjectsPerUser`, `maxTasksPerProject`, `siteName`, `maintenanceMode`
 
 ### user_settings table
+
 ```sql
 user_id TEXT NOT NULL
 key TEXT NOT NULL                  -- Allowlisted keys only
@@ -571,6 +609,7 @@ FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 Allowed keys: `theme`, `defaultView`, `sortBy`, `showCompleted`, `showArchived`, `wipLimits`, `kanbanColumns`, `sidebarCollapsed`, `workspaceMode`
 
 ### quick_notes table
+
 ```sql
 id INTEGER PRIMARY KEY AUTOINCREMENT
 user_id TEXT NOT NULL
@@ -581,6 +620,7 @@ FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ```
 
 ### templates table
+
 ```sql
 id TEXT PRIMARY KEY
 name TEXT NOT NULL
@@ -590,6 +630,7 @@ tasks TEXT NOT NULL               -- JSON array of task titles
 ## API Endpoints
 
 ### Authentication
+
 - `POST /api/auth/register` — Register new user (pending approval)
 - `POST /api/auth/login` — Login (returns token + sets HttpOnly cookie)
 - `POST /api/auth/logout` — Logout (requires auth)
@@ -597,14 +638,17 @@ tasks TEXT NOT NULL               -- JSON array of task titles
 - `PUT /api/auth/password` — Change password (requires auth, invalidates other sessions)
 
 ### Admin (requires admin role)
+
 - `GET /api/admin/users` — List all users
 - `PUT /api/admin/users/:id/approve` — Approve user registration
 - `PUT /api/admin/users/:id/role` — Change user role
+- `PUT /api/admin/users/:id/password` — Reset another user's password (admin step-up required; revokes target sessions; cannot reset own password — use self-service)
 - `DELETE /api/admin/users/:id` — Delete user
 - `GET /api/admin/settings` — Get global settings
 - `POST /api/admin/settings/:key` — Set global setting
 
 ### Teams (requires auth)
+
 - `POST /api/teams` — Create team (user becomes owner)
 - `GET /api/teams/mine` — Get current user's team
 - `POST /api/teams/:id/members` — Add member by username (owner/admin only)
@@ -613,6 +657,7 @@ tasks TEXT NOT NULL               -- JSON array of task titles
 - `DELETE /api/teams/:id` — Delete team (owner/admin only)
 
 ### Projects (requires auth, user-scoped)
+
 - `GET /api/projects` — Get all projects with tasks (team-aware)
 - `GET /api/projects/:id` — Get single project with tasks (team-aware)
 - `POST /api/projects` — Create project
@@ -621,6 +666,7 @@ tasks TEXT NOT NULL               -- JSON array of task titles
 - `POST /api/projects/reorder` — Update project order (bulk)
 
 ### Tasks (requires auth, ownership-verified)
+
 - `GET /api/projects/:projectId/tasks` — Get tasks for project
 - `POST /api/projects/:projectId/tasks` — Create task
 - `PUT /api/tasks/:id` — Update task
@@ -628,17 +674,20 @@ tasks TEXT NOT NULL               -- JSON array of task titles
 - `POST /api/projects/:projectId/tasks/reorder` — Reorder tasks
 
 ### Documents (requires auth, ownership-verified)
+
 - `GET /api/projects/:projectId/documents` — List documents for project
 - `POST /api/projects/:projectId/documents` — Create document (email or docx)
 - `DELETE /api/documents/:id` — Delete document
 - `GET /api/documents/:id/download` — Download document file
 
 ### Settings (requires auth)
+
 - `GET /api/settings` — Get all user settings
 - `GET /api/settings/:key` — Get single user setting
 - `POST /api/settings/:key` — Set user setting
 
 ### Other (requires auth)
+
 - `GET /api/notes` — Get quick notes content
 - `POST /api/notes` — Save quick notes
 - `GET /api/templates` — Get all templates
@@ -646,6 +695,7 @@ tasks TEXT NOT NULL               -- JSON array of task titles
 - `POST /api/import` — Import data from JSON (user-scoped, rate-limited)
 
 ### Health (no auth)
+
 - `GET /api/health` — Database health check
 
 ## Common Development Tasks
@@ -694,6 +744,7 @@ npx playwright test --debug
 ```
 
 **Test notes:**
+
 - Rate limiting is disabled when `NODE_ENV=test`
 - `beforeAll` in Playwright does not receive the `request` fixture — use per-test login or helper functions
 - Avoid `!` and special bash chars in password test strings
@@ -702,6 +753,7 @@ npx playwright test --debug
 ### Testing the API
 
 Test manually with curl (auth required for most endpoints):
+
 ```bash
 # Register a user
 curl -X POST http://localhost:3001/api/auth/register \
@@ -729,23 +781,27 @@ curl http://localhost:3001/api/health
 ### Debugging
 
 **Server-side errors:**
+
 - Check terminal output where `node server.js` is running
 - Pino structured logs (pretty-printed in dev)
 - Set `LOG_LEVEL=debug` for verbose logging
 
 **Database issues:**
+
 - Delete `projects.db` and restart to recreate schema
 - Use `sqlite3 projects.db` to inspect data directly
 - Check for foreign key violations or constraint errors
 - Database uses WAL mode — may have `-wal` and `-shm` files alongside `projects.db`
 
 **Frontend issues:**
+
 - Open browser DevTools (F12)
 - Check Console tab for JavaScript errors
 - Check Network tab for failed API calls (look for 401/403 for auth issues)
 - API errors logged via `console.error()` in `public/js/api-client.js`
 
 **Auth issues:**
+
 - Check that user is approved (`approved = 1` in users table)
 - Check session hasn't expired (24-hour expiry)
 - Token must be in `Authorization: Bearer <token>` header or `session_token` cookie
@@ -753,6 +809,7 @@ curl http://localhost:3001/api/health
 ## Important Notes
 
 ### Database Initialization
+
 - The database uses a `waitForDb()` pattern to ensure schema is created before any queries
 - Server startup waits for database initialization before listening on port
 - Default templates are seeded on first run
@@ -760,25 +817,27 @@ curl http://localhost:3001/api/health
 - Expired sessions cleaned on startup
 
 ### Data Persistence
+
 - All data stored in SQLite database (`projects.db`) with WAL mode
 - No in-memory storage or mock data
 - Export/import features are user-scoped (each user exports only their data)
 
 ### Security
 
-| Layer | Control |
-|-------|---------|
-| Transport | HSTS header in production; `Secure` cookie flag requires HTTPS |
-| Headers | Helmet: CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy |
-| Rate limiting | 200 req/15 min general; 20 req/15 min auth; 5/hr import (disabled in `NODE_ENV=test`) |
-| Passwords | bcrypt with 12 salt rounds |
-| Sessions | 32-byte hex token; 24-hour expiry; invalidated on password change |
-| Authorization | Every data endpoint verifies `user_id` ownership or team membership before returning data |
-| Input | Zod schemas on all inputs; settings keys allowlisted server-side |
-| File downloads | MIME type allowlisting; filename sanitization |
-| Body limits | 2 MB general; 10 MB upload/import |
+| Layer          | Control                                                                                   |
+| -------------- | ----------------------------------------------------------------------------------------- |
+| Transport      | HSTS header in production; `Secure` cookie flag requires HTTPS                            |
+| Headers        | Helmet: CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy                     |
+| Rate limiting  | 200 req/15 min general; 20 req/15 min auth; 5/hr import (disabled in `NODE_ENV=test`)     |
+| Passwords      | bcrypt with 12 salt rounds                                                                |
+| Sessions       | 32-byte hex token; 24-hour expiry; invalidated on password change                         |
+| Authorization  | Every data endpoint verifies `user_id` ownership or team membership before returning data |
+| Input          | Zod schemas on all inputs; settings keys allowlisted server-side                          |
+| File downloads | MIME type allowlisting; filename sanitization                                             |
+| Body limits    | 2 MB general; 10 MB upload/import                                                         |
 
 ### Frontend Architecture
+
 - Modular vanilla JavaScript — 16 modules in `public/js/`, no build step required
 - Modules communicate via `window` globals (no import/export)
 - Load order matters — dependencies must be loaded before dependents
@@ -786,12 +845,14 @@ curl http://localhost:3001/api/health
 - No state management library; state managed in `state.js`
 
 ### Team Collaboration
+
 - Users can belong to one team at a time
 - Team owner (creator) cannot leave — must delete team or transfer ownership
 - Workspace mode setting controls whether team or personal data is shown
 - Default workspace mode is `team` (shows all team members' projects)
 
 ### Graceful Shutdown
+
 - Server handles `SIGINT` (Ctrl+C) and `SIGTERM`
 - In-flight requests drained before shutdown
 - Database connection closed cleanly on shutdown
@@ -799,5 +860,6 @@ curl http://localhost:3001/api/health
 - Safe to stop server without data loss
 
 ### Port Configuration
+
 - Default port: 3001
 - Override with environment variable: `PORT=4000 npm start`
