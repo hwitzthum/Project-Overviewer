@@ -463,7 +463,7 @@ app.use(
 app.use("/api", (req, res, next) => {
   if (
     SAFE_HTTP_METHODS.has(req.method) &&
-    !/\/documents\/[^/]+\/download$/.test(req.path)
+    !/\/documents\/[^\/]+\/download$/.test(req.path)
   ) {
     res.setHeader("Cache-Control", "private, no-cache, must-revalidate");
     res.setHeader("Vary", "Authorization, Cookie");
@@ -776,13 +776,13 @@ if (z.object && z.string && typeof z.string === "function") {
 
 async function requireAuth(req, res, next) {
   try {
-    const token =
-      req.headers.authorization?.replace("Bearer ", "") ||
-      req.cookies?.session_token;
-    const hasSessionCookie = Boolean(req.cookies?.session_token);
     const hasBearerToken =
       typeof req.headers.authorization === "string" &&
       req.headers.authorization.startsWith("Bearer ");
+    const token =
+      (hasBearerToken ? req.headers.authorization.slice(7) : null) ||
+      req.cookies?.session_token;
+    const hasSessionCookie = Boolean(req.cookies?.session_token);
 
     if (!token) {
       logSecurityEvent("auth.session.missing", {
@@ -1004,14 +1004,24 @@ function getSafeDocumentFileName(document) {
     .substring(0, 200);
 }
 
-// Simple cookie parser (avoid extra dependency)
+// Simple cookie parser (avoid extra dependency).
+// Values are percent-decoded so that req.cookies is consistent with
+// readCookieValue() which also calls decodeURIComponent. Malformed
+// percent-sequences are treated as literal strings.
 app.use((req, res, next) => {
   req.cookies = {};
   const cookieHeader = req.headers.cookie;
   if (cookieHeader) {
     cookieHeader.split(";").forEach((cookie) => {
       const [name, ...rest] = cookie.trim().split("=");
-      req.cookies[name.trim()] = rest.join("=");
+      const rawValue = rest.join("=");
+      let value = rawValue;
+      try {
+        value = decodeURIComponent(rawValue);
+      } catch {
+        // Leave value as-is if decoding fails (malformed %-sequence)
+      }
+      req.cookies[name.trim()] = value;
     });
   }
   next();
