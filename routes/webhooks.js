@@ -9,26 +9,40 @@ function isPrivateIP(ip) {
   // IPv4 private/reserved ranges
   if (net.isIPv4(ip)) {
     const parts = ip.split('.').map(Number);
-    if (parts[0] === 10) return true;                              // 10.0.0.0/8
-    if (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) return true; // 172.16.0.0/12
-    if (parts[0] === 192 && parts[1] === 168) return true;        // 192.168.0.0/16
-    if (parts[0] === 127) return true;                              // 127.0.0.0/8
-    if (parts[0] === 169 && parts[1] === 254) return true;        // 169.254.0.0/16 (link-local + metadata)
-    if (parts[0] === 0) return true;                                // 0.0.0.0/8
+    if (parts[0] === 0) return true;                               // 0.0.0.0/8 (this host)
+    if (parts[0] === 10) return true;                              // 10.0.0.0/8 (private)
+    if (parts[0] === 100 && parts[1] >= 64 && parts[1] <= 127) return true; // 100.64.0.0/10 (CGNAT)
+    if (parts[0] === 127) return true;                             // 127.0.0.0/8 (loopback)
+    if (parts[0] === 169 && parts[1] === 254) return true;        // 169.254.0.0/16 (link-local / cloud metadata)
+    if (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) return true; // 172.16.0.0/12 (private)
+    if (parts[0] === 192 && parts[1] === 0 && parts[2] === 0) return true;  // 192.0.0.0/24 (IETF Protocol Assignments)
+    if (parts[0] === 192 && parts[1] === 0 && parts[2] === 2) return true;  // 192.0.2.0/24 (TEST-NET-1, documentation)
+    if (parts[0] === 192 && parts[1] === 168) return true;        // 192.168.0.0/16 (private)
+    if (parts[0] === 198 && parts[1] >= 18 && parts[1] <= 19) return true;  // 198.18.0.0/15 (benchmark testing)
+    if (parts[0] === 198 && parts[1] === 51 && parts[2] === 100) return true; // 198.51.100.0/24 (TEST-NET-2, documentation)
+    if (parts[0] === 203 && parts[1] === 0 && parts[2] === 113) return true;  // 203.0.113.0/24 (TEST-NET-3, documentation)
+    if (parts[0] >= 224 && parts[0] <= 239) return true;          // 224.0.0.0/4 (multicast)
+    if (parts[0] >= 240) return true;                              // 240.0.0.0/4 (reserved/future use) + 255.255.255.255
     return false;
   }
-  // IPv6 loopback, link-local, ULA, and IPv6-mapped IPv4
+  // IPv6 loopback, link-local, ULA, multicast, and IPv6-mapped IPv4
   if (net.isIPv6(ip)) {
     const normalized = ip.toLowerCase();
-    if (normalized === '::1') return true;
-    if (normalized.startsWith('fe80:')) return true;
-    if (normalized.startsWith('fc') || normalized.startsWith('fd')) return true; // ULA
-    // IPv6-mapped IPv4 (e.g. ::ffff:127.0.0.1, ::ffff:10.0.0.1)
-    const v4mapped = normalized.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
+    if (normalized === '::' || normalized === '::1') return true;  // unspecified + loopback
+    if (normalized.startsWith('fe80:')) return true;               // link-local
+    if (normalized.startsWith('fc') || normalized.startsWith('fd')) return true; // ULA (fc00::/7)
+    if (normalized.startsWith('ff')) return true;                  // multicast (ff00::/8)
+    // IPv6-mapped IPv4 (::ffff:a.b.c.d) and IPv4-translated (::ffff:0:a.b.c.d)
+    const v4mapped = normalized.match(/^::ffff:(?:0:)?(\d+\.\d+\.\d+\.\d+)$/);
     if (v4mapped && isPrivateIP(v4mapped[1])) return true;
+    // Discard prefix (100::/64) — used for Teredo and similar
+    if (normalized.startsWith('100::')) return true;
+    // Documentation ranges (2001:db8::/32)
+    if (normalized.startsWith('2001:db8:')) return true;
     return false;
   }
-  return false;
+  // Unknown address family — block by default
+  return true;
 }
 
 async function validateWebhookUrl(urlStr) {

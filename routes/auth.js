@@ -361,8 +361,11 @@ module.exports = function createAuthRouter({
 
   router.post("/logout", requireAuth, async (req, res) => {
     try {
+      const hasBearerInLogout =
+        typeof req.headers.authorization === "string" &&
+        req.headers.authorization.startsWith("Bearer ");
       const token =
-        req.headers.authorization?.replace("Bearer ", "") ||
+        (hasBearerInLogout ? req.headers.authorization.slice(7) : null) ||
         req.cookies?.session_token;
       await db.deleteSession(token);
 
