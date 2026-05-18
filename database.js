@@ -795,6 +795,24 @@ async function createUser(
   return { id, username, email, role, approved };
 }
 
+// Returns the user row WITHOUT password_hash. Use this everywhere except
+// login and password-change flows that must verify a credential.
+async function getUserById(id) {
+  await waitForDb();
+  return await get(
+    "SELECT id, username, email, role, approved, created_at, updated_at FROM users WHERE id = ?",
+    [id],
+  );
+}
+
+// Returns the full user row INCLUDING password_hash. Only call this when
+// you genuinely need to compare or update the stored credential (e.g. the
+// change-password endpoint). Never expose the result to API responses.
+async function getUserByIdWithHash(id) {
+  await waitForDb();
+  return await get("SELECT * FROM users WHERE id = ?", [id]);
+}
+
 async function getUserByUsername(username) {
   await waitForDb();
   return await get("SELECT * FROM users WHERE username = ?", [username]);
@@ -803,11 +821,6 @@ async function getUserByUsername(username) {
 async function getUserByEmail(email) {
   await waitForDb();
   return await get("SELECT * FROM users WHERE email = ?", [email]);
-}
-
-async function getUserById(id) {
-  await waitForDb();
-  return await get("SELECT * FROM users WHERE id = ?", [id]);
 }
 
 async function getAllUsers() {
@@ -2399,6 +2412,7 @@ module.exports = {
   getUserByUsername,
   getUserByEmail,
   getUserById,
+  getUserByIdWithHash,
   getAllUsers,
   updateUser,
   deleteUser,

@@ -22,13 +22,24 @@ const COMMON_PASSWORDS = new Set([
   'welcome123'
 ]);
 
+// IMPORTANT: Do NOT trim the password here. The raw password (with any leading/
+// trailing whitespace) is what gets hashed. Trimming before validation but not
+// before hashing would create an inconsistency where a password that passes
+// validation is stored as a different (untrimmed) hash, breaking login for
+// users whose passwords include surrounding whitespace. If trimming is desired
+// for display purposes, do it only in the UI layer — never before hashing.
 function normalizePassword(value) {
-  return String(value || '').trim();
+  return String(value || '');
 }
 
 function getMinimumPasswordLength(role = 'user') {
   return role === 'admin' ? MIN_ADMIN_PASSWORD_LENGTH : MIN_PASSWORD_LENGTH;
 }
+
+// Detects passwords consisting of a single repeated character (e.g. 'aaaaaaaaaa').
+// Written as new RegExp to preserve the \1 backreference through tooling that
+// may mangle regex literals containing backslash sequences.
+const REPEATED_CHAR_REGEX = new RegExp('^(.)\\1{7,}$');
 
 function validatePasswordPolicy({ password, username = '', email = '', role = 'user' }) {
   const normalizedPassword = normalizePassword(password);
@@ -62,7 +73,7 @@ function validatePasswordPolicy({ password, username = '', email = '', role = 'u
     };
   }
 
-  if (/^(.)\1{7,}$/.test(normalizedPassword)) {
+  if (REPEATED_CHAR_REGEX.test(normalizedPassword)) {
     return {
       valid: false,
       message: 'Password is too easy to guess.',

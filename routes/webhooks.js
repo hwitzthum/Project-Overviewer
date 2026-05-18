@@ -87,14 +87,16 @@ async function validateWebhookUrl(urlStr) {
 module.exports = function createWebhooksRouter({ db, logger, schemas, requireAuth }) {
   const router = express.Router();
 
-  // GET / — list user's webhooks (secret redacted)
+  // GET / — list user's webhooks (secret fully redacted)
   router.get('/', requireAuth, async (req, res) => {
     try {
       const webhooks = await db.getWebhooksByUser(req.user.userId);
-      // Redact secrets in list response
+      // Redact secrets in list response: show only a fixed placeholder so that
+      // no portion of the secret value (not even the last 4 chars) is disclosed
+      // to the client. The full secret is only needed by the receiving endpoint.
       const safe = webhooks.map(w => ({
         ...w,
-        secret: w.secret ? `****${w.secret.slice(-4)}` : undefined
+        secret: w.secret ? '****' : undefined
       }));
       res.json(safe);
     } catch (error) {

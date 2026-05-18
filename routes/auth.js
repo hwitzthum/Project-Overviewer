@@ -428,7 +428,9 @@ module.exports = function createAuthRouter({
       }
 
       const { currentPassword, newPassword } = req.body;
-      const user = await db.getUserById(req.user.userId);
+      // Use getUserByIdWithHash here because we need to verify the stored
+      // credential. The plain getUserById intentionally omits password_hash.
+      const user = await db.getUserByIdWithHash(req.user.userId);
       const passwordMatch = await bcrypt.compare(
         currentPassword,
         user.password_hash,
