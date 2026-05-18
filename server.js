@@ -177,8 +177,12 @@ try {
   logger.warn("compression not installed — running without gzip");
 }
 
-// Rate limiting (disabled in test environment)
-if (process.env.NODE_ENV !== "test") {
+// Rate limiting.
+// Use DISABLE_RATE_LIMIT=1 to turn off rate limiting (e.g. in test runners).
+// Tying this to NODE_ENV=test is avoided because a misconfigured production
+// deployment that happens to set NODE_ENV=test would silently lose all
+// rate-limit protection.
+if (process.env.DISABLE_RATE_LIMIT !== "1") {
   let rateLimit;
   try {
     rateLimit = require("express-rate-limit");
