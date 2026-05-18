@@ -22,8 +22,14 @@ const COMMON_PASSWORDS = new Set([
   'welcome123'
 ]);
 
+// IMPORTANT: Do NOT trim the password here. The raw password (with any leading/
+// trailing whitespace) is what gets hashed. Trimming before validation but not
+// before hashing would create an inconsistency where a password that appears
+// valid is actually stored as a different (longer) hash, breaking login for
+// users whose passwords include surrounding whitespace. If you need display-safe
+// text, trim in the UI layer only — never before hashing.
 function normalizePassword(value) {
-  return String(value || '').trim();
+  return String(value || '');
 }
 
 function getMinimumPasswordLength(role = 'user') {
@@ -62,7 +68,7 @@ function validatePasswordPolicy({ password, username = '', email = '', role = 'u
     };
   }
 
-  if (/^(.)\1{7,}$/.test(normalizedPassword)) {
+  if (/^(.)\ 1{7,}$/.test(normalizedPassword)) {
     return {
       valid: false,
       message: 'Password is too easy to guess.',
