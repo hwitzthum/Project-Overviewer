@@ -25,10 +25,11 @@ function compact(value) {
 }
 
 function getClientIp(req) {
-  const forwardedFor = req?.headers?.['x-forwarded-for'];
-  if (typeof forwardedFor === 'string' && forwardedFor.trim()) {
-    return forwardedFor.split(',')[0].trim();
-  }
+  // Use Express's pre-resolved req.ip (trust proxy = 1 on Vercel → rightmost
+  // XFF entry, appended by Vercel's edge and not attacker-controllable).
+  // Do NOT parse x-forwarded-for directly: the leftmost entry is set by the
+  // client and would allow an attacker to poison security log entries with a
+  // spoofed source IP.
   return req?.ip || req?.socket?.remoteAddress || undefined;
 }
 
