@@ -177,6 +177,15 @@ function decodeStakeholderView(view) {
   }
 }
 
+function decodeTagView(view) {
+  const tagKey = view.replace('tag-', '');
+  try {
+    return decodeURIComponent(tagKey);
+  } catch (error) {
+    return tagKey;
+  }
+}
+
 function parseWipLimit(value) {
   if (value === null || value === undefined || value === '') return null;
   const parsed = Number.parseInt(value, 10);

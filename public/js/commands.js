@@ -64,7 +64,7 @@ function renderCommands(query) {
         <div class="command-item-title">${escapeHtml(cmd.title)}</div>
         <div class="command-item-desc">${escapeHtml(cmd.desc)}</div>
       </div>
-      ${cmd.shortcut ? `<span class="command-item-shortcut">${cmd.shortcut}</span>` : ''}
+      ${cmd.shortcut ? `<span class="command-item-shortcut">${escapeHtml(cmd.shortcut)}</span>` : ''}
     </div>
   `).join('');
 

@@ -27,7 +27,7 @@ function renderProjectCard(project, options) {
         <span class="project-card-compact-title">${escapeHtml(project.title)}</span>
         <span class="project-status status-${project.status}">${formatStatus(project.status)}</span>
         ${totalTasks > 0 ? `<span class="project-meta-item">✓ ${completedTasks}/${totalTasks}</span>` : ''}
-        ${project.dueDate ? `<span class="project-meta-item project-due${dueInfo.overdue ? ' overdue' : dueInfo.dueSoon ? ' due-soon' : ''}">📅 ${dueInfo.text}</span>` : ''}
+        ${project.dueDate ? `<span class="project-meta-item project-due${dueInfo.overdue ? ' overdue' : dueInfo.dueSoon ? ' due-soon' : ''}">📅 ${escapeHtml(dueInfo.text)}</span>` : ''}
         ${hasBlockedTask ? `<span class="card-blocked-badge" title="Has blocked tasks">⛔ blocked</span>` : ''}
         ${daysInStatus !== null && daysInStatus > 0
           ? `<span class="card-cycle-time${cycleClass}" title="Days in current status">${daysInStatus}d</span>`
@@ -60,7 +60,7 @@ function renderProjectCard(project, options) {
         ` : ''}
         ${project.dueDate ? `
           <span class="project-meta-item project-due${dueInfo.overdue ? ' overdue' : dueInfo.dueSoon ? ' due-soon' : ''}">
-            📅 ${dueInfo.text}
+            📅 ${escapeHtml(dueInfo.text)}
           </span>
         ` : ''}
         ${totalTasks > 0 ? `
@@ -111,7 +111,7 @@ function renderProjectCard(project, options) {
                 data-project-id="${project.id}" data-task-id="${task.id}" aria-label="Task title" ${disabledAttr}>
               ${task.dueDate ? `
                 <div class="task-meta">
-                  <span>📅 ${formatDate(task.dueDate).text}</span>
+                  <span>📅 ${escapeHtml(formatDate(task.dueDate).text)}</span>
                 </div>
               ` : ''}
               ${task.subtasks && task.subtasks.length > 0 ? `<span class="subtask-count">(+${task.subtasks.length} subtask${task.subtasks.length !== 1 ? 's' : ''})</span>` : ''}

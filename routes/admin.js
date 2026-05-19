@@ -99,7 +99,7 @@ module.exports = function createAdminRouter({
       return false;
     }
 
-    const adminUser = await db.getUserById(req.user.userId);
+    const adminUser = await db.getUserByIdWithHash(req.user.userId);
     const passwordMatch = adminUser
       ? await bcrypt.compare(adminPassword, adminUser.password_hash)
       : false;
