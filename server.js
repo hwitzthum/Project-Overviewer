@@ -1195,6 +1195,21 @@ app.get("/*splat", async (req, res, next) => {
   }
 });
 
+// ========== GLOBAL ERROR HANDLER ==========
+// Must be the last app.use() call with 4 arguments so Express recognises it
+// as an error-handling middleware. Catches anything passed via next(err) and
+// ensures no raw error messages or stack traces are sent to the client.
+// eslint-disable-next-line no-unused-vars
+app.use((err, req, res, _next) => {
+  logger.error({ err, path: req.path, method: req.method }, "Unhandled route error");
+  if (res.headersSent) return;
+  if (req.path.startsWith("/api/")) {
+    res.status(500).json({ error: "Internal server error" });
+  } else {
+    res.status(500).type("text/plain").send("Internal server error");
+  }
+});
+
 // ========== START SERVER ==========
 
 async function seedAdminUser() {

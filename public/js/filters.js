@@ -133,7 +133,7 @@ function getFilteredProjects() {
         const stakeholder = decodeStakeholderView(currentView);
         filtered = projects.filter(p => (p.stakeholder || '') === stakeholder);
       } else if (currentView.startsWith('tag-')) {
-        const tag = currentView.replace('tag-', '');
+        const tag = decodeTagView(currentView);
         filtered = projects.filter(p => p.tags?.includes(tag));
       }
   }
@@ -300,14 +300,19 @@ function updateCounts() {
     const tagEntries = [...c.tagCounts.entries()];
     const tagDataKey = tagEntries.map(([t, c]) => t + ':' + c).join('|');
     if (el.tagsList && tagDataKey !== _lastTagsHtml) {
-      // Data changed — full rebuild (values are escapeHtml()-sanitized per existing pattern)
-      el.tagsList.innerHTML = tagEntries.map(([tag, count]) => `
-        <div class="nav-item${currentView === 'tag-' + tag ? ' active' : ''}" data-view="tag-${escapeHtml(tag)}" tabindex="0" role="button">
-          <span class="nav-item-icon">\u{1F3F7}\uFE0F</span>
-          <span>${escapeHtml(tag)}</span>
-          <span class="nav-item-count">${count}</span>
-        </div>
-      `).join('');
+      // Data changed — full rebuild. Use encodeURIComponent for data-view (consistent with
+      // stakeholders) so that special characters in tag names cannot break HTML attribute
+      // boundaries. escapeHtml() is used for visible text content.
+      el.tagsList.innerHTML = tagEntries.map(([tag, count]) => {
+        const tagKey = encodeURIComponent(tag);
+        return `
+          <div class="nav-item${currentView === 'tag-' + tagKey ? ' active' : ''}" data-view="tag-${tagKey}" tabindex="0" role="button">
+            <span class="nav-item-icon">\u{1F3F7}\uFE0F</span>
+            <span>${escapeHtml(tag)}</span>
+            <span class="nav-item-count">${count}</span>
+          </div>
+        `;
+      }).join('');
       _lastTagsHtml = tagDataKey;
     } else if (el.tagsList) {
       el.tagsList.querySelectorAll('.nav-item').forEach(item => {

@@ -93,6 +93,14 @@ module.exports = function createWebSocketServer({ server, db, logger, eventBus, 
       if (info) info.alive = true;
     });
 
+    // Clients are notification-only; they should never send messages to the server.
+    // Reject and terminate any client that sends data to prevent abuse.
+    ws.on('message', () => {
+      logger.warn({ userId: ws.userId }, 'WebSocket client sent unexpected message — terminating');
+      clients.delete(ws);
+      ws.terminate();
+    });
+
     ws.on('close', () => {
       clients.delete(ws);
       logger.debug({ userId: ws.userId }, 'WebSocket client disconnected');
