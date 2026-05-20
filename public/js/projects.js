@@ -31,6 +31,19 @@ function openCreateProjectModal() {
   createProjectPending = false;
   document.getElementById('createProjectSubmit').disabled = false;
   updatePriorityControls('createStatus', 'createPriority', 'createPriorityGroup');
+
+  const templateSelect = document.getElementById('createTemplate');
+  if (templateSelect) {
+    templateSelect.innerHTML = '<option value="">— No template —</option>';
+    (state.templates || []).forEach(t => {
+      const opt = document.createElement('option');
+      opt.value = t.id;
+      const count = (t.tasks || []).length;
+      opt.textContent = `${t.name} (${count} task${count !== 1 ? 's' : ''})`;
+      templateSelect.appendChild(opt);
+    });
+  }
+
   openModal('createProjectModal');
   setTimeout(() => document.getElementById('createTitle')?.focus(), 0);
 }
@@ -78,6 +91,23 @@ async function submitCreateProject() {
     };
 
     const createdProject = await API.createProject(project);
+
+    const templateId = document.getElementById('createTemplate')?.value;
+    if (templateId) {
+      const template = (state.templates || []).find(t => t.id === templateId);
+      if (template?.tasks?.length > 0) {
+        try {
+          const bulkTasks = template.tasks.map((task, i) => ({
+            title: typeof task === 'string' ? task : String(task?.title ?? task),
+            tempId: String(i + 1)
+          }));
+          await API.createTasksBulk(createdProject.id, bulkTasks);
+        } catch (taskError) {
+          console.error('Failed to apply template tasks:', taskError);
+        }
+      }
+    }
+
     setState(s => ({ projects: [...s.projects, createdProject] }));
     closeModal('createProjectModal');
     setRenderHint({ type: 'project-add', projectId: createdProject.id });
