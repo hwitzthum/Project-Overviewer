@@ -52,11 +52,20 @@ module.exports = function createWebhookDispatcher({ db, logger, eventBus }) {
       ? Number(parsedUrl.port)
       : (isHttps ? 443 : 80);
 
-    // Resolve hostname → addresses and check every result
+    // Resolve hostname → addresses using the same pure-DNS path as registration
+    // time (routes/webhooks.js).  dns.lookup() uses getaddrinfo() which consults
+    // /etc/hosts and NSS — an attacker could pre-stage a local hosts entry, or
+    // a fast DNS rebind between registration and dispatch could swap the address.
+    // resolve4/resolve6 bypass those OS layers and go straight to the DNS resolver.
     let addresses;
     try {
-      const records = await dns.lookup(hostname, { all: true });
-      addresses = records.map(r => r.address);
+      const [v4result, v6result] = await Promise.allSettled([
+        dns.resolve4(hostname),
+        dns.resolve6(hostname),
+      ]);
+      const v4addrs = v4result.status === 'fulfilled' ? v4result.value : [];
+      const v6addrs = v6result.status === 'fulfilled' ? v6result.value : [];
+      addresses = [...v4addrs, ...v6addrs];
     } catch (err) {
       throw new Error(`DNS resolution failed for ${hostname}: ${err.message}`);
     }
