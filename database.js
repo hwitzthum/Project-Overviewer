@@ -705,6 +705,21 @@ async function initDatabase() {
         sql: "CREATE INDEX IF NOT EXISTS idx_projects_user_id_archived ON projects(user_id, archived)",
         args: [],
       },
+      // Login attempt tracking — persists across serverless invocations so
+      // per-IP brute-force limits are not reset between function cold-starts.
+      {
+        sql: `CREATE TABLE IF NOT EXISTS login_attempts (
+        throttle_key TEXT PRIMARY KEY,
+        failures INTEGER NOT NULL DEFAULT 0,
+        blocked_until INTEGER NOT NULL DEFAULT 0,
+        last_failure_at INTEGER NOT NULL DEFAULT 0
+      )`,
+        args: [],
+      },
+      {
+        sql: "CREATE INDEX IF NOT EXISTS idx_login_attempts_last_failure ON login_attempts(last_failure_at)",
+        args: [],
+      },
     ],
     "write",
   );
@@ -2395,6 +2410,52 @@ async function healthCheck() {
   }
 }
 
+// ========== LOGIN ATTEMPT TRACKING ==========
+// DB-backed so brute-force counters survive serverless cold-starts and are
+// shared across all function instances.
+
+async function getLoginAttemptState(throttleKey, windowMs) {
+  await waitForDb();
+  const now = Date.now();
+  const cutoff = now - windowMs;
+  const row = await get(
+    "SELECT failures, blocked_until, last_failure_at FROM login_attempts WHERE throttle_key = ?",
+    [throttleKey],
+  );
+  if (!row || row.last_failure_at < cutoff) {
+    return { failures: 0, blockedUntil: 0, lastFailureAt: 0 };
+  }
+  return {
+    failures: row.failures,
+    blockedUntil: row.blocked_until,
+    lastFailureAt: row.last_failure_at,
+  };
+}
+
+async function recordLoginAttempt(throttleKey, state) {
+  await waitForDb();
+  await run(
+    `INSERT INTO login_attempts (throttle_key, failures, blocked_until, last_failure_at)
+     VALUES (?, ?, ?, ?)
+     ON CONFLICT(throttle_key) DO UPDATE SET
+       failures = excluded.failures,
+       blocked_until = excluded.blocked_until,
+       last_failure_at = excluded.last_failure_at`,
+    [throttleKey, state.failures, state.blockedUntil, state.lastFailureAt],
+  );
+}
+
+async function clearLoginAttempts(throttleKey) {
+  await waitForDb();
+  await run("DELETE FROM login_attempts WHERE throttle_key = ?", [throttleKey]);
+}
+
+async function pruneExpiredLoginAttempts(windowMs) {
+  await waitForDb();
+  const cutoff = Date.now() - windowMs;
+  await run("DELETE FROM login_attempts WHERE last_failure_at < ?", [cutoff]);
+}
+
 // ========== GRACEFUL SHUTDOWN ==========
 
 function closeDatabase() {
@@ -2475,6 +2536,11 @@ module.exports = {
   deleteWebhook,
   // Health
   healthCheck,
+  // Login attempt tracking
+  getLoginAttemptState,
+  recordLoginAttempt,
+  clearLoginAttempts,
+  pruneExpiredLoginAttempts,
   // Utility
   generateId,
   closeDatabase,

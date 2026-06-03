@@ -21,19 +21,7 @@ module.exports = function createAuthRouter({
   const LOGIN_DELAY_THRESHOLD = 3;
   const LOGIN_BLOCK_THRESHOLD = 8;
   const MAX_LOGIN_DELAY_MS = 1500;
-  const LOGIN_TRACK_CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
-  const MAX_LOGIN_TRACKER_SIZE = 10000;
 
-  // SECURITY NOTE: loginAttemptTracker is an in-process Map. This means:
-  //   1. Throttle state is lost on every process restart, allowing an attacker
-  //      to bypass rate limits by restarting (or targeting multiple instances).
-  //   2. In multi-instance (clustered/serverless) deployments each instance
-  //      maintains a separate counter, so the effective threshold is multiplied
-  //      by the number of instances.
-  // For production deployments that require persistent, cross-instance throttling,
-  // move this state to a shared store (e.g. Redis, or the SQLite DB via
-  // db.recordLoginAttempt / db.getLoginAttempts helper functions).
-  const loginAttemptTracker = new Map();
   const dummyPasswordHash = bcrypt.hashSync(
     "project-overviewer-dummy-password",
     bcryptRounds,
@@ -53,78 +41,27 @@ module.exports = function createAuthRouter({
       .toLowerCase()}|${getClientIp(req)}`;
   }
 
-  function pruneLoginAttemptTracker(now = Date.now()) {
-    for (const [key, value] of loginAttemptTracker.entries()) {
-      if (
-        !value?.lastFailureAt ||
-        now - value.lastFailureAt > LOGIN_TRACK_WINDOW_MS
-      ) {
-        loginAttemptTracker.delete(key);
-      }
-    }
-
-    if (loginAttemptTracker.size <= MAX_LOGIN_TRACKER_SIZE) {
-      return;
-    }
-
-    // Tracker is over capacity. To avoid an O(n log n) sort on a potentially
-    // large Map, evict the oldest 50% of entries by lastFailureAt rather than
-    // sorting the entire set. This keeps the worst-case work bounded while
-    // still preferring to retain the most-recently-active keys.
-    const half = Math.floor(loginAttemptTracker.size / 2);
-    const entries = [...loginAttemptTracker.entries()]
-      .sort(
-        (left, right) =>
-          (left[1]?.lastFailureAt || 0) - (right[1]?.lastFailureAt || 0),
-      )
-      .slice(0, half);
-
-    for (const [key] of entries) {
-      loginAttemptTracker.delete(key);
-    }
-  }
-
-  const loginAttemptCleanupInterval = setInterval(() => {
-    pruneLoginAttemptTracker();
-  }, LOGIN_TRACK_CLEANUP_INTERVAL_MS);
-  loginAttemptCleanupInterval.unref?.();
-
-  function getLoginAttemptState(key) {
+  async function recordLoginFailure(key) {
     const now = Date.now();
-    pruneLoginAttemptTracker(now);
-    const existing = loginAttemptTracker.get(key);
-    if (!existing) return { failures: 0, blockedUntil: 0, lastFailureAt: 0 };
-
-    if (now - existing.lastFailureAt > LOGIN_TRACK_WINDOW_MS) {
-      loginAttemptTracker.delete(key);
-      return { failures: 0, blockedUntil: 0, lastFailureAt: 0 };
-    }
-
-    return existing;
-  }
-
-  function recordLoginFailure(key) {
-    const now = Date.now();
-    const current = getLoginAttemptState(key);
+    const current = await db.getLoginAttemptState(key, LOGIN_TRACK_WINDOW_MS);
     const failures = current.failures + 1;
     const delayExponent = Math.max(0, failures - LOGIN_DELAY_THRESHOLD);
     const blockedUntil =
       now + Math.min(MAX_LOGIN_DELAY_MS, 100 * 2 ** delayExponent);
     const nextState = { failures, blockedUntil, lastFailureAt: now };
-    loginAttemptTracker.set(key, nextState);
-    if (loginAttemptTracker.size > MAX_LOGIN_TRACKER_SIZE) {
-      pruneLoginAttemptTracker(now);
-    }
+    await db.recordLoginAttempt(key, nextState);
+    // Best-effort cleanup of stale entries on writes; errors are non-fatal.
+    db.pruneExpiredLoginAttempts(LOGIN_TRACK_WINDOW_MS).catch(() => {});
     return nextState;
   }
 
-  function clearLoginFailures(key) {
-    loginAttemptTracker.delete(key);
+  async function clearLoginFailures(key) {
+    await db.clearLoginAttempts(key);
   }
 
   async function applyLoginDelay(req, username) {
     const key = getThrottleKey(req, username);
-    const state = getLoginAttemptState(key);
+    const state = await db.getLoginAttemptState(key, LOGIN_TRACK_WINDOW_MS);
     const now = Date.now();
 
     if (state.failures >= LOGIN_BLOCK_THRESHOLD && state.blockedUntil > now) {
@@ -285,7 +222,7 @@ module.exports = function createAuthRouter({
       const user = await db.getUserByUsername(username);
       if (!user) {
         await bcrypt.compare(password, dummyPasswordHash);
-        recordLoginFailure(throttle.key);
+        await recordLoginFailure(throttle.key);
         logSecurityEvent("auth.login.failed", {
           req,
           statusCode: 401,
@@ -297,7 +234,7 @@ module.exports = function createAuthRouter({
 
       const passwordMatch = await bcrypt.compare(password, user.password_hash);
       if (!passwordMatch) {
-        recordLoginFailure(throttle.key);
+        await recordLoginFailure(throttle.key);
         logSecurityEvent("auth.login.failed", {
           req,
           statusCode: 401,
@@ -310,7 +247,7 @@ module.exports = function createAuthRouter({
       }
 
       if (!user.approved) {
-        recordLoginFailure(throttle.key);
+        await recordLoginFailure(throttle.key);
         logSecurityEvent("auth.login.denied", {
           req,
           statusCode: 401,
@@ -322,7 +259,7 @@ module.exports = function createAuthRouter({
         return res.status(401).json({ error: GENERIC_LOGIN_ERROR });
       }
 
-      clearLoginFailures(throttle.key);
+      await clearLoginFailures(throttle.key);
       const session = await db.createSession(user.id);
       setSessionCookie(res, session.token);
 
