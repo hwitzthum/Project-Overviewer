@@ -7,12 +7,14 @@ const https = require('https');
 const { validateWebhookUrl, isPrivateIP } = require('./routes/webhooks');
 
 /**
- * Fire-and-forget webhook dispatcher.
+ * Fire-and-forget webhook dispatcher with automatic retry.
  * Subscribes to the EventBus and POSTs matching events to registered webhook URLs.
- * No retry logic in v1 — failures are logged and dropped.
+ * Failed deliveries are retried up to MAX_DELIVERY_ATTEMPTS times with exponential backoff.
  */
 module.exports = function createWebhookDispatcher({ db, logger, eventBus }) {
   const DISPATCH_TIMEOUT_MS = 10000;
+  const MAX_DELIVERY_ATTEMPTS = 3;
+  const RETRY_BASE_DELAY_MS = 2000;
 
   function signPayload(body, secret, timestamp) {
     const hmac = crypto.createHmac('sha256', secret);
@@ -122,6 +124,36 @@ module.exports = function createWebhookDispatcher({ db, logger, eventBus }) {
     });
   }
 
+  /**
+   * Deliver a webhook payload with exponential-backoff retries.
+   * Attempts: 1 (immediate), 2 (after 2 s), 3 (after 4 s).
+   * Non-2xx HTTP responses are treated as failures and retried.
+   */
+  async function deliverWithRetry(webhookId, url, headers, body, eventType) {
+    for (let attempt = 1; attempt <= MAX_DELIVERY_ATTEMPTS; attempt++) {
+      try {
+        const status = await safePost(url, headers, body);
+        if (status >= 200 && status < 300) return; // success
+        logger.warn(
+          { webhookId, url, event: eventType, status, attempt, maxAttempts: MAX_DELIVERY_ATTEMPTS },
+          'Webhook returned non-2xx, retrying'
+        );
+      } catch (err) {
+        logger.warn(
+          { webhookId, url, event: eventType, err: err.message, attempt, maxAttempts: MAX_DELIVERY_ATTEMPTS },
+          'Webhook delivery error, retrying'
+        );
+      }
+      if (attempt < MAX_DELIVERY_ATTEMPTS) {
+        await new Promise(r => setTimeout(r, RETRY_BASE_DELAY_MS * Math.pow(2, attempt - 1)));
+      }
+    }
+    logger.warn(
+      { webhookId, url, event: eventType, maxAttempts: MAX_DELIVERY_ATTEMPTS },
+      'Webhook delivery gave up after max retries'
+    );
+  }
+
   async function dispatch(eventType, payload) {
     try {
       const userId = payload.userId;
@@ -166,8 +198,9 @@ module.exports = function createWebhookDispatcher({ db, logger, eventBus }) {
         // Step 2 + 3: resolve hostname → verify IP → connect to IP directly.
         // This eliminates the TOCTOU gap: there is no separate fetch() call
         // that could be redirected by a DNS rebind after our validation.
-        // Fire-and-forget — don't await
-        safePost(
+        // Fire-and-forget — don't await; retries happen inside deliverWithRetry.
+        deliverWithRetry(
+          webhook.id,
           webhook.url,
           {
             'Content-Type': 'application/json',
@@ -175,11 +208,12 @@ module.exports = function createWebhookDispatcher({ db, logger, eventBus }) {
             'X-Webhook-Timestamp': timestamp,
             'X-Webhook-Event': eventType
           },
-          body
+          body,
+          eventType
         ).catch(err => {
-          logger.warn(
-            { webhookId: webhook.id, url: webhook.url, event: eventType, err: err.message },
-            'Webhook delivery failed'
+          logger.error(
+            { webhookId: webhook.id, err: err.message },
+            'Unexpected error in webhook delivery loop'
           );
         });
       }
