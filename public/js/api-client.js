@@ -105,7 +105,7 @@ class API {
       method: "POST",
       body: JSON.stringify({ username, password }),
     });
-    this.setToken(result.token);
+    // Token is delivered via HttpOnly session_token cookie; never included in the response body.
     return result;
   }
 

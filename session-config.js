@@ -6,7 +6,7 @@ function parsePositiveInt(value, fallback, minimum = 1) {
   return parsed;
 }
 
-const SESSION_TOKEN_BYTES = parsePositiveInt(process.env.SESSION_TOKEN_BYTES, 32, 16);
+const SESSION_TOKEN_BYTES = parsePositiveInt(process.env.SESSION_TOKEN_BYTES, 32, 32);
 const SESSION_ABSOLUTE_TIMEOUT_MS = parsePositiveInt(
   process.env.SESSION_ABSOLUTE_TIMEOUT_MS,
   24 * 60 * 60 * 1000,
