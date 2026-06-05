@@ -177,7 +177,7 @@ Open **http://localhost:3001** and log in with your admin credentials.
 - 🔌 **Backend**: `server.js` entry point with 12 route modules in `routes/`
 - 💾 **Database**: SQLite with WAL mode (concurrent reads + reliable writes)
 - 🔒 **Security**: Helmet, rate limiting, Zod validation, bcrypt hashing
-- ✅ **Tests**: 93 Playwright E2E tests (auth, CRUD, RBAC, security)
+- ✅ **Tests**: 216 Playwright E2E tests (auth, CRUD, RBAC, security)
 - 📖 **Documentation**: Fully documented codebase + architecture guide
 
 **Total lines of code:** ~6000 across modular routes and utilities. Still understand it in a day or two.
@@ -721,7 +721,7 @@ Project Overviewer is **intentionally simple**. It prioritizes:
 
 | Layer          | Technology                                     | Why                                                                        |
 | -------------- | ---------------------------------------------- | -------------------------------------------------------------------------- |
-| **Frontend**   | Vanilla JavaScript (23 modules, esbuild)       | No framework overhead; explicit dependency graph; bundled for optimization |
+| **Frontend**   | Vanilla JavaScript (24 modules, esbuild)       | No framework overhead; explicit dependency graph; bundled for optimization |
 | **Backend**    | Express.js (modular routes)                    | Clean separation by domain (auth, projects, tasks, etc.); easy to extend   |
 | **Database**   | SQLite with WAL mode                           | Reliable, concurrent, zero setup                                           |
 | **Auth**       | Session tokens (Bearer + HttpOnly)             | Stateful; simple; compatible with browsers; security event logging         |
@@ -754,7 +754,7 @@ Project Overviewer is **intentionally simple**. It prioritizes:
 └─────────────────────────────────┘
 ```
 
-### Frontend: 23 Modular JS Files
+### Frontend: 24 Modular JS Files
 
 Source modules in `public/js/` are bundled by esbuild into 3 content-hashed bundles in `public/dist/`:
 
