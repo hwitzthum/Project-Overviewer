@@ -34,24 +34,11 @@ module.exports = function createExportImportRouter({ db, logger, schemas, requir
         return res.status(400).json({ error: 'Invalid import data' });
       }
 
-      for (const project of req.body.projects || []) {
-        for (const document of project.documents || []) {
-          if (document?.type !== 'docx') continue;
-          const inspection = inspectDocumentPayload(document, { allowMimeInference: true });
-          if (!inspection.valid) {
-            logSecurityEvent('document.import.rejected', {
-              req,
-              statusCode: 400,
-              reason: inspection.reason,
-              severity: 'medium'
-            });
-            return res.status(400).json({ error: 'Import contains an invalid document payload' });
-          }
-          document.mimeType = inspection.safeMimeType;
-        }
-      }
-
       if (schemas.importData) {
+        // Validate schema first so array-size and field-length limits are
+        // enforced before any document inspection (which decodes base64 and
+        // does MIME inference — expensive operations we must not run on
+        // unbounded attacker-controlled input).
         const result = schemas.importData.safeParse(req.body);
         if (!result.success) {
           logSecurityEvent('data.import.rejected', {
@@ -62,6 +49,24 @@ module.exports = function createExportImportRouter({ db, logger, schemas, requir
           });
           return res.status(400).json({ error: 'Invalid import data', details: result.error.issues });
         }
+
+        for (const project of result.data.projects || []) {
+          for (const document of project.documents || []) {
+            if (document?.type !== 'docx') continue;
+            const inspection = inspectDocumentPayload(document, { allowMimeInference: true });
+            if (!inspection.valid) {
+              logSecurityEvent('document.import.rejected', {
+                req,
+                statusCode: 400,
+                reason: inspection.reason,
+                severity: 'medium'
+              });
+              return res.status(400).json({ error: 'Import contains an invalid document payload' });
+            }
+            document.mimeType = inspection.safeMimeType;
+          }
+        }
+
         await db.importData(req.user.userId, result.data);
         logSecurityEvent('data.import.success', {
           req,
