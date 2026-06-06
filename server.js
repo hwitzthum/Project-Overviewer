@@ -177,6 +177,12 @@ try {
   logger.warn("compression not installed — running without gzip");
 }
 
+if (process.env.DISABLE_RATE_LIMIT === "1" && process.env.NODE_ENV === "production") {
+  throw new Error(
+    "DISABLE_RATE_LIMIT=1 is not allowed in production. This flag is only for test runners.",
+  );
+}
+
 // Rate limiting.
 // Use DISABLE_RATE_LIMIT=1 to turn off rate limiting (e.g. in test runners).
 // Tying this to NODE_ENV=test is avoided because a misconfigured production
