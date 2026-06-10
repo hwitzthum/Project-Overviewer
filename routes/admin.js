@@ -18,43 +18,37 @@ module.exports = function createAdminRouter({
   const STEPUP_DELAY_THRESHOLD = 2;
   const STEPUP_BLOCK_THRESHOLD = 5;
   const MAX_STEPUP_DELAY_MS = 3000;
-  const stepUpAttemptTracker = new Map();
 
   function getStepUpKey(req) {
     return `${req.user.userId}|${req.ip || "unknown"}`;
   }
 
-  function getStepUpState(key) {
-    const now = Date.now();
-    const existing = stepUpAttemptTracker.get(key);
-    if (!existing || now - existing.lastFailureAt > STEPUP_TRACK_WINDOW_MS) {
-      stepUpAttemptTracker.delete(key);
-      return { failures: 0, blockedUntil: 0, lastFailureAt: 0 };
-    }
-    return existing;
+  // DB-backed helpers — safe across serverless instances (no in-memory Map).
+  async function getStepUpState(key) {
+    return db.getLoginAttemptState("stepup:" + key, STEPUP_TRACK_WINDOW_MS);
   }
 
-  function recordStepUpFailure(key) {
+  async function recordStepUpFailure(key) {
     const now = Date.now();
-    const current = getStepUpState(key);
+    const current = await getStepUpState(key);
     const failures = current.failures + 1;
     const delayExponent = Math.max(0, failures - STEPUP_DELAY_THRESHOLD);
     const blockedUntil =
       now + Math.min(MAX_STEPUP_DELAY_MS, 200 * 2 ** delayExponent);
-    stepUpAttemptTracker.set(key, {
+    await db.recordLoginAttempt("stepup:" + key, {
       failures,
       blockedUntil,
       lastFailureAt: now,
     });
   }
 
-  function clearStepUpFailures(key) {
-    stepUpAttemptTracker.delete(key);
+  async function clearStepUpFailures(key) {
+    await db.clearLoginAttempts("stepup:" + key);
   }
 
   async function requireAdminStepUp(req, res) {
     const key = getStepUpKey(req);
-    const state = getStepUpState(key);
+    const state = await getStepUpState(key);
     const now = Date.now();
 
     if (state.failures >= STEPUP_BLOCK_THRESHOLD && state.blockedUntil > now) {
@@ -85,7 +79,7 @@ module.exports = function createAdminRouter({
 
     const adminPassword = String(req.body?.adminPassword || "");
     if (!adminPassword) {
-      recordStepUpFailure(key);
+      await recordStepUpFailure(key);
       logSecurityEvent("admin.reauth.failed", {
         req,
         statusCode: 401,
@@ -104,7 +98,7 @@ module.exports = function createAdminRouter({
       ? await bcrypt.compare(adminPassword, adminUser.password_hash)
       : false;
     if (!passwordMatch) {
-      recordStepUpFailure(key);
+      await recordStepUpFailure(key);
       logSecurityEvent("admin.reauth.failed", {
         req,
         statusCode: 401,
@@ -118,7 +112,7 @@ module.exports = function createAdminRouter({
       return false;
     }
 
-    clearStepUpFailures(key);
+    await clearStepUpFailures(key);
     return true;
   }
 
