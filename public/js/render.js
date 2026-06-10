@@ -114,6 +114,7 @@ function renderProjectCard(project, options) {
                   <span>📅 ${escapeHtml(formatDate(task.dueDate).text)}</span>
                 </div>
               ` : ''}
+              ${task.recurring ? `<span class="task-recurring-badge" title="Repeats ${task.recurring}">↺</span>` : ''}
               ${task.subtasks && task.subtasks.length > 0 ? `<span class="subtask-count">(+${task.subtasks.length} subtask${task.subtasks.length !== 1 ? 's' : ''})</span>` : ''}
             </div>
           </div>
@@ -392,6 +393,15 @@ function renderModalTaskItem(task, project, isArchived, isSubtask) {
         <option value="medium" ${task.priority === 'medium' ? 'selected' : ''}>Med</option>
         <option value="high" ${task.priority === 'high' ? 'selected' : ''}>High</option>
       </select>
+      ${!isSubtask ? `
+      <select class="modal-task-recurring" aria-label="Repeat" title="Repeat"
+        data-project-id="${project.id}" data-task-id="${task.id}" ${disabledAttr}>
+        <option value="" ${!task.recurring ? 'selected' : ''}>No repeat</option>
+        <option value="daily" ${task.recurring === 'daily' ? 'selected' : ''}>Daily</option>
+        <option value="weekly" ${task.recurring === 'weekly' ? 'selected' : ''}>Weekly</option>
+        <option value="monthly" ${task.recurring === 'monthly' ? 'selected' : ''}>Monthly</option>
+      </select>
+      ` : ''}
       ${isArchived ? '' : `
         ${isSubtask ? '' : `
         <button class="btn-icon btn-icon-small modal-task-move" data-direction="up"

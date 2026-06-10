@@ -1421,6 +1421,27 @@ textarea:focus {
   cursor: default;
 }
 
+.modal-task-recurring {
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 3px 5px;
+  font-size: 11px;
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.modal-task-recurring:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.task-recurring-badge {
+  font-size: 11px;
+  color: var(--accent, #6366f1);
+  title: "Recurring";
+}
+
 .task-priority-high {
   background: rgba(var(--danger-rgb, 239, 68, 68), 0.15);
   color: var(--danger);
