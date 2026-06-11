@@ -507,6 +507,13 @@ function initProjectModalDelegation() {
       updateTaskFields(projectId, taskId, { priority });
     }
 
+    if (e.target.classList.contains('modal-task-recurring')) {
+      const projectId = e.target.dataset.projectId;
+      const taskId = e.target.dataset.taskId;
+      const recurring = e.target.value || null;
+      updateTaskFields(projectId, taskId, { recurring });
+    }
+
     if (e.target.classList.contains('docx-input')) {
       const projectId = e.target.dataset.projectId;
       const file = e.target.files && e.target.files[0];
