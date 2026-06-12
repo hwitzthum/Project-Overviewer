@@ -64,6 +64,10 @@ async function validateWebhookUrl(urlStr) {
   if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1' || hostname === '0.0.0.0') {
     return 'Localhost URLs are not allowed';
   }
+  // Reject IPv6 zone IDs (e.g. fe80::1%eth0): net.isIP() strips the scope
+  // suffix before checking, which would bypass the fe80:: link-local guard.
+  if (hostname.includes('%')) return 'IPv6 zone IDs are not allowed';
+
   // If hostname is already an IP, check directly
   if (net.isIP(hostname)) {
     if (isPrivateIP(hostname)) return 'Private/internal IP addresses are not allowed';

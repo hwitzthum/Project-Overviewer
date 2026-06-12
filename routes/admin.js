@@ -94,9 +94,20 @@ module.exports = function createAdminRouter({
     }
 
     const adminUser = await db.getUserByIdWithHash(req.user.userId);
-    const passwordMatch = adminUser
-      ? await bcrypt.compare(adminPassword, adminUser.password_hash)
-      : false;
+    // Re-check admin role: the JWT/session may have been created before a role
+    // demotion, so the requireAdmin middleware check alone is not sufficient.
+    if (!adminUser || adminUser.role !== 'admin') {
+      logSecurityEvent("admin.reauth.failed", {
+        req,
+        statusCode: 403,
+        reason: "role_revoked",
+        outcome: "denied",
+        severity: "high",
+      });
+      res.status(403).json({ error: "Administrator privileges required" });
+      return false;
+    }
+    const passwordMatch = await bcrypt.compare(adminPassword, adminUser.password_hash);
     if (!passwordMatch) {
       await recordStepUpFailure(key);
       logSecurityEvent("admin.reauth.failed", {
