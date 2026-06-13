@@ -171,7 +171,7 @@ Open **http://localhost:3001** and log in with your admin credentials.
 
 ### For Developers: Dead-Simple Architecture
 
-**Minimal tooling. Maximum clarity. 23 JS modules + modular Express routes + SQLite.**
+**Minimal tooling. Maximum clarity. 24 JS modules + modular Express routes + SQLite.**
 
 - 📝 **Frontend**: Modular vanilla JavaScript (no React or Vue), bundled by esbuild
 - 🔌 **Backend**: `server.js` entry point with 12 route modules in `routes/`
@@ -818,9 +818,9 @@ Source modules in `public/js/` are bundled by esbuild into 3 content-hashed bund
 
 **Why modular routes?** Easier to navigate, extend, and test. Each domain is self-contained.
 
-### Database: 10 Tables, User-Scoped Queries
+### Database: 13 Tables, User-Scoped Queries
 
-**Schema** (10 tables across 4 groups):
+**Schema** (13 tables across 4 groups):
 
 - **Auth**: users, sessions
 - **Content**: projects, tasks, documents
