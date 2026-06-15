@@ -114,7 +114,7 @@ function renderProjectCard(project, options) {
                   <span>📅 ${escapeHtml(formatDate(task.dueDate).text)}</span>
                 </div>
               ` : ''}
-              ${task.recurring ? `<span class="task-recurring-badge" title="Repeats ${task.recurring}">↺</span>` : ''}
+              ${task.recurring ? `<span class="task-recurring-badge" title="Repeats ${escapeHtml(task.recurring)}">↺</span>` : ''}
               ${task.subtasks && task.subtasks.length > 0 ? `<span class="subtask-count">(+${task.subtasks.length} subtask${task.subtasks.length !== 1 ? 's' : ''})</span>` : ''}
             </div>
           </div>
