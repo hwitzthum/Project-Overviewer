@@ -876,12 +876,33 @@ function parseHeaderOrigin(value) {
 
 function requireSameOriginCookieWrite(req, res, next) {
   if (SAFE_HTTP_METHODS.has(req.method)) return next();
+
+  // Login CSRF: even though there is no session cookie yet (so the normal
+  // cookie-presence guard below can't run), browsers always send an Origin
+  // header on cross-origin POSTs. Block any login/register request whose
+  // Origin doesn't match the app origin. Requests with no Origin header
+  // (e.g. same-origin fetches, curl) are allowed — they cannot be forged
+  // by a cross-origin page.
   if (
     req.path === "/auth/login" ||
     req.path === "/auth/register" ||
     req.path === "/v1/auth/login" ||
     req.path === "/v1/auth/register"
   ) {
+    const sourceOrigin = parseHeaderOrigin(req.headers.origin);
+    if (sourceOrigin) {
+      const expectedOrigin = getExpectedOrigin(req);
+      if (!expectedOrigin || sourceOrigin !== expectedOrigin) {
+        logSecurityEvent("request.same_origin_rejected", {
+          req,
+          statusCode: 403,
+          reason: "login_csrf_origin_mismatch",
+          expectedOrigin,
+          sourceOrigin,
+        });
+        return res.status(403).json({ error: "Cross-site request rejected" });
+      }
+    }
     return next();
   }
 
