@@ -2445,6 +2445,83 @@ async function recordLoginAttempt(throttleKey, state) {
   );
 }
 
+/**
+ * Atomically increment the failure counter for a throttle key and compute the
+ * correct blocked_until in a single transaction, eliminating the race condition
+ * where concurrent serverless invocations each read the same (stale) failure
+ * count and independently write back failures+1.
+ *
+ * The blocked_until delay schedule:
+ *   delay = min(maxDelayMs, baseDelayMs * 2 ^ max(0, failures - delayThreshold))
+ *
+ * @param {string}  throttleKey
+ * @param {number}  windowMs          — stale-entry cutoff window in ms
+ * @param {number}  delayThreshold    — failures before exponential delay kicks in
+ * @param {number}  blockThreshold    — failures before hard block
+ * @param {number}  maxDelayMs        — maximum delay cap in ms
+ * @param {number}  now               — current epoch-ms
+ * @param {number}  [baseDelayMs=100] — base delay multiplier in ms (default 100)
+ * @returns {Promise<{ failures: number, blockedUntil: number }>}
+ */
+async function atomicIncrementLoginAttempt(
+  throttleKey,
+  windowMs,
+  delayThreshold,
+  blockThreshold,
+  maxDelayMs,
+  now,
+  baseDelayMs = 100,
+) {
+  await waitForDb();
+  const cutoff = now - windowMs;
+
+  // Precompute all possible blocked_until values for failure counts 1..blockThreshold+
+  // so the SQL CASE can select the right one without floating-point or power() support.
+  // We need values for failures 1 through blockThreshold (and beyond, all capped).
+  const blockedUntilValues = [];
+  for (let f = 1; f <= blockThreshold + 1; f++) {
+    const exp = Math.max(0, f - delayThreshold);
+    const delay = Math.min(maxDelayMs, baseDelayMs * 2 ** exp);
+    blockedUntilValues.push(now + delay);
+  }
+  const capValue = blockedUntilValues[blockedUntilValues.length - 1]; // for f > blockThreshold+1
+
+  // Build CASE WHEN for failures 1..blockThreshold; above that use cap value.
+  const caseParts = blockedUntilValues.map((val, i) => `WHEN ${i + 1} THEN ${val}`);
+  const caseExpr = `CASE new_failures ${caseParts.join(' ')} ELSE ${capValue} END`;
+
+  // Use a CTE to compute new_failures first, then derive blocked_until.
+  // LibSQL/SQLite supports CTEs and WITH.
+  await run(
+    `WITH computed AS (
+       SELECT
+         CASE WHEN last_failure_at < ? THEN 1 ELSE failures + 1 END AS new_failures
+       FROM login_attempts
+       WHERE throttle_key = ?
+     )
+     INSERT INTO login_attempts (throttle_key, failures, blocked_until, last_failure_at)
+     VALUES (
+       ?,
+       1,
+       ${blockedUntilValues[0]},
+       ?
+     )
+     ON CONFLICT(throttle_key) DO UPDATE SET
+       failures = (SELECT new_failures FROM computed),
+       blocked_until = (SELECT ${caseExpr} FROM computed),
+       last_failure_at = ?`,
+    [cutoff, throttleKey, throttleKey, now, now],
+  );
+
+  const row = await get(
+    "SELECT failures, blocked_until FROM login_attempts WHERE throttle_key = ?",
+    [throttleKey],
+  );
+  return row
+    ? { failures: row.failures, blockedUntil: row.blocked_until }
+    : { failures: 1, blockedUntil: blockedUntilValues[0] };
+}
+
 async function clearLoginAttempts(throttleKey) {
   await waitForDb();
   await run("DELETE FROM login_attempts WHERE throttle_key = ?", [throttleKey]);
@@ -2539,6 +2616,7 @@ module.exports = {
   // Login attempt tracking
   getLoginAttemptState,
   recordLoginAttempt,
+  atomicIncrementLoginAttempt,
   clearLoginAttempts,
   pruneExpiredLoginAttempts,
   // Utility

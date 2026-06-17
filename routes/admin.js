@@ -28,18 +28,21 @@ module.exports = function createAdminRouter({
     return db.getLoginAttemptState("stepup:" + key, STEPUP_TRACK_WINDOW_MS);
   }
 
+  const STEPUP_BASE_DELAY_MS = 200; // vs 100ms for regular login throttle
+
   async function recordStepUpFailure(key) {
     const now = Date.now();
-    const current = await getStepUpState(key);
-    const failures = current.failures + 1;
-    const delayExponent = Math.max(0, failures - STEPUP_DELAY_THRESHOLD);
-    const blockedUntil =
-      now + Math.min(MAX_STEPUP_DELAY_MS, 200 * 2 ** delayExponent);
-    await db.recordLoginAttempt("stepup:" + key, {
-      failures,
-      blockedUntil,
-      lastFailureAt: now,
-    });
+    // Use atomic increment (same pattern as login throttle) to eliminate the
+    // read-modify-write race under concurrent serverless requests.
+    await db.atomicIncrementLoginAttempt(
+      "stepup:" + key,
+      STEPUP_TRACK_WINDOW_MS,
+      STEPUP_DELAY_THRESHOLD,
+      STEPUP_BLOCK_THRESHOLD,
+      MAX_STEPUP_DELAY_MS,
+      now,
+      STEPUP_BASE_DELAY_MS,
+    );
   }
 
   async function clearStepUpFailures(key) {
