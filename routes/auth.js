@@ -43,16 +43,21 @@ module.exports = function createAuthRouter({
 
   async function recordLoginFailure(key) {
     const now = Date.now();
-    const current = await db.getLoginAttemptState(key, LOGIN_TRACK_WINDOW_MS);
-    const failures = current.failures + 1;
-    const delayExponent = Math.max(0, failures - LOGIN_DELAY_THRESHOLD);
-    const blockedUntil =
-      now + Math.min(MAX_LOGIN_DELAY_MS, 100 * 2 ** delayExponent);
-    const nextState = { failures, blockedUntil, lastFailureAt: now };
-    await db.recordLoginAttempt(key, nextState);
+    // Atomically increment the failure counter and compute blocked_until in a
+    // single transaction to eliminate the read-modify-write race that allowed
+    // concurrent requests to each read the same stale failure count and write
+    // back failures+1 — effectively not incrementing under parallel load.
+    const result = await db.atomicIncrementLoginAttempt(
+      key,
+      LOGIN_TRACK_WINDOW_MS,
+      LOGIN_DELAY_THRESHOLD,
+      LOGIN_BLOCK_THRESHOLD,
+      MAX_LOGIN_DELAY_MS,
+      now,
+    );
     // Best-effort cleanup of stale entries on writes; errors are non-fatal.
     db.pruneExpiredLoginAttempts(LOGIN_TRACK_WINDOW_MS).catch(() => {});
-    return nextState;
+    return { failures: result.failures, blockedUntil: result.blockedUntil, lastFailureAt: now };
   }
 
   async function clearLoginFailures(key) {
