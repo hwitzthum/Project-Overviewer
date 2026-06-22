@@ -39,6 +39,24 @@ function isPrivateIP(ip) {
     if (normalized.startsWith('100::')) return true;
     // Documentation ranges (2001:db8::/32)
     if (normalized.startsWith('2001:db8:')) return true;
+    // 6to4 (2002::/16): bits 17–48 encode an IPv4 address.
+    // e.g. 2002:a9fe:a9fe:: embeds 169.254.169.254 (cloud metadata endpoint)
+    //      2002:7f00:0001:: embeds 127.0.0.1
+    //      2002:0a00:0001:: embeds 10.0.0.1
+    // An attacker who controls DNS can point an AAAA record at such an address
+    // to bypass the SSRF guard unless we extract and re-check the embedded IPv4.
+    if (normalized.startsWith('2002:')) {
+      const parts = normalized.split(':');
+      const g1 = (parts[1] || '0').padStart(4, '0');
+      const g2 = (parts[2] || '0').padStart(4, '0');
+      const embeddedIpv4 = [
+        parseInt(g1.slice(0, 2), 16),
+        parseInt(g1.slice(2, 4), 16),
+        parseInt(g2.slice(0, 2), 16),
+        parseInt(g2.slice(2, 4), 16),
+      ].join('.');
+      if (isPrivateIP(embeddedIpv4)) return true;
+    }
     return false;
   }
   // Unknown address family — block by default
