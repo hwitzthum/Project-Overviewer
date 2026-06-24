@@ -99,6 +99,12 @@ module.exports = function createWebhookDispatcher({ db, logger, eventBus }) {
           port,
           path: targetPath,
           method: 'POST',
+          // Set SNI to the original hostname so the server selects the correct
+          // TLS certificate. Without this, Node sends the raw IP as the SNI
+          // extension, which breaks certificate selection on virtual-hosted
+          // servers and may allow a shared-IP CDN to satisfy the TLS handshake
+          // with an unrelated certificate.
+          ...(isHttps ? { servername: hostname } : {}),
           headers: {
             // Preserve the original Host so the server-side virtual-hosting works
             Host: hostname,
