@@ -773,6 +773,13 @@ async function initDatabase() {
   // Clean expired and idle sessions on startup.
   await cleanupExpiredSessions();
 
+  // Prune stale login-attempt rows on startup so the table does not grow
+  // unboundedly under brute-force attacks (pruneExpiredLoginAttempts is
+  // otherwise only called from recordLoginFailure, which misses the case
+  // where an attacker stops trying and rows are never cleaned up).
+  // 15 minutes — must match LOGIN_TRACK_WINDOW_MS in routes/auth.js.
+  await pruneExpiredLoginAttempts(15 * 60 * 1000).catch(() => {});
+
   // Mark schema as current so the next cold start can skip all of this work.
   await run(
     "INSERT OR REPLACE INTO global_settings (key, value) VALUES (?, ?)",

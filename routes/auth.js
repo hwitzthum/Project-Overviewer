@@ -252,7 +252,11 @@ module.exports = function createAuthRouter({
       }
 
       if (!user.approved) {
-        await recordLoginFailure(throttle.key);
+        // Do NOT call recordLoginFailure here: the credential was correct.
+        // Penalising a pending user's brute-force counter on every legitimate
+        // login attempt means their account may be throttled when eventually
+        // approved.  Authorization failures (not approved) are distinct from
+        // credential failures (wrong password) and must not affect the counter.
         logSecurityEvent("auth.login.denied", {
           req,
           statusCode: 401,

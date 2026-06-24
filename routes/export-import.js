@@ -77,15 +77,12 @@ module.exports = function createExportImportRouter({ db, logger, schemas, requir
           projectCount: result.data?.projects?.length ?? 0
         });
       } else {
-        await db.importData(req.user.userId, req.body);
-        logSecurityEvent('data.import.success', {
-          req,
-          level: 'info',
-          outcome: 'success',
-          severity: 'medium',
-          statusCode: 200,
-          projectCount: req.body?.projects?.length ?? 0
-        });
+        // schemas.importData is undefined — Zod failed to initialise.  Fail
+        // closed: processing unvalidated import data could allow oversized
+        // payloads, malformed documents, or prototype-pollution vectors to
+        // reach db.importData.  Reject until the server restarts healthy.
+        logger.error('Import schema unavailable; rejecting request');
+        return res.status(500).json({ error: 'Server configuration error' });
       }
       res.json({ success: true });
     } catch (error) {
