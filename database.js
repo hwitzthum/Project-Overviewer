@@ -22,7 +22,14 @@ const ALLOWED_DOC_MIME_TYPES = [
 // work on an existing database. On cold start we read this value and skip the
 // expensive PRAGMA introspection, team-membership repair, and session cleanup
 // when the database is already at the current version.
-const SCHEMA_VERSION = 1;
+//
+// v2: added the login_attempts table (DB-backed brute-force throttle). It was
+// introduced inside the version-gated CREATE batch without bumping this
+// constant, so databases already at v1 skipped initialization and never
+// created the table — causing every login to fail with "no such table:
+// login_attempts". Bumping to 2 re-runs the idempotent CREATE batch on those
+// databases.
+const SCHEMA_VERSION = 2;
 
 // ========== PER-PROCESS CACHES ==========
 // These caches live for the lifetime of a single Node process / Lambda
@@ -774,11 +781,19 @@ async function initDatabase() {
   await cleanupExpiredSessions();
 
   // Prune stale login-attempt rows on startup so the table does not grow
-  // unboundedly under brute-force attacks (pruneExpiredLoginAttempts is
-  // otherwise only called from recordLoginFailure, which misses the case
-  // where an attacker stops trying and rows are never cleaned up).
+  // unboundedly under brute-force attacks (the public wrapper is otherwise
+  // only called from recordLoginFailure, which misses the case where an
+  // attacker stops trying and rows are never cleaned up).
   // 15 minutes — must match LOGIN_TRACK_WINDOW_MS in routes/auth.js.
-  await pruneExpiredLoginAttempts(15 * 60 * 1000).catch(() => {});
+  //
+  // NOTE: call the raw DELETE here rather than pruneExpiredLoginAttempts().
+  // That wrapper begins with `await waitForDb()`, but we are *inside*
+  // initDatabase — the work that resolves dbReadyPromise — so awaiting it
+  // here deadlocks the migration (the promise never settles, the event loop
+  // empties, and the process exits silently before schema_version is bumped).
+  await run("DELETE FROM login_attempts WHERE last_failure_at < ?", [
+    Date.now() - 15 * 60 * 1000,
+  ]).catch(() => {});
 
   // Mark schema as current so the next cold start can skip all of this work.
   await run(
@@ -2494,8 +2509,10 @@ async function atomicIncrementLoginAttempt(
   const capValue = blockedUntilValues[blockedUntilValues.length - 1]; // for f > blockThreshold+1
 
   // Build CASE WHEN for failures 1..blockThreshold; above that use cap value.
-  const caseParts = blockedUntilValues.map((val, i) => `WHEN ${i + 1} THEN ${val}`);
-  const caseExpr = `CASE new_failures ${caseParts.join(' ')} ELSE ${capValue} END`;
+  const caseParts = blockedUntilValues.map(
+    (val, i) => `WHEN ${i + 1} THEN ${val}`,
+  );
+  const caseExpr = `CASE new_failures ${caseParts.join(" ")} ELSE ${capValue} END`;
 
   // Use a CTE to compute new_failures first, then derive blocked_until.
   // LibSQL/SQLite supports CTEs and WITH.
