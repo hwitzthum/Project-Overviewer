@@ -835,14 +835,43 @@ async function getUserByIdWithHash(id) {
   return await get("SELECT * FROM users WHERE id = ?", [id]);
 }
 
+// Returns user WITHOUT password_hash — safe for any caller that does not need
+// to verify credentials (team member lookup, duplicate checks, etc.).
 async function getUserByUsername(username) {
+  await waitForDb();
+  return await get(
+    "SELECT id, username, email, role, approved, created_at, updated_at FROM users WHERE username = ?",
+    [username],
+  );
+}
+
+// Returns user WITH password_hash — use only in the login path where the
+// credential must be compared with bcrypt.compare().
+async function getUserByUsernameWithHash(username) {
   await waitForDb();
   return await get("SELECT * FROM users WHERE username = ?", [username]);
 }
 
+// Returns user WITHOUT password_hash.
 async function getUserByEmail(email) {
   await waitForDb();
-  return await get("SELECT * FROM users WHERE email = ?", [email]);
+  return await get(
+    "SELECT id, username, email, role, approved, created_at, updated_at FROM users WHERE email = ?",
+    [email],
+  );
+}
+
+// Single-query existence check for registration.  Combining the username and
+// email lookups into one OR query removes the sequential-round-trip timing
+// oracle: a username hit no longer returns before the email query runs,
+// collapsing both timing signals into one indistinguishable response.
+async function userExistsByUsernameOrEmail(username, email) {
+  await waitForDb();
+  const row = await get(
+    "SELECT id FROM users WHERE username = ? OR email = ? LIMIT 1",
+    [username, email],
+  );
+  return row != null;
 }
 
 async function getAllUsers() {
@@ -2555,7 +2584,9 @@ module.exports = {
   // Users
   createUser,
   getUserByUsername,
+  getUserByUsernameWithHash,
   getUserByEmail,
+  userExistsByUsernameOrEmail,
   getUserById,
   getUserByIdWithHash,
   getAllUsers,

@@ -138,23 +138,18 @@ module.exports = function createAuthRouter({
         return res.status(400).json({ error: passwordPolicy.message });
       }
 
-      const existingUser = await db.getUserByUsername(username);
-      if (existingUser) {
+      // Single OR query — collapses the previous two sequential lookups into one
+      // round trip, eliminating the username-vs-email timing oracle where a
+      // username collision returned before the email query ran.
+      const credentialTaken = await db.userExistsByUsernameOrEmail(
+        username,
+        email,
+      );
+      if (credentialTaken) {
         logSecurityEvent("auth.register.rejected", {
           req,
           statusCode: 409,
-          reason: "duplicate_username",
-          attemptedUsername: username,
-        });
-        return res.status(409).json({ error: GENERIC_REGISTRATION_ERROR });
-      }
-
-      const existingEmail = await db.getUserByEmail(email);
-      if (existingEmail) {
-        logSecurityEvent("auth.register.rejected", {
-          req,
-          statusCode: 409,
-          reason: "duplicate_email",
+          reason: "duplicate_credential",
           attemptedUsername: username,
         });
         return res.status(409).json({ error: GENERIC_REGISTRATION_ERROR });
@@ -224,7 +219,7 @@ module.exports = function createAuthRouter({
           });
       }
 
-      const user = await db.getUserByUsername(username);
+      const user = await db.getUserByUsernameWithHash(username);
       if (!user) {
         await bcrypt.compare(password, dummyPasswordHash);
         await recordLoginFailure(throttle.key);
