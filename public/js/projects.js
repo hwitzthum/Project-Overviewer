@@ -104,6 +104,7 @@ async function submitCreateProject() {
           await API.createTasksBulk(createdProject.id, bulkTasks);
         } catch (taskError) {
           console.error('Failed to apply template tasks:', taskError);
+          showToast('Template tasks could not be added. You can add them manually.', 'error');
         }
       }
     }
