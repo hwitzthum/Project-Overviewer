@@ -18,17 +18,20 @@ const ALLOWED_DOC_MIME_TYPES = [
   "text/plain",
 ];
 
-// Schema version is bumped whenever the migration helpers below would do new
-// work on an existing database. On cold start we read this value and skip the
-// expensive PRAGMA introspection, team-membership repair, and session cleanup
-// when the database is already at the current version.
+// Schema version gates ONLY the heavier, data-touching migration steps in
+// initDatabase (PRAGMA introspection, column back-fills, team-membership
+// repair, session cleanup, default seeding). It is bumped whenever those steps
+// would do new work on an existing database; cold starts skip them when the
+// database already reports the current version.
 //
-// v2: added the login_attempts table (DB-backed brute-force throttle). It was
-// introduced inside the version-gated CREATE batch without bumping this
-// constant, so databases already at v1 skipped initialization and never
-// created the table — causing every login to fail with "no such table:
-// login_attempts". Bumping to 2 re-runs the idempotent CREATE batch on those
-// databases.
+// Table and index creation is deliberately NOT gated by this constant — the
+// idempotent CREATE batch runs unconditionally on every cold start. A forgotten
+// bump therefore can never leave a table missing on an existing database, which
+// is the failure that removed login_attempts and broke every login.
+//
+// v2 marks the login_attempts generation. (The table itself is created by the
+// unconditional CREATE batch; the bump records the schema generation and lets
+// the one-time gated steps run on databases still at v1.)
 const SCHEMA_VERSION = 2;
 
 // ========== PER-PROCESS CACHES ==========
@@ -461,25 +464,14 @@ async function initDatabase() {
   // foreign_keys must be set outside a batch (PRAGMA not allowed in batches)
   await client.execute({ sql: "PRAGMA foreign_keys = ON", args: [] });
 
-  // Hot-path optimization: on Vercel serverless every cold start re-runs this
-  // function. The CREATE TABLE batch is one round trip, but the helpers
-  // below (PRAGMA introspection, team-membership repair, session cleanup)
-  // are several more. When the schema version matches we skip all of it.
-  const existingVersion = await readSchemaVersion();
-  if (existingVersion >= SCHEMA_VERSION) {
-    logger.info(
-      { schemaVersion: existingVersion },
-      "Database schema already current — skipping migrations",
-    );
-    return;
-  }
-
-  logger.info(
-    { from: existingVersion, to: SCHEMA_VERSION },
-    "Running schema initialization / migration",
-  );
-
-  // All CREATE TABLE and CREATE INDEX statements in a single atomic batch
+  // Critical-tables guard: ALWAYS ensure tables and indexes exist. This batch
+  // is a single round trip and every statement is CREATE ... IF NOT EXISTS, so
+  // it is idempotent and safe to run on every cold start. Running it
+  // unconditionally — rather than behind the schema-version gate below —
+  // guarantees a table can never be missing on an existing database merely
+  // because SCHEMA_VERSION was not bumped when the table was added. That exact
+  // omission removed the login_attempts table on existing databases and broke
+  // every login.
   await client.batch(
     [
       // Users table
@@ -729,6 +721,26 @@ async function initDatabase() {
       },
     ],
     "write",
+  );
+
+  // Hot-path optimization: the data-touching migration steps below (PRAGMA
+  // introspection, column back-fills, team-membership repair, session cleanup,
+  // default seeding) are several more round trips. Skip them when the database
+  // already reports the current schema version — the CREATE batch above has
+  // already ensured every table and index exists, so only these heavier,
+  // version-specific steps are gated here.
+  const existingVersion = await readSchemaVersion();
+  if (existingVersion >= SCHEMA_VERSION) {
+    logger.info(
+      { schemaVersion: existingVersion },
+      "Database schema already current — skipping migrations",
+    );
+    return;
+  }
+
+  logger.info(
+    { from: existingVersion, to: SCHEMA_VERSION },
+    "Running schema migration",
   );
 
   await ensureSessionSchema();
