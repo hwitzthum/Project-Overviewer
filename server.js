@@ -548,7 +548,7 @@ if (z.object && z.string && typeof z.string === "function") {
       notes: z.string().max(10000).optional(),
       priority: z.enum(VALID_PRIORITIES).optional(),
       recurring: z.enum(["daily", "weekly", "monthly"]).optional().nullable(),
-      blockedBy: z.string().max(100).optional().nullable(),
+      blockedBy: z.string().uuid().optional().nullable(),
       order: z.number().int().min(0).optional(),
     });
     const importEmailDocumentSchema = z.object({
@@ -670,7 +670,7 @@ if (z.object && z.string && typeof z.string === "function") {
       notes: z.string().max(10000).optional(),
       priority: z.enum(VALID_PRIORITIES).optional(),
       recurring: z.enum(["daily", "weekly", "monthly"]).optional().nullable(),
-      blockedBy: z.string().max(100).optional().nullable(),
+      blockedBy: z.string().uuid().optional().nullable(),
       parentTaskId: z.string().uuid().optional().nullable(),
       order: z.number().int().min(0).optional(),
     });
@@ -684,7 +684,7 @@ if (z.object && z.string && typeof z.string === "function") {
         notes: z.string().max(10000).optional(),
         priority: z.enum(VALID_PRIORITIES).optional(),
         recurring: z.enum(["daily", "weekly", "monthly"]).optional().nullable(),
-        blockedBy: z.string().max(100).optional().nullable(),
+        blockedBy: z.string().uuid().optional().nullable(),
         blockedByTempId: z.string().min(1).max(100).optional().nullable(),
         parentTaskId: z.string().uuid().optional().nullable(),
         parentTempId: z.string().min(1).max(100).optional().nullable(),
@@ -699,7 +699,7 @@ if (z.object && z.string && typeof z.string === "function") {
       notes: z.string().max(10000).optional(),
       priority: z.enum(VALID_PRIORITIES).optional(),
       recurring: z.enum(["daily", "weekly", "monthly"]).optional().nullable(),
-      blockedBy: z.string().max(100).optional().nullable(),
+      blockedBy: z.string().uuid().optional().nullable(),
       parentTaskId: z.string().uuid().optional().nullable(),
     });
 
@@ -849,19 +849,14 @@ async function requireAuth(req, res, next) {
 
 function getExpectedOrigin(req) {
   if (APP_ORIGIN) return APP_ORIGIN;
-  const forwardedProto = req.headers["x-forwarded-proto"];
-  const protocol = (
-    Array.isArray(forwardedProto)
-      ? forwardedProto[0]
-      : forwardedProto || req.protocol || "http"
-  )
-    .split(",")[0]
-    .trim();
-  const forwardedHost = req.headers["x-forwarded-host"];
-  const rawHost = forwardedHost || req.headers.host || "";
+  // Do NOT trust X-Forwarded-Host — it is set by proxies and can be spoofed
+  // in misconfigured deployments. Fall back to Host only (TCP-layer binding),
+  // and derive protocol from req.protocol (honours Express trust proxy setting).
+  const rawHost = req.headers.host || "";
   const host = (Array.isArray(rawHost) ? rawHost[0] : rawHost)
     .split(",")[0]
     .trim();
+  const protocol = req.protocol || "http";
   return host ? `${protocol}://${host}` : null;
 }
 
@@ -994,7 +989,9 @@ function isMaintenanceBypassedPath(req) {
     requestPath === "/api/admin" ||
     requestPath.startsWith("/api/admin/") ||
     requestPath === "/api/v1/admin" ||
-    requestPath.startsWith("/api/v1/admin/")
+    requestPath.startsWith("/api/v1/admin/") ||
+    requestPath === "/api/auth/login" ||
+    requestPath === "/api/v1/auth/login"
   );
 }
 

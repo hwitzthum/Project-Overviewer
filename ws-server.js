@@ -11,6 +11,8 @@ const { WebSocketServer } = require('ws');
  * to fetch fresh data via the existing REST API. This avoids duplicating
  * rendering/state logic over WebSocket.
  */
+const MAX_WS_PER_USER = 10;
+
 module.exports = function createWebSocketServer({ server, db, logger, eventBus, logSecurityEvent }) {
   const wss = new WebSocketServer({ noServer: true });
   const clients = new Map(); // ws → { userId, alive }
@@ -66,6 +68,26 @@ module.exports = function createWebSocketServer({ server, db, logger, eventBus, 
       }
 
       const session = sessionLookup.session;
+
+      // Enforce per-user connection limit to prevent resource exhaustion
+      let userConnectionCount = 0;
+      for (const info of clients.values()) {
+        if (info.userId === session.userId) userConnectionCount++;
+      }
+      if (userConnectionCount >= MAX_WS_PER_USER) {
+        if (logSecurityEvent) {
+          logSecurityEvent('auth.websocket.rejected', {
+            req: request,
+            statusCode: 429,
+            reason: 'connection_limit_exceeded',
+            userId: session.userId,
+            severity: 'low'
+          });
+        }
+        socket.write('HTTP/1.1 429 Too Many Requests\r\n\r\n');
+        socket.destroy();
+        return;
+      }
 
       // Accept the connection
       wss.handleUpgrade(request, socket, head, (ws) => {
