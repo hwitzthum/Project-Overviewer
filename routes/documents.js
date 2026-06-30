@@ -216,6 +216,9 @@ module.exports = function createDocumentsRouters({
       res.setHeader('Content-Disposition', `${disposition}; filename="${safeFileName}"; filename*=UTF-8''${encodedFileName}`);
       res.setHeader('Content-Length', buffer.length);
       res.setHeader('X-Content-Type-Options', 'nosniff');
+      if (disposition === 'inline') {
+        res.setHeader('Content-Security-Policy', 'sandbox');
+      }
       res.send(buffer);
     } catch (error) {
       logger.error({ err: error }, 'Error downloading document');

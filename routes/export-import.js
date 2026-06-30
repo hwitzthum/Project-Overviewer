@@ -67,6 +67,16 @@ module.exports = function createExportImportRouter({ db, logger, schemas, requir
           }
         }
 
+        const maxProjects = await db.getGlobalSetting('maxProjectsPerUser');
+        if (maxProjects !== null && maxProjects !== undefined) {
+          const importCount = (result.data.projects || []).length;
+          if (importCount > maxProjects) {
+            return res.status(403).json({
+              error: `Import would exceed the project limit (${maxProjects} projects per user).`
+            });
+          }
+        }
+
         await db.importData(req.user.userId, result.data);
         logSecurityEvent('data.import.success', {
           req,
