@@ -818,9 +818,9 @@ Source modules in `public/js/` are bundled by esbuild into 3 content-hashed bund
 
 **Why modular routes?** Easier to navigate, extend, and test. Each domain is self-contained.
 
-### Database: 13 Tables, User-Scoped Queries
+### Database: 11 Tables, User-Scoped Queries
 
-**Schema** (13 tables across 4 groups):
+**Schema** (11 tables across 4 groups):
 
 - **Auth**: users, sessions
 - **Content**: projects, tasks, documents
