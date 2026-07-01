@@ -15,7 +15,8 @@
     "pretest": "npm run build",
     "audit:deps": "npm audit --audit-level=high",
     "test": "node scripts/run-playwright.js test",
-    "test:ui": "node scripts/run-playwright.js test --ui"
+    "test:ui": "node scripts/run-playwright.js test --ui",
+    "test:migrations": "node --test tests/*.test.js"
   },
   "keywords": [
     "project-management",

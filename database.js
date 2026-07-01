@@ -18,11 +18,21 @@ const ALLOWED_DOC_MIME_TYPES = [
   "text/plain",
 ];
 
-// Schema version is bumped whenever the migration helpers below would do new
-// work on an existing database. On cold start we read this value and skip the
-// expensive PRAGMA introspection, team-membership repair, and session cleanup
-// when the database is already at the current version.
-const SCHEMA_VERSION = 1;
+// Schema version gates ONLY the heavier, data-touching migration steps in
+// initDatabase (PRAGMA introspection, column back-fills, team-membership
+// repair, session cleanup, default seeding). It is bumped whenever those steps
+// would do new work on an existing database; cold starts skip them when the
+// database already reports the current version.
+//
+// Table and index creation is deliberately NOT gated by this constant — the
+// idempotent CREATE batch runs unconditionally on every cold start. A forgotten
+// bump therefore can never leave a table missing on an existing database, which
+// is the failure that removed login_attempts and broke every login.
+//
+// v2 marks the login_attempts generation. (The table itself is created by the
+// unconditional CREATE batch; the bump records the schema generation and lets
+// the one-time gated steps run on databases still at v1.)
+const SCHEMA_VERSION = 2;
 
 // ========== PER-PROCESS CACHES ==========
 // These caches live for the lifetime of a single Node process / Lambda
@@ -454,25 +464,14 @@ async function initDatabase() {
   // foreign_keys must be set outside a batch (PRAGMA not allowed in batches)
   await client.execute({ sql: "PRAGMA foreign_keys = ON", args: [] });
 
-  // Hot-path optimization: on Vercel serverless every cold start re-runs this
-  // function. The CREATE TABLE batch is one round trip, but the helpers
-  // below (PRAGMA introspection, team-membership repair, session cleanup)
-  // are several more. When the schema version matches we skip all of it.
-  const existingVersion = await readSchemaVersion();
-  if (existingVersion >= SCHEMA_VERSION) {
-    logger.info(
-      { schemaVersion: existingVersion },
-      "Database schema already current — skipping migrations",
-    );
-    return;
-  }
-
-  logger.info(
-    { from: existingVersion, to: SCHEMA_VERSION },
-    "Running schema initialization / migration",
-  );
-
-  // All CREATE TABLE and CREATE INDEX statements in a single atomic batch
+  // Critical-tables guard: ALWAYS ensure tables and indexes exist. This batch
+  // is a single round trip and every statement is CREATE ... IF NOT EXISTS, so
+  // it is idempotent and safe to run on every cold start. Running it
+  // unconditionally — rather than behind the schema-version gate below —
+  // guarantees a table can never be missing on an existing database merely
+  // because SCHEMA_VERSION was not bumped when the table was added. That exact
+  // omission removed the login_attempts table on existing databases and broke
+  // every login.
   await client.batch(
     [
       // Users table
@@ -724,6 +723,26 @@ async function initDatabase() {
     "write",
   );
 
+  // Hot-path optimization: the data-touching migration steps below (PRAGMA
+  // introspection, column back-fills, team-membership repair, session cleanup,
+  // default seeding) are several more round trips. Skip them when the database
+  // already reports the current schema version — the CREATE batch above has
+  // already ensured every table and index exists, so only these heavier,
+  // version-specific steps are gated here.
+  const existingVersion = await readSchemaVersion();
+  if (existingVersion >= SCHEMA_VERSION) {
+    logger.info(
+      { schemaVersion: existingVersion },
+      "Database schema already current — skipping migrations",
+    );
+    return;
+  }
+
+  logger.info(
+    { from: existingVersion, to: SCHEMA_VERSION },
+    "Running schema migration",
+  );
+
   await ensureSessionSchema();
   await ensureTaskSubtaskColumn();
 
@@ -774,11 +793,19 @@ async function initDatabase() {
   await cleanupExpiredSessions();
 
   // Prune stale login-attempt rows on startup so the table does not grow
-  // unboundedly under brute-force attacks (pruneExpiredLoginAttempts is
-  // otherwise only called from recordLoginFailure, which misses the case
-  // where an attacker stops trying and rows are never cleaned up).
+  // unboundedly under brute-force attacks (the public wrapper is otherwise
+  // only called from recordLoginFailure, which misses the case where an
+  // attacker stops trying and rows are never cleaned up).
   // 15 minutes — must match LOGIN_TRACK_WINDOW_MS in routes/auth.js.
-  await pruneExpiredLoginAttempts(15 * 60 * 1000).catch(() => {});
+  //
+  // NOTE: call the raw DELETE here rather than pruneExpiredLoginAttempts().
+  // That wrapper begins with `await waitForDb()`, but we are *inside*
+  // initDatabase — the work that resolves dbReadyPromise — so awaiting it
+  // here deadlocks the migration (the promise never settles, the event loop
+  // empties, and the process exits silently before schema_version is bumped).
+  await run("DELETE FROM login_attempts WHERE last_failure_at < ?", [
+    Date.now() - 15 * 60 * 1000,
+  ]).catch(() => {});
 
   // Mark schema as current so the next cold start can skip all of this work.
   await run(
@@ -2523,8 +2550,10 @@ async function atomicIncrementLoginAttempt(
   const capValue = blockedUntilValues[blockedUntilValues.length - 1]; // for f > blockThreshold+1
 
   // Build CASE WHEN for failures 1..blockThreshold; above that use cap value.
-  const caseParts = blockedUntilValues.map((val, i) => `WHEN ${i + 1} THEN ${val}`);
-  const caseExpr = `CASE new_failures ${caseParts.join(' ')} ELSE ${capValue} END`;
+  const caseParts = blockedUntilValues.map(
+    (val, i) => `WHEN ${i + 1} THEN ${val}`,
+  );
+  const caseExpr = `CASE new_failures ${caseParts.join(" ")} ELSE ${capValue} END`;
 
   // Use a CTE to compute new_failures first, then derive blocked_until.
   // LibSQL/SQLite supports CTEs and WITH.
