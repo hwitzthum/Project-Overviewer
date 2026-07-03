@@ -9,7 +9,7 @@ No subscriptions. No cloud lock-in. No framework overhead. Just Node.js, SQLite,
 ![Version](https://img.shields.io/badge/version-1.0-blue)
 ![Node.js](https://img.shields.io/badge/Node.js-v24%2B-green)
 ![License](https://img.shields.io/badge/license-MIT-blue)
-![Tests](https://img.shields.io/badge/tests-216%20E2E-brightgreen)
+![Tests](https://img.shields.io/badge/tests-209%20E2E-brightgreen)
 
 [**Get Started in 2 Minutes**](#quick-start) • [**See Features**](#what-you-get) • [**View Docs**](#user-guide) • [**GitHub**](https://github.com/yourusername/project-overviewer)
 
@@ -177,7 +177,7 @@ Open **http://localhost:3001** and log in with your admin credentials.
 - 🔌 **Backend**: `server.js` entry point with 12 route modules in `routes/`
 - 💾 **Database**: SQLite with WAL mode (concurrent reads + reliable writes)
 - 🔒 **Security**: Helmet, rate limiting, Zod validation, bcrypt hashing
-- ✅ **Tests**: 216 Playwright E2E tests (auth, CRUD, RBAC, security)
+- ✅ **Tests**: 209 Playwright E2E tests (auth, CRUD, RBAC, security)
 - 📖 **Documentation**: Fully documented codebase + architecture guide
 
 **Total lines of code:** ~6000 across modular routes and utilities. Still understand it in a day or two.
