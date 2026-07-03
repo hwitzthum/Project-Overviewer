@@ -17,7 +17,7 @@ Project Overviewer is a multi-user project and task management application with 
 - **Validation**: Zod schemas on all API inputs
 - **Security**: Helmet (security headers), express-rate-limit, compression, structured security event logging
 - **Logging**: Pino (structured logging, pino-pretty in dev)
-- **Testing**: Playwright E2E tests (216 tests across 15 spec files)
+- **Testing**: Playwright E2E tests (209 tests across 15 spec files)
 - **API**: REST API with JSON responses
 - **Deployment**: Vercel-ready (`vercel.json`, serverless export in `api/index.js`)
 
@@ -192,7 +192,7 @@ Project Overviewer is intentionally simple. The goal is a tool you can run, unde
 
 ### Frontend Architecture
 
-The frontend is a **modular vanilla JavaScript SPA bundled by esbuild**. 23 source modules in `public/js/` are organized into 3 bundles (boot, app-shell, app) output to `public/dist/` with content hashes. Each module attaches its public API to `window` (e.g., `window.API`, `window.AppState`, `window.WS`). No `import`/`export` — globals make the dependency graph explicit within each bundle.
+The frontend is a **modular vanilla JavaScript SPA bundled by esbuild**. 24 source modules in `public/js/` are organized into 3 bundles (boot, app-shell, app) output to `public/dist/` with content hashes. Each module attaches its public API to `window` (e.g., `window.API`, `window.AppState`, `window.WS`). No `import`/`export` — globals make the dependency graph explicit within each bundle.
 
 **State management**: `state.js` is a closure holding the application state (projects array, user settings, current user, active filters). Modules mutate state through explicit setters (`AppState.setProjects()`, `AppState.updateSettings()`) and then call render functions directly. No reactive system — data flow is explicit and debugger-traceable.
 
@@ -316,7 +316,7 @@ npx playwright test tests/e2e/auth.spec.js
 npx playwright test --headed
 ```
 
-Test files in `tests/e2e/` (216 tests across 15 spec files):
+Test files in `tests/e2e/` (209 tests across 15 spec files):
 
 - `auth.spec.js` — Authentication flows (register, login, logout, password change)
 - `projects-tasks.spec.js` — Project and task CRUD
@@ -838,7 +838,7 @@ curl http://localhost:3001/api/health
 
 ### Frontend Architecture
 
-- Modular vanilla JavaScript — 16 modules in `public/js/`, no build step required
+- Modular vanilla JavaScript — 24 modules in `public/js/`, no build step required
 - Modules communicate via `window` globals (no import/export)
 - Load order matters — dependencies must be loaded before dependents
 - Global `API` object available for all fetch calls (includes auth token automatically)
