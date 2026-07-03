@@ -44,7 +44,24 @@ const SESSION_CACHE_TTL_MS = 5000;
 const SESSION_CACHE_MAX = 1000;
 const sessionCache = new Map();
 
+// On Vercel (and any other multi-instance serverless platform) each warm
+// instance owns an independent `sessionCache`. deleteSession/deleteUserSessions
+// only clear the cache entry on the instance that handled the revoking request
+// (logout, password change, or an admin approve/role-change/reset/delete) --
+// every *other* warm instance keeps serving its own cached "ok" result for up
+// to SESSION_CACHE_TTL_MS after the session row is gone from the database.
+// That silently widens the "sessions are revoked immediately" guarantee the
+// rest of the codebase relies on into a several-second window. Skip the cache
+// entirely in that environment so every lookup goes straight to the database,
+// which is authoritative across all instances. Single, persistent-process
+// deployments (`node server.js`) keep the cache -- invalidation there is
+// same-process and therefore immediate.
+function isMultiInstanceDeployment() {
+  return process.env.VERCEL === "1";
+}
+
 function cacheGetSession(tokenHash) {
+  if (isMultiInstanceDeployment()) return null;
   const entry = sessionCache.get(tokenHash);
   if (!entry) return null;
   if (entry.expiresAt <= Date.now()) {
@@ -55,6 +72,7 @@ function cacheGetSession(tokenHash) {
 }
 
 function cacheSetSession(tokenHash, value) {
+  if (isMultiInstanceDeployment()) return;
   if (sessionCache.size >= SESSION_CACHE_MAX) {
     const firstKey = sessionCache.keys().next().value;
     if (firstKey !== undefined) sessionCache.delete(firstKey);
