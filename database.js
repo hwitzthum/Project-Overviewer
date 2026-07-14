@@ -477,6 +477,25 @@ async function readSchemaVersion() {
 }
 
 async function initDatabase() {
+  // On Vercel (and any other serverless/multi-instance platform), the local
+  // filesystem is ephemeral and not shared across instances. Falling back to
+  // `file:projects.db` there means every cold start gets its own empty
+  // database (users, sessions, everything silently reset) or, on a read-only
+  // function filesystem, fails to create the file at all — either way with no
+  // clear signal to the operator. Fail the DB init (not the module load, so a
+  // cold start doesn't crash before any request is served) with a specific,
+  // loggable error instead of an opaque SQLite/filesystem error surfacing
+  // later. Client-facing responses stay generic (see healthCheck()); this
+  // message is for server-side logs only.
+  if (isMultiInstanceDeployment() && !process.env.TURSO_DATABASE_URL) {
+    throw new Error(
+      "TURSO_DATABASE_URL must be set when VERCEL=1 — local SQLite storage " +
+        "does not persist across invocations or instances on Vercel's " +
+        "serverless filesystem. Set TURSO_DATABASE_URL (and TURSO_AUTH_TOKEN) " +
+        "to a Turso database in the project's environment variables.",
+    );
+  }
+
   logger.info("Connected to LibSQL/Turso database");
 
   // foreign_keys must be set outside a batch (PRAGMA not allowed in batches)
