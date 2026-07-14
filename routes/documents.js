@@ -1,6 +1,31 @@
 const express = require('express');
+const JSZip = require('jszip');
 const { inspectDocumentPayload } = require('../document-security');
 const { resolveTeamScope } = require('./shared');
+
+// docx previewing decompresses the uploaded zip via mammoth/jszip. A crafted
+// docx can pass the (compressed, ~10MB-capped) upload signature check yet
+// declare an enormous uncompressed size or entry count, exhausting memory
+// when mammoth extracts it. Both figures are read straight from the zip's
+// central directory during the (cheap, non-inflating) metadata parse, so this
+// check runs before any decompression happens.
+const MAX_DOCX_UNCOMPRESSED_BYTES = 100 * 1024 * 1024; // 100 MB
+const MAX_DOCX_ZIP_ENTRIES = 5000;
+
+async function assertSafeDocxForPreview(buffer) {
+  const zip = await JSZip.loadAsync(buffer);
+  const entries = Object.values(zip.files);
+  if (entries.length > MAX_DOCX_ZIP_ENTRIES) {
+    throw new Error('docx_too_many_entries');
+  }
+  let totalUncompressed = 0;
+  for (const entry of entries) {
+    totalUncompressed += entry._data?.uncompressedSize || 0;
+    if (totalUncompressed > MAX_DOCX_UNCOMPRESSED_BYTES) {
+      throw new Error('docx_uncompressed_too_large');
+    }
+  }
+}
 
 module.exports = function createDocumentsRouters({
   db,
@@ -156,6 +181,19 @@ module.exports = function createDocumentsRouters({
       }
 
       if (mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' && mammoth) {
+        try {
+          await assertSafeDocxForPreview(buffer);
+        } catch (sizeError) {
+          logSecurityEvent('document.preview.rejected', {
+            req,
+            statusCode: 400,
+            reason: sizeError.message === 'docx_too_many_entries' || sizeError.message === 'docx_uncompressed_too_large'
+              ? sizeError.message
+              : 'docx_zip_parse_failed',
+            severity: 'medium'
+          });
+          return res.status(400).json({ error: 'Document preview is unavailable' });
+        }
         const result = await mammoth.extractRawText({ buffer });
         return res.json({
           id: document.id,
