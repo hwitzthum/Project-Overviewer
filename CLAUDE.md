@@ -385,8 +385,8 @@ sqlite> .quit
 - `notes.js` — Quick notes
 - `templates.js` — Project templates
 - `export-import.js` — Data export/import
-- `webhooks.js` — Webhook CRUD, test delivery
-- `shared.js` — Shared middleware (`requireAuth`, `requireAdmin`, `setSessionCookie`, `resolveTeamScope`)
+- `webhooks.js` — Webhook CRUD
+- `shared.js` — Shared middleware (`resolveTeamScope`)
 
 The SPA fallback at the bottom of `server.js` serves `public/index.html` for any non-API, non-static route.
 
