@@ -756,7 +756,7 @@ Project Overviewer is **intentionally simple**. It prioritizes:
 
 ### Frontend: 24 Modular JS Files
 
-Source modules in `public/js/` are bundled by esbuild into 3 content-hashed bundles in `public/dist/`:
+Source modules in `public/js/` are bundled by esbuild into 6 content-hashed bundles in `public/dist/`:
 
 1. **boot.js** — entry-point router (page detection, bundle loading)
 2. **index-guard.js** — auth guard for protected pages
