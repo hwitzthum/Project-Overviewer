@@ -131,7 +131,7 @@ Project Overviewer is intentionally simple. The goal is a tool you can run, unde
    - `public/css/app.css` — Main application styles with CSS custom properties
    - `public/css/auth.css` — Auth page styles
    - `public/css/theme.css` — Theme variables
-   - `public/dist/` — esbuild content-hashed bundles (3 bundles: boot, app-shell, app)
+   - `public/dist/` — esbuild content-hashed bundles (6 bundles: boot, app-shell, app, admin, login, register)
    - 24 JS source modules in `public/js/` (see Frontend Modules below)
 
 2. **Auth & Middleware Layer** (`server.js`)
@@ -187,12 +187,12 @@ Project Overviewer is intentionally simple. The goal is a tool you can run, unde
 **Frontend Module Pattern:**
 
 - Each module attaches its exports to `window` (e.g., `window.API`, `window.AppState`, `window.WS`, `window.Polling`)
-- Modules are bundled by esbuild into 3 bundles (boot, app-shell, app); globals make inter-module communication explicit
+- Modules are bundled by esbuild into 6 bundles (boot, app-shell, app, admin, login, register); globals make inter-module communication explicit
 - State managed in `state.js` closure, accessed via `window.AppState`
 
 ### Frontend Architecture
 
-The frontend is a **modular vanilla JavaScript SPA bundled by esbuild**. 24 source modules in `public/js/` are organized into 3 bundles (boot, app-shell, app) output to `public/dist/` with content hashes. Each module attaches its public API to `window` (e.g., `window.API`, `window.AppState`, `window.WS`). No `import`/`export` — globals make the dependency graph explicit within each bundle.
+The frontend is a **modular vanilla JavaScript SPA bundled by esbuild**. 24 source modules in `public/js/` are organized into 6 bundles (boot, app-shell, app, admin, login, register) output to `public/dist/` with content hashes. Each module attaches its public API to `window` (e.g., `window.API`, `window.AppState`, `window.WS`). No `import`/`export` — globals make the dependency graph explicit within each bundle.
 
 **State management**: `state.js` is a closure holding the application state (projects array, user settings, current user, active filters). Modules mutate state through explicit setters (`AppState.setProjects()`, `AppState.updateSettings()`) and then call render functions directly. No reactive system — data flow is explicit and debugger-traceable.
 
@@ -203,7 +203,7 @@ The frontend is a **modular vanilla JavaScript SPA bundled by esbuild**. 24 sour
 
 ### Frontend Modules
 
-Located in `public/js/`, bundled into 3 esbuild outputs:
+Located in `public/js/`, bundled into 6 esbuild outputs:
 
 | Module                | Responsibility                                                                               |
 | --------------------- | -------------------------------------------------------------------------------------------- |
