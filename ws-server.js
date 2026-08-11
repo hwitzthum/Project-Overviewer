@@ -13,9 +13,28 @@ const { WebSocketServer } = require('ws');
  */
 const MAX_WS_PER_USER = 10;
 
+// The WebSocket upgrade handshake is dispatched by Node's raw http.Server
+// 'upgrade' event and never passes through the Express middleware chain, so
+// none of the app's express-rate-limit limiters (applied via app.use()) see
+// these requests. Without a limiter here, an attacker can send unlimited
+// upgrade requests carrying a syntactically-valid-but-bogus session token,
+// each of which reaches db.getSessionByToken() (a DB round trip) — a
+// rate-limit bypass unique to this endpoint that every other route in the
+// app is protected against. This lightweight per-IP sliding window closes
+// that gap. It uses the raw TCP peer address (socket.remoteAddress) rather
+// than X-Forwarded-For: this module runs only in the persistent-server
+// deployment mode (never on Vercel serverless, see server.js) and has no
+// access to the app's trust-proxy configuration, so trusting a
+// client-suppliable header here would let an attacker spoof the limiter key
+// and bypass it entirely. Worst case behind an untrusted reverse proxy, all
+// traffic shares one bucket — a coarser but still-safe fallback.
+const UPGRADE_RATE_LIMIT_WINDOW_MS = 60 * 1000;
+const UPGRADE_RATE_LIMIT_MAX = 30;
+
 module.exports = function createWebSocketServer({ server, db, logger, eventBus, logSecurityEvent }) {
   const wss = new WebSocketServer({ noServer: true });
   const clients = new Map(); // ws → { userId, alive }
+  const upgradeAttempts = new Map(); // remoteAddress → { count, windowStart }
 
   // Parse session token from cookie header
   function parseSessionCookie(cookieHeader) {
@@ -24,12 +43,55 @@ module.exports = function createWebSocketServer({ server, db, logger, eventBus, 
     return match ? match[1] : null;
   }
 
+  // Returns true and records the attempt if the caller is within its
+  // per-IP budget; returns false (without recording) once exhausted.
+  function checkUpgradeRateLimit(remoteAddress) {
+    const key = remoteAddress || 'unknown';
+    const now = Date.now();
+    const entry = upgradeAttempts.get(key);
+    if (!entry || now - entry.windowStart >= UPGRADE_RATE_LIMIT_WINDOW_MS) {
+      upgradeAttempts.set(key, { count: 1, windowStart: now });
+      return true;
+    }
+    if (entry.count >= UPGRADE_RATE_LIMIT_MAX) {
+      return false;
+    }
+    entry.count += 1;
+    return true;
+  }
+
+  // Periodically drop stale buckets so this map cannot grow unbounded under
+  // a distributed flood (each distinct source IP gets its own entry).
+  const rateLimitCleanupInterval = setInterval(() => {
+    const now = Date.now();
+    for (const [key, entry] of upgradeAttempts) {
+      if (now - entry.windowStart >= UPGRADE_RATE_LIMIT_WINDOW_MS) {
+        upgradeAttempts.delete(key);
+      }
+    }
+  }, UPGRADE_RATE_LIMIT_WINDOW_MS);
+  if (rateLimitCleanupInterval.unref) rateLimitCleanupInterval.unref();
+
   // Authenticate WebSocket upgrade requests
   server.on('upgrade', async (request, socket, head) => {
     try {
       // Only handle /ws path
       const url = new URL(request.url, `http://${request.headers.host}`);
       if (url.pathname !== '/ws') {
+        socket.destroy();
+        return;
+      }
+
+      if (!checkUpgradeRateLimit(request.socket?.remoteAddress)) {
+        if (logSecurityEvent) {
+          logSecurityEvent('auth.websocket.rejected', {
+            req: request,
+            statusCode: 429,
+            reason: 'upgrade_rate_limited',
+            severity: 'medium'
+          });
+        }
+        socket.write('HTTP/1.1 429 Too Many Requests\r\n\r\n');
         socket.destroy();
         return;
       }
@@ -173,6 +235,7 @@ module.exports = function createWebSocketServer({ server, db, logger, eventBus, 
   // Cleanup on server close
   wss.on('close', () => {
     clearInterval(heartbeatInterval);
+    clearInterval(rateLimitCleanupInterval);
   });
 
   logger.info('WebSocket server initialized on /ws');
