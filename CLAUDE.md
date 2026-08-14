@@ -138,7 +138,7 @@ Project Overviewer is intentionally simple. The goal is a tool you can run, unde
    - `requireAuth` middleware — validates session tokens (Bearer header or cookie)
    - `requireAdmin` middleware — checks admin role
    - Zod input validation schemas
-   - Rate limiting (general, auth, import — disabled in `NODE_ENV=test`)
+   - Rate limiting (general, auth, import — disabled when `DISABLE_RATE_LIMIT=1`)
    - Helmet security headers, compression, body size limits
 
 3. **API Layer** (`server.js` + `routes/`)
@@ -162,7 +162,7 @@ Project Overviewer is intentionally simple. The goal is a tool you can run, unde
 - All database functions are async and await `waitForDb()` before executing
 - This ensures the database schema is initialized before any queries run
 - UUID-based IDs for all entities (generated via `crypto.randomUUID()`)
-- SQLite WAL mode with performance PRAGMAs (`synchronous = NORMAL`, `cache_size = -8000`, `busy_timeout = 5000`)
+- SQLite WAL mode
 
 **Authentication Pattern:**
 
@@ -399,9 +399,6 @@ The project list endpoint uses a **bulk-fetch pattern**: 3 queries (all projects
 SQLite performance configuration:
 
 - WAL mode — readers don't block writers
-- `synchronous = NORMAL` — durable without full `FULL` overhead
-- `cache_size = -8000` — 8 MB page cache
-- `busy_timeout = 5000` — wait up to 5 seconds on locked DB before failing
 
 **`logger.js`** — Thin Pino wrapper. JSON output in production; pretty-printed colored output in development via `pino-pretty`. Level controlled by `LOG_LEVEL` env var.
 
@@ -745,7 +742,7 @@ npx playwright test --debug
 
 **Test notes:**
 
-- Rate limiting is disabled when `NODE_ENV=test`
+- Rate limiting is disabled when `DISABLE_RATE_LIMIT=1`
 - `beforeAll` in Playwright does not receive the `request` fixture — use per-test login or helper functions
 - Avoid `!` and special bash chars in password test strings
 - Test helpers in `tests/e2e/helpers.js`
@@ -828,7 +825,7 @@ curl http://localhost:3001/api/health
 | -------------- | ----------------------------------------------------------------------------------------- |
 | Transport      | HSTS header in production; `Secure` cookie flag requires HTTPS                            |
 | Headers        | Helmet: CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy                     |
-| Rate limiting  | 200 req/15 min general; 20 req/15 min auth; 5/hr import (disabled in `NODE_ENV=test`)     |
+| Rate limiting  | 200 req/15 min general; 20 req/15 min auth; 5/hr import (disabled when `DISABLE_RATE_LIMIT=1`)     |
 | Passwords      | bcrypt with 12 salt rounds                                                                |
 | Sessions       | 32-byte hex token; 24-hour expiry; invalidated on password change                         |
 | Authorization  | Every data endpoint verifies `user_id` ownership or team membership before returning data |
