@@ -1,7 +1,14 @@
 const express = require('express');
 const { inspectDocumentPayload } = require('../document-security');
 
-module.exports = function createExportImportRouter({ db, logger, schemas, requireAuth, logSecurityEvent }) {
+// Same per-value cap enforced by the direct settings endpoints
+// (routes/settings.js: POST /settings/:key and PUT /settings). Imported
+// settings must be held to the same limit — otherwise a user can smuggle
+// an oversized value (up to the 10MB import body cap) into user_settings
+// via /api/import even though every other write path rejects it.
+const MAX_SETTING_VALUE_BYTES = 16 * 1024;
+
+module.exports = function createExportImportRouter({ db, logger, schemas, requireAuth, logSecurityEvent, isSerializedJsonWithinLimit }) {
   const router = express.Router();
 
   router.get('/export', requireAuth, async (req, res) => {
@@ -64,6 +71,26 @@ module.exports = function createExportImportRouter({ db, logger, schemas, requir
               return res.status(400).json({ error: 'Import contains an invalid document payload' });
             }
             document.mimeType = inspection.safeMimeType;
+          }
+        }
+
+        // db.importData() already allowlists which settings keys get written,
+        // but it applies no size limit — unlike every other settings write
+        // path (POST /settings/:key, PUT /settings), which caps each value
+        // at MAX_SETTING_VALUE_BYTES. Enforce the same cap here so import
+        // cannot be used to store an oversized value under a legitimate key.
+        if (result.data.settings && typeof isSerializedJsonWithinLimit === 'function') {
+          for (const [key, value] of Object.entries(result.data.settings)) {
+            if (!isSerializedJsonWithinLimit(value, MAX_SETTING_VALUE_BYTES)) {
+              logSecurityEvent('data.import.rejected', {
+                req,
+                statusCode: 400,
+                reason: 'oversized_setting_value',
+                settingKey: key,
+                severity: 'medium'
+              });
+              return res.status(400).json({ error: `Imported setting value is too large: ${key}` });
+            }
           }
         }
 
