@@ -1156,6 +1156,7 @@ const exportImportRouter = createExportImportRouter({
   schemas,
   requireAuth,
   logSecurityEvent,
+  isSerializedJsonWithinLimit,
 });
 const webhooksRouter = createWebhooksRouter({
   db,
