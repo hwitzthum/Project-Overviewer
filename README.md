@@ -7,7 +7,7 @@
 No subscriptions. No cloud lock-in. No framework overhead. Just Node.js, SQLite, and pure JavaScript.
 
 ![Version](https://img.shields.io/badge/version-1.0-blue)
-![Node.js](https://img.shields.io/badge/Node.js-v24%2B-green)
+![Node.js](https://img.shields.io/badge/Node.js-v24-green)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 ![Tests](https://img.shields.io/badge/tests-209%20E2E-brightgreen)
 
@@ -112,7 +112,7 @@ If you're tired of subscription-based project management tools that:
 
 ### Prerequisites
 
-- **Node.js** v24+ ([download](https://nodejs.org/))
+- **Node.js** v24 ([download](https://nodejs.org/))
 - That's it — SQLite is bundled
 
 ### Install & Run
@@ -617,7 +617,7 @@ Notes are **per-user** and persisted to the database (never lost on refresh).
 - Testing workflow changes without affecting live data
 - Sharing a project template with the team
 
-**Rate limit:** 5 imports per hour per user (prevents abuse)
+**Rate limit:** 5 imports per hour per IP address (prevents abuse)
 
 ### Global Settings (Admin Only)
 
@@ -960,7 +960,7 @@ GET /api/health                          Database health check (no auth required
 
 ```bash
 # Check Node.js version
-node --version  # should be v24+
+node --version  # should be v24
 
 # Reinstall dependencies
 rm -rf node_modules && npm install
