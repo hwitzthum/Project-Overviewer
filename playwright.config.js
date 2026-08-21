@@ -51,6 +51,15 @@ module.exports = defineConfig({
       APP_ORIGIN: "http://localhost:3099",
       TURSO_DATABASE_URL: "file:/tmp/project-overviewer-e2e.db",
       SECURITY_LOG_PATH: "./logs/test-security.log",
+      // The suite issues far more requests from one address than the general
+      // 200-per-15-minutes limiter allows, so without this the run collapses
+      // into 429s partway through and most specs fail for reasons that have
+      // nothing to do with what they assert. server.js only honours the flag
+      // when NODE_ENV=test, which is set right above. No coverage is lost:
+      // the one test that asserts a 429 (auth.spec.js, repeated failed
+      // logins) exercises the database-backed login throttle, which is a
+      // separate mechanism and stays active.
+      DISABLE_RATE_LIMIT: "1",
     },
   },
 });

@@ -26,11 +26,12 @@ test.describe('Webhooks API', () => {
   });
 
   test('GET /api/webhooks lists webhooks with redacted secrets', async ({ request }) => {
-    // Create one first
-    await request.post(`${BASE_URL}/api/webhooks`, {
+    // Create one first, keeping the real secret to check it never comes back
+    const created = await request.post(`${BASE_URL}/api/webhooks`, {
       headers: authHeaders(adminToken),
       data: { url: 'https://example.com/list-test', events: ['project.created'] }
     });
+    const { secret: realSecret } = await created.json();
 
     const res = await request.get(`${BASE_URL}/api/webhooks`, {
       headers: authHeaders(adminToken)
@@ -38,10 +39,12 @@ test.describe('Webhooks API', () => {
     expect(res.status()).toBe(200);
     const webhooks = await res.json();
     expect(webhooks.length).toBeGreaterThanOrEqual(1);
-    // Secret should be redacted in list
+    // The list discloses no part of the secret — a fixed placeholder, not a
+    // masked suffix. Only the receiving endpoint ever needs the real value.
     for (const w of webhooks) {
-      expect(w.secret).toMatch(/^\*{4}.{4}$/);
+      expect(w.secret).toBe('****');
     }
+    expect(JSON.stringify(webhooks)).not.toContain(realSecret);
   });
 
   test('PUT /api/webhooks/:id updates a webhook', async ({ request }) => {
