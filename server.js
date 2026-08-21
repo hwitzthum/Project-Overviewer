@@ -180,7 +180,7 @@ try {
 if (process.env.DISABLE_RATE_LIMIT === "1" && process.env.NODE_ENV !== "test") {
   throw new Error(
     "DISABLE_RATE_LIMIT=1 is only allowed when NODE_ENV=test. " +
-    "Refusing to start with rate limiting disabled in a non-test environment.",
+      "Refusing to start with rate limiting disabled in a non-test environment.",
   );
 }
 
@@ -1061,15 +1061,34 @@ app.use("/api", requireSameOriginCookieWrite);
 // ========== COLD-START INITIALIZATION (for serverless / Vercel) ==========
 // Kick off DB init + admin seeding as soon as the module is imported.
 // This resolves before any request handler runs (see middleware below).
-const initPromise = (async () => {
-  await db.waitForDb();
-  await seedAdminUser();
-})();
+// Memoized like the guard in database.js, and for the same two reasons: a
+// failed attempt is cleared so the next request starts a fresh one instead of
+// replaying the failure for the life of the instance, and the attempt carries
+// a no-op catch so an early failure — which happens before any request awaits
+// it — is not counted as an unhandled rejection by the handler at the bottom
+// of this file. seedAdminUser() returns early when the admin already exists,
+// so retrying is as cheap as db.waitForDb() is.
+let initPromise = null;
+
+function beginColdStartInit() {
+  const attempt = (async () => {
+    await db.waitForDb();
+    await seedAdminUser();
+  })().catch((err) => {
+    if (initPromise === attempt) initPromise = null;
+    throw err;
+  });
+  attempt.catch(() => {});
+  return attempt;
+}
+
+initPromise = beginColdStartInit();
 
 // Block all API requests until initialization is complete.
 // Static files (served above) bypass this intentionally.
 app.use(async (req, res, next) => {
   try {
+    if (!initPromise) initPromise = beginColdStartInit();
     await initPromise;
     next();
   } catch (err) {
@@ -1227,7 +1246,10 @@ app.get("/*splat", async (req, res, next) => {
 // ensures no raw error messages or stack traces are sent to the client.
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, _next) => {
-  logger.error({ err, path: req.path, method: req.method }, "Unhandled route error");
+  logger.error(
+    { err, path: req.path, method: req.method },
+    "Unhandled route error",
+  );
   if (res.headersSent) return;
   if (req.path.startsWith("/api/")) {
     res.status(500).json({ error: "Internal server error" });

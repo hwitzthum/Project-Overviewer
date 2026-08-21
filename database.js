@@ -111,25 +111,40 @@ const client = createClient({
 
 // Promise-based initialization guard — ensures schema is ready before any
 // caller proceeds. The client itself is created synchronously above.
-let dbReadyResolve;
-let dbReadyReject;
-const dbReadyPromise = new Promise((resolve, reject) => {
-  dbReadyResolve = resolve;
-  dbReadyReject = reject;
-});
+// The promise is memoized rather than created once: a failed attempt clears
+// it so the next caller starts a fresh one. Held permanently, a single
+// transient network error — a connect timeout to Turso, say — would poison it
+// for the life of the process, and every later request on that warm
+// serverless instance would be served the cached rejection long after the
+// database became reachable again. initDatabase() is idempotent, so retrying
+// costs one round trip and nothing else.
+let dbReadyPromise = null;
+
+function beginInit() {
+  const attempt = initDatabase().then(
+    () => {
+      logger.info("Database ready for queries");
+    },
+    (err) => {
+      logger.error({ err }, "Database initialization failed");
+      if (dbReadyPromise === attempt) dbReadyPromise = null;
+      throw err;
+    },
+  );
+  // Initialization starts at module load, before any caller awaits it. Without
+  // this no-op handler a failure counts as an unhandled rejection, which the
+  // process-level handler in server.js turns into a non-zero exit code — the
+  // instance then dies and fails every other request it was serving. Callers
+  // still see the rejection through waitForDb().
+  attempt.catch(() => {});
+  return attempt;
+}
 
 // Kick off initialization immediately
-initDatabase()
-  .then(() => {
-    logger.info("Database ready for queries");
-    dbReadyResolve();
-  })
-  .catch((err) => {
-    logger.error({ err }, "Database initialization failed");
-    dbReadyReject(err);
-  });
+dbReadyPromise = beginInit();
 
 async function waitForDb() {
+  if (!dbReadyPromise) dbReadyPromise = beginInit();
   await dbReadyPromise;
 }
 
