@@ -126,10 +126,8 @@ async function deleteProject(id) {
   const project = state.projects.find(p => p.id === id);
   if (!project) return;
 
-  showConfirmModal(`Delete "${project.title}"?`, 'This cannot be undone.', async () => {
+  showConfirmModal(`Delete "${project.title}"?`, 'It moves to Trash and can be restored from there.', async () => {
     try {
-      // Use in-memory snapshot instead of prefetching from API
-      const projectSnapshot = { ...project, tasks: [...(project.tasks || [])], documents: [...(project.documents || [])] };
       await API.deleteProject(id);
       setState(s => ({ projects: s.projects.filter(p => p.id !== id) }));
       closeModal('projectModal');
@@ -139,10 +137,10 @@ async function deleteProject(id) {
         setRenderHint({ type: 'project-remove', projectId: id });
         render();
       }
-      showToast(`Deleted "${project.title}"`, 'info', {
+      showToast(`Deleted "${project.title}" — in Trash`, 'info', {
         actionLabel: 'Undo',
         duration: 8000,
-        onAction: () => restoreDeletedProject(projectSnapshot)
+        onAction: () => restoreDeletedProject(id)
       });
     } catch (error) {
       console.error('Failed to delete project:', error);

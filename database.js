@@ -3,6 +3,7 @@ const crypto = require("crypto");
 const logger = require("./logger");
 const {
   MAX_DOCUMENTS_PER_USER,
+  PROJECT_TRASH_RETENTION_MS,
   VALID_SETTINGS_KEYS,
 } = require("./app-constants");
 const {
@@ -32,7 +33,15 @@ const ALLOWED_DOC_MIME_TYPES = [
 // v2 marks the login_attempts generation. (The table itself is created by the
 // unconditional CREATE batch; the bump records the schema generation and lets
 // the one-time gated steps run on databases still at v1.)
-const SCHEMA_VERSION = 2;
+//
+// v3 marks projects.deleted_at (soft delete) and back-fills the long-missing
+// projects.status_changed_at. Fresh databases get both columns from the CREATE
+// TABLE below; existing ones get them from ensureProjectColumns() in the gated
+// migration section, which is exactly why this constant has to move. Forgetting the bump here is the
+// login_attempts incident again: every project query references deleted_at, so
+// a database that skipped the ALTER would fail on "no such column" for every
+// read. tests/project-soft-delete-migration.test.js guards that.
+const SCHEMA_VERSION = 3;
 
 // ========== PER-PROCESS CACHES ==========
 // These caches live for the lifetime of a single Node process / Lambda
@@ -282,6 +291,32 @@ async function ensureTaskSubtaskColumn() {
     );
     logger.info("Added parent_task_id column to tasks table");
   }
+}
+
+async function ensureProjectColumns() {
+  const columns = await all("PRAGMA table_info(projects)");
+  const columnNames = new Set(columns.map((c) => c.name));
+
+  // status_changed_at was added to the CREATE TABLE above without a matching
+  // ALTER for databases that already existed. Those databases 500 on every
+  // project status change ("no such column: status_changed_at") because
+  // updateProject writes the column whenever `status` changes — the same defect
+  // class as the login_attempts incident, and the reason this back-fill exists.
+  if (!columnNames.has("status_changed_at")) {
+    await run("ALTER TABLE projects ADD COLUMN status_changed_at TEXT");
+    logger.info("Added status_changed_at column to projects table");
+  }
+
+  if (!columnNames.has("deleted_at")) {
+    await run("ALTER TABLE projects ADD COLUMN deleted_at TEXT");
+    logger.info("Added deleted_at column to projects table");
+  }
+  // Partial index: only soft-deleted rows are indexed, so the common
+  // `deleted_at IS NULL` reads pay nothing for it while the retention sweep
+  // and the Trash view stay cheap.
+  await run(
+    "CREATE INDEX IF NOT EXISTS idx_projects_deleted_at ON projects(deleted_at) WHERE deleted_at IS NOT NULL",
+  );
 }
 
 async function cleanupExpiredSessions() {
@@ -569,6 +604,7 @@ async function initDatabase() {
         archived INTEGER DEFAULT 0,
         archived_at TEXT,
         status_changed_at TEXT,
+        deleted_at TEXT,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP,
         updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
@@ -797,6 +833,7 @@ async function initDatabase() {
 
   await ensureSessionSchema();
   await ensureTaskSubtaskColumn();
+  await ensureProjectColumns();
 
   await repairTeamMembershipIntegrity();
   await ensureSingleTeamMembershipIndex();
@@ -858,6 +895,14 @@ async function initDatabase() {
   await run("DELETE FROM login_attempts WHERE last_failure_at < ?", [
     Date.now() - 15 * 60 * 1000,
   ]).catch(() => {});
+
+  // Retention sweep for the project trash, on the same terms: call the raw
+  // DELETE, not purgeExpiredProjects(), whose `await waitForDb()` would
+  // deadlock the very migration that resolves it.
+  await run(
+    "DELETE FROM projects WHERE deleted_at IS NOT NULL AND deleted_at < ?",
+    [new Date(Date.now() - PROJECT_TRASH_RETENTION_MS).toISOString()],
+  ).catch(() => {});
 
   // Mark schema as current so the next cold start can skip all of this work.
   await run(
@@ -1206,7 +1251,7 @@ async function getAllProjects(userId, options = {}) {
       `SELECT p.*, u.username AS owner_name
        FROM projects p
        JOIN users u ON p.user_id = u.id
-       WHERE p.user_id IN (${userPlaceholders})
+       WHERE p.user_id IN (${userPlaceholders}) AND p.deleted_at IS NULL
        ORDER BY p.project_order ASC, p.created_at DESC`,
       teamUserIds,
     );
@@ -1215,7 +1260,7 @@ async function getAllProjects(userId, options = {}) {
       `SELECT p.*, u.username AS owner_name
        FROM projects p
        JOIN users u ON p.user_id = u.id
-       WHERE p.user_id = ?
+       WHERE p.user_id = ? AND p.deleted_at IS NULL
        ORDER BY p.project_order ASC, p.created_at DESC`,
       [userId],
     );
@@ -1290,7 +1335,7 @@ async function getProjectById(id, userId, options = {}) {
       `SELECT p.*, u.username AS owner_name
        FROM projects p
        JOIN users u ON p.user_id = u.id
-       WHERE p.id = ? AND p.user_id IN (${userPlaceholders})`,
+       WHERE p.id = ? AND p.user_id IN (${userPlaceholders}) AND p.deleted_at IS NULL`,
       [id, ...teamUserIds],
     );
   } else {
@@ -1298,7 +1343,7 @@ async function getProjectById(id, userId, options = {}) {
       `SELECT p.*, u.username AS owner_name
        FROM projects p
        JOIN users u ON p.user_id = u.id
-       WHERE p.id = ? AND p.user_id = ?`,
+       WHERE p.id = ? AND p.user_id = ? AND p.deleted_at IS NULL`,
       [id, userId],
     );
   }
@@ -1378,7 +1423,7 @@ async function createProject(userId, project, ownerUsername) {
 async function countProjectsByUser(userId) {
   await waitForDb();
   const row = await get(
-    "SELECT COUNT(*) AS count FROM projects WHERE user_id = ?",
+    "SELECT COUNT(*) AS count FROM projects WHERE user_id = ? AND deleted_at IS NULL",
     [userId],
   );
   return Number(row?.count || 0);
@@ -1441,7 +1486,7 @@ async function updateProject(id, userId, updates) {
   values.push(id, userId);
 
   const result = await run(
-    `UPDATE projects SET ${fields.join(", ")} WHERE id = ? AND user_id = ?`,
+    `UPDATE projects SET ${fields.join(", ")} WHERE id = ? AND user_id = ? AND deleted_at IS NULL`,
     values,
   );
 
@@ -1451,13 +1496,80 @@ async function updateProject(id, userId, updates) {
   return getProjectById(id, userId);
 }
 
-async function deleteProject(id, userId) {
+// Soft delete. The row stays; every read path filters on `deleted_at IS NULL`,
+// so the project disappears from views, quotas and ownership checks while its
+// tasks and documents remain intact and re-linkable. Permanent removal happens
+// only via purgeProject() or the retention sweep in purgeExpiredProjects().
+async function softDeleteProject(id, userId) {
   await waitForDb();
   const result = await run(
-    "DELETE FROM projects WHERE id = ? AND user_id = ?",
+    "UPDATE projects SET deleted_at = ? WHERE id = ? AND user_id = ? AND deleted_at IS NULL",
+    [new Date().toISOString(), id, userId],
+  );
+  return result.changes > 0;
+}
+
+// Undo a soft delete. Because the row was never removed, task and document IDs
+// survive — anything holding a reference to them (a webhook consumer, an open
+// tab) still resolves after a restore.
+async function restoreProject(id, userId) {
+  await waitForDb();
+  const result = await run(
+    "UPDATE projects SET deleted_at = NULL WHERE id = ? AND user_id = ? AND deleted_at IS NOT NULL",
     [id, userId],
   );
   return result.changes > 0;
+}
+
+// Trash listing. Deliberately does not hydrate tasks and documents — the Trash
+// view only needs enough to identify a project and show what restoring brings
+// back, and hydrating soft-deleted projects would mean a second set of
+// unfiltered queries.
+async function getDeletedProjects(userId) {
+  await waitForDb();
+  const rows = await all(
+    `SELECT p.*, u.username AS owner_name,
+            (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id) AS task_count,
+            (SELECT COUNT(*) FROM documents d WHERE d.project_id = p.id) AS document_count
+     FROM projects p
+     JOIN users u ON p.user_id = u.id
+     WHERE p.user_id = ? AND p.deleted_at IS NOT NULL
+     ORDER BY p.deleted_at DESC`,
+    [userId],
+  );
+  return rows.map((row) => ({
+    ...mapProject(row),
+    deletedAt: row.deleted_at,
+    taskCount: Number(row.task_count || 0),
+    documentCount: Number(row.document_count || 0),
+  }));
+}
+
+// Permanent removal of a single project. Requires the project to already be in
+// the trash, which makes destroying data a deliberate two-step act rather than
+// something one mis-aimed click can do. Tasks and documents go with it through
+// ON DELETE CASCADE (foreign keys are enabled in initDatabase).
+async function purgeProject(id, userId) {
+  await waitForDb();
+  const result = await run(
+    "DELETE FROM projects WHERE id = ? AND user_id = ? AND deleted_at IS NOT NULL",
+    [id, userId],
+  );
+  return result.changes > 0;
+}
+
+// Retention sweep: drop trashed projects past the window. Called opportunistically
+// on writes and once at start-up, in the same best-effort style as
+// pruneExpiredLoginAttempts — there is no cron on serverless, and a sweep that
+// misses a cycle simply runs on the next one.
+async function purgeExpiredProjects(retentionMs = PROJECT_TRASH_RETENTION_MS) {
+  await waitForDb();
+  const cutoff = new Date(Date.now() - retentionMs).toISOString();
+  const result = await run(
+    "DELETE FROM projects WHERE deleted_at IS NOT NULL AND deleted_at < ?",
+    [cutoff],
+  );
+  return result.changes || 0;
 }
 
 async function reorderProjects(userId, projectOrders) {
@@ -1472,7 +1584,7 @@ async function reorderProjects(userId, projectOrders) {
     const placeholders = ids.map(() => "?").join(",");
 
     await tx.execute({
-      sql: `UPDATE projects SET project_order = CASE id ${cases} END WHERE id IN (${placeholders}) AND user_id = ?`,
+      sql: `UPDATE projects SET project_order = CASE id ${cases} END WHERE id IN (${placeholders}) AND user_id = ? AND deleted_at IS NULL`,
       args: [...caseParams, ...ids, userId],
     });
     await tx.commit();
@@ -1490,7 +1602,7 @@ async function verifyTaskOwnership(taskId, userId) {
     `
     SELECT t.id FROM tasks t
     JOIN projects p ON t.project_id = p.id
-    WHERE t.id = ? AND p.user_id = ?
+    WHERE t.id = ? AND p.user_id = ? AND p.deleted_at IS NULL
   `,
     [taskId, userId],
   );
@@ -1501,7 +1613,7 @@ async function getProjectTasks(projectId, userId) {
   await waitForDb();
   // Verify project ownership
   const project = await get(
-    "SELECT id FROM projects WHERE id = ? AND user_id = ?",
+    "SELECT id FROM projects WHERE id = ? AND user_id = ? AND deleted_at IS NULL",
     [projectId, userId],
   );
   if (!project) return null;
@@ -1520,7 +1632,7 @@ async function countTasksByProject(projectId, userId) {
     SELECT p.id AS project_id, COUNT(t.id) AS count
     FROM projects p
     LEFT JOIN tasks t ON t.project_id = p.id AND t.parent_task_id IS NULL
-    WHERE p.id = ? AND p.user_id = ?
+    WHERE p.id = ? AND p.user_id = ? AND p.deleted_at IS NULL
     GROUP BY p.id
   `,
     [projectId, userId],
@@ -1534,7 +1646,7 @@ async function createTask(projectId, userId, task) {
   await waitForDb();
   // Verify project ownership
   const project = await get(
-    "SELECT id FROM projects WHERE id = ? AND user_id = ?",
+    "SELECT id FROM projects WHERE id = ? AND user_id = ? AND deleted_at IS NULL",
     [projectId, userId],
   );
   if (!project) return null;
@@ -1589,7 +1701,7 @@ async function createTask(projectId, userId, task) {
 async function createTasksBulk(projectId, userId, tasks) {
   await waitForDb();
   const project = await get(
-    "SELECT id FROM projects WHERE id = ? AND user_id = ?",
+    "SELECT id FROM projects WHERE id = ? AND user_id = ? AND deleted_at IS NULL",
     [projectId, userId],
   );
   if (!project) return null;
@@ -1732,7 +1844,7 @@ async function reorderTasks(projectId, userId, taskOrders) {
   await waitForDb();
   // Verify project ownership
   const project = await get(
-    "SELECT id FROM projects WHERE id = ? AND user_id = ?",
+    "SELECT id FROM projects WHERE id = ? AND user_id = ? AND deleted_at IS NULL",
     [projectId, userId],
   );
   if (!project) return false;
@@ -1767,12 +1879,12 @@ async function getProjectDocuments(projectId, userId, options = {}) {
   if (teamUserIds && teamUserIds.length > 1) {
     const userPlaceholders = teamUserIds.map(() => "?").join(",");
     project = await get(
-      `SELECT id FROM projects WHERE id = ? AND user_id IN (${userPlaceholders})`,
+      `SELECT id FROM projects WHERE id = ? AND user_id IN (${userPlaceholders}) AND deleted_at IS NULL`,
       [projectId, ...teamUserIds],
     );
   } else {
     project = await get(
-      "SELECT id FROM projects WHERE id = ? AND user_id = ?",
+      "SELECT id FROM projects WHERE id = ? AND user_id = ? AND deleted_at IS NULL",
       [projectId, userId],
     );
   }
@@ -1798,7 +1910,7 @@ async function getDocumentById(id, userId, options = {}) {
       `
       SELECT d.* FROM documents d
       JOIN projects p ON d.project_id = p.id
-      WHERE d.id = ? AND p.user_id IN (${userPlaceholders})
+      WHERE d.id = ? AND p.user_id IN (${userPlaceholders}) AND p.deleted_at IS NULL
     `,
       [id, ...teamUserIds],
     );
@@ -1807,7 +1919,7 @@ async function getDocumentById(id, userId, options = {}) {
       `
       SELECT d.* FROM documents d
       JOIN projects p ON d.project_id = p.id
-      WHERE d.id = ? AND p.user_id = ?
+      WHERE d.id = ? AND p.user_id = ? AND p.deleted_at IS NULL
     `,
       [id, userId],
     );
@@ -1821,7 +1933,7 @@ async function createDocument(projectId, userId, doc) {
   await waitForDb();
   // Verify project ownership
   const project = await get(
-    "SELECT id FROM projects WHERE id = ? AND user_id = ?",
+    "SELECT id FROM projects WHERE id = ? AND user_id = ? AND deleted_at IS NULL",
     [projectId, userId],
   );
   if (!project) return null;
@@ -1881,7 +1993,7 @@ async function countDocumentsByUser(userId) {
     SELECT COUNT(d.id) AS count
     FROM documents d
     JOIN projects p ON d.project_id = p.id
-    WHERE p.user_id = ?
+    WHERE p.user_id = ? AND p.deleted_at IS NULL
   `,
     [userId],
   );
@@ -1895,7 +2007,7 @@ async function deleteDocument(id, userId) {
     `
     SELECT d.id FROM documents d
     JOIN projects p ON d.project_id = p.id
-    WHERE d.id = ? AND p.user_id = ?
+    WHERE d.id = ? AND p.user_id = ? AND p.deleted_at IS NULL
   `,
     [id, userId],
   );
@@ -2684,7 +2796,11 @@ module.exports = {
   createProject,
   countProjectsByUser,
   updateProject,
-  deleteProject,
+  softDeleteProject,
+  restoreProject,
+  getDeletedProjects,
+  purgeProject,
+  purgeExpiredProjects,
   reorderProjects,
   // Tasks
   getProjectTasks,

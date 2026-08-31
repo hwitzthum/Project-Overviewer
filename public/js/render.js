@@ -571,6 +571,51 @@ function refreshProjectModalDocuments(projectId) {
   });
 }
 
+function renderTrashView() {
+  const projects = state.deletedProjects || [];
+  const retention = state.trashRetentionDays;
+
+  if (projects.length === 0) {
+    return `
+      <div class="empty-state">
+        <div class="empty-state-icon">🗑️</div>
+        <h2 class="empty-state-title">Trash is empty</h2>
+        <p class="empty-state-desc">Deleted projects appear here${retention ? ` and are removed permanently after ${retention} days` : ''}</p>
+      </div>
+    `;
+  }
+
+  return `
+    ${retention ? `<p class="trash-notice">Projects here are permanently deleted ${retention} days after they were removed.</p>` : ''}
+    <div class="projects-grid">
+      ${projects.map(project => {
+        const deletedAt = project.deletedAt ? formatDate(project.deletedAt) : '';
+        const daysLeft = project.deletedAt && retention
+          ? Math.max(0, retention - Math.floor((Date.now() - new Date(project.deletedAt)) / 86400000))
+          : null;
+        return `
+        <div class="project-card trashed" data-id="${project.id}">
+          <div class="project-card-header">
+            <h3 class="project-title">${escapeHtml(project.title)}</h3>
+          </div>
+          <p class="project-desc">${escapeHtml(project.description || '')}</p>
+          <div class="project-meta">
+            <span>${project.taskCount} task${project.taskCount === 1 ? '' : 's'}</span>
+            <span>${project.documentCount} document${project.documentCount === 1 ? '' : 's'}</span>
+            ${deletedAt ? `<span>Deleted ${escapeHtml(deletedAt)}</span>` : ''}
+            ${daysLeft !== null ? `<span class="trash-countdown">${daysLeft} day${daysLeft === 1 ? '' : 's'} left</span>` : ''}
+          </div>
+          <div class="project-card-actions">
+            <button class="btn btn-secondary btn-sm trash-restore-btn" data-project-id="${project.id}" type="button">Restore</button>
+            <button class="btn btn-danger btn-sm trash-purge-btn" data-project-id="${project.id}" type="button">Delete forever</button>
+          </div>
+        </div>
+      `;
+      }).join('')}
+    </div>
+  `;
+}
+
 function renderEmptyState() {
   return `
     <div class="empty-state">
@@ -937,6 +982,8 @@ function fullRender() {
     } else {
       content.innerHTML = renderEmptyState();
     }
+  } else if (currentView === 'trash') {
+    content.innerHTML = renderTrashView();
   } else if (currentView === 'focus') {
     content.innerHTML = renderFocusView();
   } else if (currentView.startsWith('smart-')) {

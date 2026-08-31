@@ -9,7 +9,7 @@ No subscriptions. No cloud lock-in. No framework overhead. Just Node.js, SQLite,
 ![Version](https://img.shields.io/badge/version-1.0-blue)
 ![Node.js](https://img.shields.io/badge/Node.js-v24-green)
 ![License](https://img.shields.io/badge/license-MIT-blue)
-![Tests](https://img.shields.io/badge/tests-209%20E2E-brightgreen)
+![Tests](https://img.shields.io/badge/tests-231%20E2E-brightgreen)
 
 [**Get Started in 2 Minutes**](#quick-start) • [**See Features**](#what-you-get) • [**View Docs**](#user-guide) • [**GitHub**](https://github.com/hwitzthum/Project-Overviewer)
 
@@ -177,7 +177,7 @@ Open **http://localhost:3001** and log in with your admin credentials.
 - 🔌 **Backend**: `server.js` entry point with 11 route modules in `routes/`
 - 💾 **Database**: SQLite with WAL mode (concurrent reads + reliable writes)
 - 🔒 **Security**: Helmet, rate limiting, Zod validation, bcrypt hashing
-- ✅ **Tests**: 209 Playwright E2E tests (auth, CRUD, RBAC, security) plus 3 `node:test` migration suites
+- ✅ **Tests**: 231 Playwright E2E tests (auth, CRUD, RBAC, security) plus 4 `node:test` migration suites
 - 📖 **Documentation**: Fully documented codebase + architecture guide
 
 **Total lines of code:** ~14,300 JavaScript — roughly 7,300 backend (`server.js`, `routes/`, utilities) and 6,800 frontend modules. Still understand it in a day or two.
@@ -579,29 +579,28 @@ Access via:
 
 Notes are **per-user** and persisted to the database (never lost on refresh).
 
-### Undo & Recovery: Archive vs. Delete
+### Undo & Recovery: Archive, Trash, Purge
 
-Two different mechanisms, with very different guarantees. Read this before relying on either.
+Nothing a single click can do is permanent. Two mechanisms, both reversible.
 
-**Archive — reversible, server-side.**
+**Archive — hide it, keep it in place.**
 
-- Archiving sets `archived = 1` on the project; nothing is removed from the database
-- Archived projects are hidden from the default views and listed under Archived
-- **Restore** puts them back at any time, with all tasks, documents and IDs intact
+- Sets `archived = 1`; the project leaves the default views and appears under **Archived**
+- **Restore** puts it back at any time, untouched
+- Use it for "we're done with this for now"
 
-This is the safety net. If you might want a project back, archive it rather than deleting it.
+**Delete — moves to Trash, restorable for 30 days.**
 
-**Delete — permanent, with a short client-side undo.**
+- `DELETE /api/projects/:id` is a *soft* delete: it stamps `deleted_at` and leaves the row, its tasks and its documents exactly where they are
+- The project vanishes from every read path — lists, search, ownership checks, and the project/task/document quotas — so a trashed project stops occupying a slot
+- It appears under **Trash**, showing what it contains and how many days remain
+- **Restore** clears the flag. Because the rows were never removed, **every task and document keeps its original ID** — webhook consumers and open tabs still resolve
+- The **Undo** on the delete toast is the same restore call, just faster to reach
 
-- `DELETE /api/projects/:id` runs a hard `DELETE FROM projects`, cascading to the project's tasks and documents. There is no soft-delete column, no recovery window on the server, and no undo endpoint
-- The **Undo** action on the delete toast is a client-side convenience: the browser keeps an in-memory snapshot of the project it just deleted and, if you click Undo, re-creates the project, its task tree and its documents through the normal create endpoints
-- That snapshot lives for the **8-second lifetime of the toast, in that browser tab only**. Navigating away, reloading, or letting the toast expire discards it permanently
-- Because undo re-creates rather than un-deletes, **restored tasks receive new IDs**. Task dependencies (`blockedBy`) are re-linked to the new IDs; anything else that referenced an old task ID — an external webhook consumer, for example — will not match
+**Purge — the only thing that actually destroys data.**
 
-**Useful for:**
-
-- Archive: "we're done with this for now", accidental cleanups, anything a team member might want back
-- Undo: catching a misclick in the seconds right after it happens
+- `DELETE /api/projects/:id/purge` hard-deletes, cascading to tasks and documents. It only accepts a project that is *already* in the Trash, so destroying data always takes two deliberate steps
+- Anything left in the Trash is purged automatically 30 days after deletion (`PROJECT_TRASH_RETENTION_MS` in `app-constants.js`). The sweep runs opportunistically on deletes and once at start-up — there is no cron on serverless
 
 ### Data Export & Import: Full Data Portability
 
@@ -848,7 +847,7 @@ Each module exports a `create<Name>Router({ db, logger, schemas, requireAuth, ev
 **Key patterns:**
 
 - UUID primary keys everywhere (security + portability)
-- Every read query includes `user_id` filter (or expands to team members)
+- Every read query includes a `user_id` filter (or expands to team members) **and `deleted_at IS NULL`** — soft-deleted projects are invisible to every normal code path, quotas included
 - JSON columns for `tags`, `tasks` (template), `payload` (email) — schema-migration-free
 - SQLite with WAL mode (concurrent reads + reliable writes)
 
@@ -905,10 +904,13 @@ PUT  /api/auth/password    Change password
 
 ```
 GET  /api/projects                Get all projects with tasks (team-aware)
+GET  /api/projects/deleted        List trashed projects + the retention window
 GET  /api/projects/:id            Get a single project with tasks (team-aware)
 POST /api/projects                Create project
 PUT  /api/projects/:id            Update project
-DELETE /api/projects/:id          Delete project (hard delete; cascades to tasks + documents)
+DELETE /api/projects/:id          Move project to Trash (soft delete, restorable)
+POST /api/projects/:id/restore    Restore a trashed project, IDs intact
+DELETE /api/projects/:id/purge    Permanently delete a trashed project (cascades)
 POST /api/projects/reorder        Reorder projects
 ```
 

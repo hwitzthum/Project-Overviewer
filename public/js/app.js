@@ -81,6 +81,7 @@ async function init(options) {
     "backlog",
     "completed",
     "archived",
+    "trash",
     "overdue",
     "today",
     "week",
@@ -121,6 +122,11 @@ async function init(options) {
       setState((s) => ({ settings: { ...s.settings, lastView: currentView } }));
       updateViewTitle();
       render();
+      // Trashed projects are deliberately absent from every normal read, so the
+      // view fetches its own data on entry and re-renders when it arrives.
+      if (currentView === "trash") {
+        loadDeletedProjects().then(() => render());
+      }
     }
   });
 

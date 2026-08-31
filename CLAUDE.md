@@ -485,7 +485,7 @@ Thirteen tables in five logical groups:
 - **User-scoped queries** — every content table has a `user_id` column; every read query filters by it (or expands to team member list in team mode)
 - **JSON columns** for `tags`, template `tasks`, and email `payload` — avoids schema migrations for list/object-shaped fields
 - **Cascade deletes** — deleting a user removes sessions; deleting a project cascades to tasks and documents
-- **Deletes are hard deletes** — there is no `deleted_at` column and no server-side restore. `archived` on `projects` is the only reversible removal; the delete-toast "Undo" in `public/js/projects.js` is a client-side snapshot that re-creates the project through the normal endpoints, so restored tasks get new IDs
+- **Project deletes are soft** — `DELETE /api/projects/:id` stamps `projects.deleted_at` and keeps the row. Every project read path filters `deleted_at IS NULL`, including the three quota counters, so a trashed project is invisible and holds no slot. `restoreProject()` clears the flag with all task/document IDs intact; `purgeProject()` and the 30-day sweep in `purgeExpiredProjects()` are the only paths that actually remove rows. **When adding any query against `projects`, add the `deleted_at IS NULL` filter** — omitting it leaks trashed data back into the app
 - **`project_order` / `task_order` integers** per record — manual ordering without a separate join table
 
 ### users table
@@ -527,6 +527,8 @@ tags TEXT DEFAULT '[]'             -- JSON array string
 project_order INTEGER DEFAULT 0    -- For manual sorting
 archived INTEGER DEFAULT 0        -- Boolean: 0 or 1
 archived_at TEXT                   -- Timestamp when archived
+status_changed_at TEXT             -- Last status transition, for cycle time
+deleted_at TEXT                    -- Soft delete; NULL = live. Purged after 30 days
 created_at TEXT DEFAULT CURRENT_TIMESTAMP
 updated_at TEXT DEFAULT CURRENT_TIMESTAMP
 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
@@ -695,7 +697,10 @@ Every router below is mounted once per prefix in `API_BASE_PATHS` (`server.js`),
 - `GET /api/projects/:id` — Get single project with tasks (team-aware)
 - `POST /api/projects` — Create project
 - `PUT /api/projects/:id` — Update project
-- `DELETE /api/projects/:id` — Delete project (cascades to tasks and documents)
+- `GET /api/projects/deleted` — List trashed projects and the retention window
+- `DELETE /api/projects/:id` — Move project to trash (soft delete; restorable)
+- `POST /api/projects/:id/restore` — Restore a trashed project, task/document IDs intact
+- `DELETE /api/projects/:id/purge` — Permanently delete a *trashed* project (cascades)
 - `POST /api/projects/reorder` — Update project order (bulk)
 
 ### Tasks (requires auth, ownership-verified)
@@ -754,7 +759,7 @@ Every router below is mounted once per prefix in `API_BASE_PATHS` (`server.js`),
 
 ### Adding a Database Column
 
-1. Add column in the `CREATE TABLE` statement in `initDatabase()` in `database.js`
+1. Add column in the `CREATE TABLE` statement in `initDatabase()` in `database.js` — **and add a matching `ALTER TABLE` back-fill in `ensureProjectColumns()` (or the equivalent helper) plus a `SCHEMA_VERSION` bump.** `CREATE TABLE IF NOT EXISTS` is a no-op on an existing database, so a column added only there is missing everywhere the app already runs. This has bitten the project twice: `login_attempts` (every login 500'd) and `status_changed_at` (every project status change 500'd)
 2. Update relevant mapper function (e.g., `mapProject`, `mapTask`)
 3. Update relevant CRUD functions to handle new field
 4. Add Zod schema validation for the new field in `server.js`
