@@ -31,6 +31,20 @@ const MAX_WS_PER_USER = 10;
 const UPGRADE_RATE_LIMIT_WINDOW_MS = 60 * 1000;
 const UPGRADE_RATE_LIMIT_MAX = 30;
 
+// The E2E suite drives every WebSocket test from a single address (127.0.0.1)
+// and opens well over UPGRADE_RATE_LIMIT_MAX sockets inside one 60s window, so
+// without this the run collapses into spurious 429s — the same reason
+// playwright.config.js sets DISABLE_RATE_LIMIT for the HTTP limiters. That flag
+// previously stopped at server.js and never reached this module, which made the
+// WebSocket specs pass or fail on how fast the machine happened to be.
+//
+// Both conditions are required, mirroring the guard in server.js: a production
+// deployment that merely sets NODE_ENV=test must not silently lose the limiter.
+// No coverage is lost — no test asserts this 429, and the per-user
+// MAX_WS_PER_USER cap below stays enforced either way.
+const UPGRADE_RATE_LIMIT_DISABLED =
+  process.env.DISABLE_RATE_LIMIT === '1' && process.env.NODE_ENV === 'test';
+
 module.exports = function createWebSocketServer({ server, db, logger, eventBus, logSecurityEvent }) {
   const wss = new WebSocketServer({ noServer: true });
   const clients = new Map(); // ws → { userId, alive }
@@ -46,6 +60,7 @@ module.exports = function createWebSocketServer({ server, db, logger, eventBus, 
   // Returns true and records the attempt if the caller is within its
   // per-IP budget; returns false (without recording) once exhausted.
   function checkUpgradeRateLimit(remoteAddress) {
+    if (UPGRADE_RATE_LIMIT_DISABLED) return true;
     const key = remoteAddress || 'unknown';
     const now = Date.now();
     const entry = upgradeAttempts.get(key);
