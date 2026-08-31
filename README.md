@@ -11,7 +11,7 @@ No subscriptions. No cloud lock-in. No framework overhead. Just Node.js, SQLite,
 ![License](https://img.shields.io/badge/license-MIT-blue)
 ![Tests](https://img.shields.io/badge/tests-209%20E2E-brightgreen)
 
-[**Get Started in 2 Minutes**](#quick-start) • [**See Features**](#what-you-get) • [**View Docs**](#user-guide) • [**GitHub**](https://github.com/yourusername/project-overviewer)
+[**Get Started in 2 Minutes**](#quick-start) • [**See Features**](#what-you-get) • [**View Docs**](#user-guide) • [**GitHub**](https://github.com/hwitzthum/Project-Overviewer)
 
 </div>
 
@@ -119,8 +119,8 @@ If you're tired of subscription-based project management tools that:
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/project-overviewer.git
-cd project-overviewer
+git clone https://github.com/hwitzthum/Project-Overviewer.git
+cd Project-Overviewer
 
 # Install dependencies
 npm install
@@ -174,13 +174,13 @@ Open **http://localhost:3001** and log in with your admin credentials.
 **Minimal tooling. Maximum clarity. 24 JS modules + modular Express routes + SQLite.**
 
 - 📝 **Frontend**: Modular vanilla JavaScript (no React or Vue), bundled by esbuild
-- 🔌 **Backend**: `server.js` entry point with 12 route modules in `routes/`
+- 🔌 **Backend**: `server.js` entry point with 11 route modules in `routes/`
 - 💾 **Database**: SQLite with WAL mode (concurrent reads + reliable writes)
 - 🔒 **Security**: Helmet, rate limiting, Zod validation, bcrypt hashing
-- ✅ **Tests**: 209 Playwright E2E tests (auth, CRUD, RBAC, security)
+- ✅ **Tests**: 209 Playwright E2E tests (auth, CRUD, RBAC, security) plus 3 `node:test` migration suites
 - 📖 **Documentation**: Fully documented codebase + architecture guide
 
-**Total lines of code:** ~6000 across modular routes and utilities. Still understand it in a day or two.
+**Total lines of code:** ~14,300 JavaScript — roughly 7,300 backend (`server.js`, `routes/`, utilities) and 6,800 frontend modules. Still understand it in a day or two.
 
 ---
 
@@ -241,6 +241,7 @@ npm run dev                                 # Development mode (same as start)
 
 ```bash
 npm test                                    # Run all E2E tests (builds first)
+npm run test:migrations                     # Run the node:test migration suite
 npm run test:ui                             # Interactive Playwright UI
 npx playwright test --headed                # Watch tests in browser
 npx playwright test tests/e2e/auth.spec.js  # Single test file
@@ -378,7 +379,7 @@ Open settings with `Cmd+,` (Mac) or `Ctrl+,` (Windows/Linux).
 
 #### Account
 
-- **Change Password** — set a new password from Settings → Account. Requires your current password; new password must be at least 12 characters. Successfully changing your password revokes all your other sessions.
+- **Change Password** — set a new password from Settings → Account. Requires your current password. The new password must be at least 12 characters (14 for accounts with the `admin` role), at most 128, and is rejected if it is a known-common password, a single repeated character, or contains your username or email name. Successfully changing your password revokes all your other sessions.
 
 #### Team Settings
 
@@ -578,21 +579,29 @@ Access via:
 
 Notes are **per-user** and persisted to the database (never lost on refresh).
 
-### Undo & Recovery: Safe Deletions
+### Undo & Recovery: Archive vs. Delete
 
-**Deleted projects can be recovered — safety net for teams.**
+Two different mechanisms, with very different guarantees. Read this before relying on either.
 
-**How it works:**
+**Archive — reversible, server-side.**
 
-- Delete a project → it enters a soft-delete state (not permanently gone)
-- Project is hidden from views but data remains in database
-- Project can be restored (undeleted) within a recovery window
+- Archiving sets `archived = 1` on the project; nothing is removed from the database
+- Archived projects are hidden from the default views and listed under Archived
+- **Restore** puts them back at any time, with all tasks, documents and IDs intact
+
+This is the safety net. If you might want a project back, archive it rather than deleting it.
+
+**Delete — permanent, with a short client-side undo.**
+
+- `DELETE /api/projects/:id` runs a hard `DELETE FROM projects`, cascading to the project's tasks and documents. There is no soft-delete column, no recovery window on the server, and no undo endpoint
+- The **Undo** action on the delete toast is a client-side convenience: the browser keeps an in-memory snapshot of the project it just deleted and, if you click Undo, re-creates the project, its task tree and its documents through the normal create endpoints
+- That snapshot lives for the **8-second lifetime of the toast, in that browser tab only**. Navigating away, reloading, or letting the toast expire discards it permanently
+- Because undo re-creates rather than un-deletes, **restored tasks receive new IDs**. Task dependencies (`blockedBy`) are re-linked to the new IDs; anything else that referenced an old task ID — an external webhook consumer, for example — will not match
 
 **Useful for:**
 
-- Accidental deletes by team members
-- "Oops, I shouldn't have archived that" moments
-- Bulk delete recovery via undo endpoint
+- Archive: "we're done with this for now", accidental cleanups, anything a team member might want back
+- Undo: catching a misclick in the seconds right after it happens
 
 ### Data Export & Import: Full Data Portability
 
@@ -631,9 +640,11 @@ Access: Admin Panel → **Global Settings**
 | **maxTasksPerProject**  | Prevent runaway task lists          | `200` = max 200 tasks per project         |
 | **siteName**            | Customize app title                 | `"Acme Corp Projects"`                    |
 | **registrationEnabled** | Open/close new registrations        | `false` = admin-only, no self-signup      |
-| **maintenanceMode**     | Graceful shutdown (no new requests) | `true` = app returns 503, exit gracefully |
+| **maintenanceMode**     | Take the app offline for users      | `true` = app answers 503; process keeps running |
 
 **Best practice:** Set `maxProjectsPerUser` and `maxTasksPerProject` to prevent database bloat.
+
+**Maintenance mode does not shut anything down.** While it is on, the server keeps running and answers `503 Service unavailable for maintenance` — JSON for `/api/*`, plain text otherwise. These paths deliberately bypass it so an admin cannot lock themselves out: `/api/health`, `/api/auth/login`, `/admin.html`, and everything under `/api/admin/` (plus the `/api/v1` equivalents). Turn it off the same way you turned it on, from Admin Panel → Global Settings.
 
 ### Theme Switching: Keyboard Power User Workflow
 
@@ -775,12 +786,13 @@ Source modules in `public/js/` are bundled by esbuild into 6 content-hashed bund
 15. **keyboard.js** — keyboard shortcuts
 16. **events.js** — event delegation
 17. **team.js** — team management
-18. **ws-client.js** — WebSocket real-time sync
-19. **polling.js** — long-polling fallback
-20. **app.js** — bootstrap
-21. **login-page.js** — login page
-22. **register-page.js** — registration page
-23. **admin-page.js** — admin panel
+18. **account-settings.js** — self-service password change + strength meter
+19. **ws-client.js** — WebSocket real-time sync
+20. **polling.js** — long-polling fallback
+21. **app.js** — bootstrap
+22. **login-page.js** — login page
+23. **register-page.js** — registration page
+24. **admin-page.js** — admin panel
 
 ### Backend: Modular Route Structure
 
@@ -804,6 +816,9 @@ Source modules in `public/js/` are bundled by esbuild into 6 content-hashed bund
 - `routes/notes.js` — quick notes (scratch pad)
 - `routes/templates.js` — project templates
 - `routes/webhooks.js` — webhook management and delivery
+- `routes/shared.js` — helpers shared across routers (e.g. `resolveTeamScope`); not itself a router
+
+Each module exports a `create<Name>Router({ db, logger, schemas, requireAuth, eventBus })` factory. `server.js` builds each one and mounts it under every prefix in `API_BASE_PATHS` — `/api` and `/api/v1` — so both prefixes share a single implementation.
 
 **Utilities:**
 
@@ -812,20 +827,23 @@ Source modules in `public/js/` are bundled by esbuild into 6 content-hashed bund
 - `password-policy.js` — password validation rules
 - `security-events.js` — security event logging and token fingerprinting
 - `session-config.js` — session timeout configuration
+- `document-security.js` — upload MIME allowlisting and filename sanitization
 - `event-bus.js` — pub/sub for real-time updates
 - `webhook-dispatcher.js` — event-driven webhook delivery
+- `ws-server.js` — WebSocket server for real-time sync
 - `app-constants.js` — allowlisted settings, webhook events
 
 **Why modular routes?** Easier to navigate, extend, and test. Each domain is self-contained.
 
-### Database: 11 Tables, User-Scoped Queries
+### Database: 13 Tables, User-Scoped Queries
 
-**Schema** (11 tables across 4 groups):
+**Schema** (13 tables across 5 groups):
 
-- **Auth**: users, sessions
+- **Auth**: users, sessions, login_attempts
 - **Content**: projects, tasks, documents
 - **Collaboration**: teams, team_members
 - **Configuration**: global_settings, user_settings, quick_notes, templates
+- **Integration**: webhooks
 
 **Key patterns:**
 
@@ -840,8 +858,9 @@ Source modules in `public/js/` are bundled by esbuild into 6 content-hashed bund
 | ----------------- | ------------------------------------------------------------- |
 | **Transport**     | HSTS in production; Secure cookie flag requires HTTPS         |
 | **Headers**       | Helmet: CSP, X-Frame-Options, X-Content-Type-Options          |
-| **Rate Limiting** | 200 req/15 min general; 20/15 auth; 5/hr import               |
-| **Passwords**     | bcrypt with 12 salt rounds                                    |
+| **Rate Limiting** | Per IP: 200 req/15 min general; 20/15 min auth; 30/15 min admin; 10/15 min webhooks; 5/hr import |
+| **Brute force**   | Separate DB-backed throttle per username+IP pair: exponential delay from the 4th failed login, hard block from the 8th, 15-minute window |
+| **Passwords**     | bcrypt with 12 salt rounds; 12-char minimum (14 for admins), common-password and identity-substring rejection |
 | **Sessions**      | 32-byte token; 24-hour expiry; invalidated on password change |
 | **Authorization** | Every endpoint verifies user ownership or team membership     |
 | **Input**         | Zod schemas on all inputs; allowlisted settings keys          |
@@ -868,7 +887,9 @@ Tuned for serverless (Vercel + Turso) where every cold start re-imports the proc
 
 ## API Reference
 
-All endpoints require authentication (Bearer token or HttpOnly cookie) except `/api/health`.
+All endpoints require authentication (Bearer token or HttpOnly cookie) except `/api/health`, `POST /api/auth/register` and `POST /api/auth/login`.
+
+**Versioned alias:** every route below is mounted at both `/api/...` and `/api/v1/...`. The two prefixes serve the same handlers — `/api/v1` exists so the unversioned paths can be retired later without breaking clients. New integrations should use `/api/v1`.
 
 ### Authentication
 
@@ -883,17 +904,20 @@ PUT  /api/auth/password    Change password
 ### Projects
 
 ```
-GET  /api/projects                Get all projects (team-aware)
+GET  /api/projects                Get all projects with tasks (team-aware)
+GET  /api/projects/:id            Get a single project with tasks (team-aware)
 POST /api/projects                Create project
 PUT  /api/projects/:id            Update project
-DELETE /api/projects/:id          Delete project
+DELETE /api/projects/:id          Delete project (hard delete; cascades to tasks + documents)
 POST /api/projects/reorder        Reorder projects
 ```
 
 ### Tasks
 
 ```
-POST /api/projects/:projectId/tasks           Create task
+GET  /api/projects/:projectId/tasks            List tasks for project
+POST /api/projects/:projectId/tasks            Create task
+POST /api/projects/:projectId/tasks/bulk       Create several tasks in one request
 PUT  /api/tasks/:id                            Update task
 DELETE /api/tasks/:id                          Delete task
 POST /api/projects/:projectId/tasks/reorder    Reorder tasks
@@ -902,10 +926,11 @@ POST /api/projects/:projectId/tasks/reorder    Reorder tasks
 ### Teams (requires auth)
 
 ```
-POST /api/teams                           Create team
+POST /api/teams                           Create team (creator becomes owner)
 GET  /api/teams/mine                      Get current user's team
-POST /api/teams/:id/members               Add member (owner/admin only)
-DELETE /api/teams/:id/members/:userId     Remove member
+POST /api/teams/:id/members               Add member by username (owner/admin only)
+DELETE /api/teams/:id/members/:userId     Remove member (owner/admin/self)
+POST /api/teams/:id/leave                 Leave team (non-owners only)
 DELETE /api/teams/:id                     Delete team (owner/admin only)
 ```
 
@@ -913,8 +938,12 @@ DELETE /api/teams/:id                     Delete team (owner/admin only)
 
 ```
 GET /api/settings                  Get all user settings
+GET /api/settings/:key             Get a single user setting
+PUT /api/settings                  Set several user settings in one request
 POST /api/settings/:key            Set user setting
 ```
+
+Keys are allowlisted. The authoritative list is `VALID_SETTINGS_KEYS` in `app-constants.js`.
 
 ### Admin
 
@@ -924,6 +953,8 @@ PUT /api/admin/users/:id/approve        Approve user registration
 PUT /api/admin/users/:id/role           Change user role
 PUT /api/admin/users/:id/password       Reset another user's password (revokes their sessions)
 DELETE /api/admin/users/:id             Delete user
+GET /api/admin/settings                 Get global settings
+POST /api/admin/settings/:key           Set a global setting
 ```
 
 ### Documents
@@ -932,6 +963,7 @@ DELETE /api/admin/users/:id             Delete user
 GET /api/projects/:projectId/documents        List documents for project
 POST /api/projects/:projectId/documents       Create document (email or docx)
 DELETE /api/documents/:id                     Delete document
+GET /api/documents/:id/preview                Preview document contents inline
 GET /api/documents/:id/download               Download document file
 ```
 
@@ -943,7 +975,33 @@ POST /api/webhooks                            Create webhook (auth required)
 PUT /api/webhooks/:id                         Update webhook
 DELETE /api/webhooks/:id                      Delete webhook
 
-Events: project.created, project.updated, project.deleted, task.created, task.updated, task.deleted
+Events: project.created, project.updated, project.deleted,
+        task.created, task.updated, task.deleted,
+        document.created, document.deleted
+
+Wildcards: * (everything), project.*, task.*, document.*
+```
+
+The authoritative list is `VALID_WEBHOOK_EVENTS` in `app-constants.js`. A user may register at most 20 webhooks (`MAX_WEBHOOKS_PER_USER`).
+
+### Quick Notes
+
+```
+GET  /api/notes                          Get the current user's quick notes
+POST /api/notes                          Save quick notes
+```
+
+### Templates
+
+```
+GET /api/templates                       List project templates
+```
+
+### Export & Import
+
+```
+GET  /api/export                         Export all of your data as JSON
+POST /api/import                         Import data from JSON (rate-limited, see above)
 ```
 
 ### Health
@@ -1006,9 +1064,9 @@ We welcome contributions! Here's how:
 
 1. **Fork** the repository
 2. **Create a feature branch** (`git checkout -b feature/your-feature`)
-3. **Write tests** (Playwright E2E tests in `tests/e2e/`)
+3. **Write tests** (Playwright E2E specs in `tests/e2e/`; `node:test` suites in `tests/` for migration and start-up behaviour)
 4. **Keep it simple** — no frameworks, no complex abstractions
-5. **Test it locally** (`npm test`)
+5. **Test it locally** (`npm test` and `npm run test:migrations`)
 6. **Submit a pull request**
 
 ### Code Guidelines
@@ -1017,16 +1075,14 @@ We welcome contributions! Here's how:
 - **Backend:** `server.js` entry point with modular route files in `routes/`
 - **Database:** User-scoped queries, cascade deletes, UUIDs for IDs
 - **Security:** Validate all inputs (Zod), hash passwords, rate-limit endpoints
-- **Tests:** E2E tests only (Playwright); test auth, CRUD, RBAC, security
+- **Tests:** Playwright E2E specs in `tests/e2e/` (auth, CRUD, RBAC, security) plus `node:test` suites in `tests/` covering schema migrations and database start-up. Both run in CI via `.github/workflows/tests.yml`; `.github/workflows/security.yml` runs dependency review and `npm audit`
 
 ---
 
 ## Support & Community
 
-- 🐛 **Report bugs** — [Open a GitHub issue](https://github.com/yourusername/project-overviewer/issues)
-- 💬 **Ask questions** — [GitHub Discussions](https://github.com/yourusername/project-overviewer/discussions)
-- 📚 **Read docs** — [Full documentation](./docs/)
-- 🚀 **See examples** — [Example projects](./examples/)
+- 🐛 **Report bugs** — [Open a GitHub issue](https://github.com/hwitzthum/Project-Overviewer/issues)
+- 📚 **Read docs** — this README for usage, [CLAUDE.md](./CLAUDE.md) for architecture and schema
 
 ---
 
@@ -1053,7 +1109,7 @@ MIT — use freely, modify freely, deploy freely.
 
 <div align="center">
 
-**[Get Started](#quick-start)** • **[Features](#what-you-get)** • **[Docs](#user-guide)** • **[Issues](https://github.com/yourusername/project-overviewer/issues)** • **[License](#license)**
+**[Get Started](#quick-start)** • **[Features](#what-you-get)** • **[Docs](#user-guide)** • **[Issues](https://github.com/hwitzthum/Project-Overviewer/issues)** • **[License](#license)**
 
 Built with ❤️ for people who want to own their tools.
 
