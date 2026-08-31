@@ -410,6 +410,24 @@ function initEventDelegation() {
       return;
     }
 
+    const trashRestoreBtn = e.target.closest('.trash-restore-btn');
+    if (trashRestoreBtn) {
+      restoreDeletedProject(trashRestoreBtn.dataset.projectId);
+      return;
+    }
+
+    const trashPurgeBtn = e.target.closest('.trash-purge-btn');
+    if (trashPurgeBtn) {
+      const projectId = trashPurgeBtn.dataset.projectId;
+      const project = (state.deletedProjects || []).find(p => p.id === projectId);
+      showConfirmModal(
+        `Permanently delete "${project ? project.title : 'this project'}"?`,
+        'This removes the project and all of its tasks and documents for good. It cannot be undone.',
+        () => purgeDeletedProject(projectId)
+      );
+      return;
+    }
+
     const restoreBtn = e.target.closest('.project-restore-btn');
     if (restoreBtn) {
       const projectId = restoreBtn.dataset.projectId;

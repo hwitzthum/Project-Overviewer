@@ -412,6 +412,7 @@ function updateViewTitle() {
     'backlog': 'backlog',
     'completed': 'completed',
     'archived': 'Archived Projects',
+    'trash': 'Trash',
     'overdue': 'Overdue',
     'today': 'Due Today',
     'week': 'Due This Week',

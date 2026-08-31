@@ -242,8 +242,26 @@ class API {
     });
   }
 
+  // Soft delete — the project moves to the trash and stays restorable.
   static async deleteProject(id) {
     return await this.request(`/api/projects/${id}`, { method: "DELETE" });
+  }
+
+  static async restoreProject(id) {
+    return await this.request(`/api/projects/${id}/restore`, {
+      method: "POST",
+    });
+  }
+
+  // Permanent. Only valid for a project already in the trash.
+  static async purgeProject(id) {
+    return await this.request(`/api/projects/${id}/purge`, {
+      method: "DELETE",
+    });
+  }
+
+  static async getDeletedProjects() {
+    return await this.request("/api/projects/deleted");
   }
 
   static async reorderProjects(projectOrders) {

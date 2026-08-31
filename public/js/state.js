@@ -11,6 +11,8 @@ function getDefaultState() {
   return {
     version: APP_VERSION,
     projects: [],
+    deletedProjects: [],
+    trashRetentionDays: null,
     settings: {
       theme: getInitialThemePreference(),
       lastView: 'all',
@@ -229,88 +231,57 @@ async function applyProjectQuickUpdate(projectId, updates, successMessage = 'Pro
   });
 }
 
-async function restoreDeletedProject(deletedProject) {
+// Undo a delete. The server keeps the row and only clears `deleted_at`, so the
+// project comes back with every task and document ID intact. This replaces an
+// earlier client-side snapshot replay that re-created the project through the
+// normal endpoints — that version could only work for a few seconds in the tab
+// that did the delete, and handed every restored task a brand-new ID.
+async function restoreDeletedProject(projectId) {
   try {
-    const tasks = deletedProject.tasks || [];
-    const documents = deletedProject.documents || [];
-    const restoredProject = await API.createProject({
-      id: deletedProject.id,
-      title: deletedProject.title,
-      stakeholder: deletedProject.stakeholder || '',
-      description: deletedProject.description || '',
-      status: deletedProject.status || 'not-started',
-      priority: deletedProject.priority || 'none',
-      dueDate: deletedProject.dueDate || null,
-      tags: deletedProject.tags || [],
-      archived: deletedProject.archived || false,
-      order: deletedProject.project_order ?? deletedProject.order ?? state.projects.length
-    });
-
-    if (tasks.length > 0) {
-      const oldIdToNewId = new Map();
-      const dependencyUpdates = [];
-
-      async function restoreTaskTree(taskList, parentTaskId) {
-        for (let i = 0; i < taskList.length; i += 1) {
-          const task = taskList[i];
-          const created = await API.createTask(restoredProject.id, {
-            title: task.title,
-            completed: task.completed,
-            dueDate: task.dueDate || null,
-            notes: task.notes || '',
-            priority: task.priority || 'none',
-            recurring: task.recurring || null,
-            parentTaskId: parentTaskId || null,
-            order: i
-          });
-
-          if (!created || !created.id) {
-            throw new Error('Task restore failed');
-          }
-
-          if (task.id) {
-            oldIdToNewId.set(task.id, created.id);
-          }
-          if (task.blockedBy && task.id) {
-            dependencyUpdates.push({
-              taskId: task.id,
-              blockedBy: task.blockedBy
-            });
-          }
-          if (task.subtasks && task.subtasks.length > 0) {
-            await restoreTaskTree(task.subtasks, created.id);
-          }
-        }
-      }
-
-      await restoreTaskTree(tasks, null);
-
-      for (let i = 0; i < dependencyUpdates.length; i += 1) {
-        const dependency = dependencyUpdates[i];
-        const restoredTaskId = oldIdToNewId.get(dependency.taskId);
-        const restoredBlockedById = oldIdToNewId.get(dependency.blockedBy);
-
-        if (restoredTaskId && restoredBlockedById) {
-          await API.updateTask(restoredTaskId, { blockedBy: restoredBlockedById });
-        }
-      }
-    }
-
-    // Restore documents in parallel
-    if (documents.length > 0) {
-      await Promise.all(
-        documents.map(doc => API.createDocument(restoredProject.id, { ...doc, id: doc.id }))
-      );
-    }
-
-    const refreshedProject = await API.getProject(restoredProject.id);
-    setState(s => ({ projects: [...s.projects, refreshedProject] }));
-    setRenderHint({ type: 'project-add', projectId: refreshedProject.id });
+    const restored = await API.restoreProject(projectId);
+    setState(s => ({
+      projects: [...s.projects.filter(p => p.id !== restored.id), restored],
+      deletedProjects: s.deletedProjects.filter(p => p.id !== restored.id)
+    }));
+    setRenderHint({ type: 'project-add', projectId: restored.id });
     render();
     showToast('Project restored', 'success');
+    return true;
   } catch (error) {
     console.error('Failed to restore project:', error);
-    showToast('Failed to undo delete', 'error');
+    showToast(error && error.message ? error.message : 'Failed to restore project', 'error');
+    return false;
+  }
+}
+
+// Trash contents live outside `projects` because the server deliberately keeps
+// soft-deleted rows out of every normal read path.
+async function loadDeletedProjects() {
+  try {
+    const result = await API.getDeletedProjects();
+    setState({
+      deletedProjects: result.projects || [],
+      trashRetentionDays: result.retentionDays || null
+    });
+    return true;
+  } catch (error) {
+    console.error('Failed to load deleted projects:', error);
+    showToast('Failed to load trash', 'error');
+    return false;
+  }
+}
+
+async function purgeDeletedProject(projectId) {
+  try {
+    await API.purgeProject(projectId);
+    setState(s => ({ deletedProjects: s.deletedProjects.filter(p => p.id !== projectId) }));
+    render();
+    showToast('Project permanently deleted', 'info');
+    return true;
+  } catch (error) {
+    console.error('Failed to purge project:', error);
+    showToast('Failed to permanently delete project', 'error');
+    return false;
   }
 }
 

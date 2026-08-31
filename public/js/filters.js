@@ -224,6 +224,7 @@ function getCountElements() {
     medium: document.getElementById('countMedium'),
     low: document.getElementById('countLow'),
     archived: document.getElementById('countArchived'),
+    trash: document.getElementById('countTrash'),
     focus: document.getElementById('countFocus'),
     smartOverdue: document.getElementById('countSmartOverdue'),
     smartDueSoon: document.getElementById('countSmartDueSoon'),
@@ -253,6 +254,9 @@ function updateCounts() {
   if (el.medium) el.medium.textContent = c.priorityCounts.medium;
   if (el.low) el.low.textContent = c.priorityCounts.low;
   if (el.archived) el.archived.textContent = c.archivedCount;
+  // Trashed projects are not in state.projects — the Trash view fetches them
+  // separately, so the badge reflects the last fetch rather than a live count.
+  if (el.trash) el.trash.textContent = (state.deletedProjects || []).length;
   if (el.focus) el.focus.textContent = c.focusCount;
   if (el.smartOverdue) el.smartOverdue.textContent = c.smartOverdueCount;
   if (el.smartDueSoon) el.smartDueSoon.textContent = c.smartDueSoonCount;
