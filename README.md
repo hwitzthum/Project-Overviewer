@@ -1105,7 +1105,7 @@ We welcome contributions! Here's how:
 
 ## License
 
-MIT — use freely, modify freely, deploy freely.
+MIT — use freely, modify freely, deploy freely. Full text in [LICENSE](./LICENSE).
 
 ---
 
