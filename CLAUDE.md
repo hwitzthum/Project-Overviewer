@@ -153,7 +153,7 @@ Project Overviewer is intentionally simple. The goal is a tool you can run, unde
    - LibSQL (`@libsql/client`) database abstraction with WAL mode
    - Promise-based query wrappers (`run`, `get`, `all`)
    - Database initialization and schema setup
-   - Eleven tables: `users`, `sessions`, `projects`, `tasks`, `documents`, `global_settings`, `user_settings`, `quick_notes`, `templates`, `teams`, `team_members`
+   - Thirteen tables: `users`, `sessions`, `login_attempts`, `projects`, `tasks`, `documents`, `global_settings`, `user_settings`, `quick_notes`, `templates`, `teams`, `team_members`, `webhooks`
 
 ### Key Design Patterns
 
@@ -469,14 +469,15 @@ SQLite performance configuration:
 
 ## Database Schema
 
-Ten tables in four logical groups:
+Thirteen tables in five logical groups:
 
-| Group         | Tables                                                         | Purpose                    |
-| ------------- | -------------------------------------------------------------- | -------------------------- |
-| Auth          | `users`, `sessions`                                            | Accounts, session tokens   |
-| Content       | `projects`, `tasks`, `documents`                               | The actual work            |
-| Collaboration | `teams`, `team_members`                                        | Team and membership        |
-| Configuration | `global_settings`, `user_settings`, `quick_notes`, `templates` | Per-user and global config |
+| Group         | Tables                                                         | Purpose                          |
+| ------------- | -------------------------------------------------------------- | -------------------------------- |
+| Auth          | `users`, `sessions`, `login_attempts`                          | Accounts, session tokens, throttle |
+| Content       | `projects`, `tasks`, `documents`                               | The actual work                  |
+| Collaboration | `teams`, `team_members`                                        | Team and membership              |
+| Configuration | `global_settings`, `user_settings`, `quick_notes`, `templates` | Per-user and global config       |
+| Integration   | `webhooks`                                                     | Outbound event delivery          |
 
 **Key schema decisions:**
 
@@ -484,6 +485,7 @@ Ten tables in four logical groups:
 - **User-scoped queries** — every content table has a `user_id` column; every read query filters by it (or expands to team member list in team mode)
 - **JSON columns** for `tags`, template `tasks`, and email `payload` — avoids schema migrations for list/object-shaped fields
 - **Cascade deletes** — deleting a user removes sessions; deleting a project cascades to tasks and documents
+- **Deletes are hard deletes** — there is no `deleted_at` column and no server-side restore. `archived` on `projects` is the only reversible removal; the delete-toast "Undo" in `public/js/projects.js` is a client-side snapshot that re-creates the project through the normal endpoints, so restored tasks get new IDs
 - **`project_order` / `task_order` integers** per record — manual ordering without a separate join table
 
 ### users table
@@ -603,7 +605,9 @@ PRIMARY KEY (user_id, key)
 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ```
 
-Allowed keys: `theme`, `defaultView`, `sortBy`, `showCompleted`, `showArchived`, `wipLimits`, `kanbanColumns`, `sidebarCollapsed`, `workspaceMode`
+Allowed keys: `theme`, `defaultView`, `lastView`, `sortBy`, `showCompleted`, `showArchived`, `wipLimits`, `kanbanColumns`, `sidebarCollapsed`, `workspaceMode`, `swimlaneBy`
+
+Source of truth: `VALID_SETTINGS_KEYS` in `app-constants.js`. Update that array first — this list only mirrors it.
 
 ### quick_notes table
 
@@ -624,7 +628,39 @@ name TEXT NOT NULL
 tasks TEXT NOT NULL               -- JSON array of task titles
 ```
 
+### webhooks table
+
+```sql
+id TEXT PRIMARY KEY
+user_id TEXT NOT NULL             -- Foreign key to users(id)
+url TEXT NOT NULL
+secret TEXT NOT NULL              -- Used to sign the outbound payload
+events TEXT NOT NULL DEFAULT '["*"]'  -- JSON array; see VALID_WEBHOOK_EVENTS
+active INTEGER DEFAULT 1
+created_at TEXT DEFAULT CURRENT_TIMESTAMP
+FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+```
+
+Capped at `MAX_WEBHOOKS_PER_USER` (20) per user. Delivery is handled by `webhook-dispatcher.js`, driven off `event-bus.js`.
+
+### login_attempts table
+
+```sql
+throttle_key TEXT PRIMARY KEY     -- "<lowercased username>|<client IP>"
+failures INTEGER NOT NULL DEFAULT 0
+blocked_until INTEGER NOT NULL DEFAULT 0   -- Epoch ms; 0 = not blocked
+last_failure_at INTEGER NOT NULL DEFAULT 0 -- Epoch ms, indexed for pruning
+```
+
+Throttling is keyed on the username/IP *pair*, so one attacker cannot lock a victim out by
+guessing their password from elsewhere. Over a 15-minute window: an exponential delay
+(`min(1500ms, 100ms * 2^(failures-3))`) starts at the 4th failure, and the 8th failure blocks
+outright until `blocked_until`. Persisted rather than in-process so the limits survive
+serverless cold starts. **Its `CREATE TABLE` deliberately runs outside the `SCHEMA_VERSION` gate** — an earlier release put it behind the gate without bumping the version, so existing databases never created it and every login returned 500. `tests/login-attempts-migration.test.js` guards against a repeat.
+
 ## API Endpoints
+
+Every router below is mounted once per prefix in `API_BASE_PATHS` (`server.js`), so each path exists at both `/api/...` and `/api/v1/...`, backed by the same handler. Paths are written unversioned here for brevity.
 
 ### Authentication
 
@@ -666,6 +702,7 @@ tasks TEXT NOT NULL               -- JSON array of task titles
 
 - `GET /api/projects/:projectId/tasks` — Get tasks for project
 - `POST /api/projects/:projectId/tasks` — Create task
+- `POST /api/projects/:projectId/tasks/bulk` — Create several tasks in one request
 - `PUT /api/tasks/:id` — Update task
 - `DELETE /api/tasks/:id` — Delete task
 - `POST /api/projects/:projectId/tasks/reorder` — Reorder tasks
@@ -675,12 +712,14 @@ tasks TEXT NOT NULL               -- JSON array of task titles
 - `GET /api/projects/:projectId/documents` — List documents for project
 - `POST /api/projects/:projectId/documents` — Create document (email or docx)
 - `DELETE /api/documents/:id` — Delete document
+- `GET /api/documents/:id/preview` — Preview document contents inline
 - `GET /api/documents/:id/download` — Download document file
 
 ### Settings (requires auth)
 
 - `GET /api/settings` — Get all user settings
 - `GET /api/settings/:key` — Get single user setting
+- `PUT /api/settings` — Set several user settings in one request
 - `POST /api/settings/:key` — Set user setting
 
 ### Other (requires auth)
@@ -691,6 +730,13 @@ tasks TEXT NOT NULL               -- JSON array of task titles
 - `GET /api/export` — Export all user data as JSON
 - `POST /api/import` — Import data from JSON (user-scoped, rate-limited)
 
+### Webhooks (requires auth)
+
+- `GET /api/webhooks` — List the current user's webhooks
+- `POST /api/webhooks` — Create webhook (max 20 per user)
+- `PUT /api/webhooks/:id` — Update webhook
+- `DELETE /api/webhooks/:id` — Delete webhook
+
 ### Health (no auth)
 
 - `GET /api/health` — Database health check
@@ -699,11 +745,12 @@ tasks TEXT NOT NULL               -- JSON array of task titles
 
 ### Adding a New API Endpoint
 
-1. Add Zod validation schema in `server.js` (if endpoint accepts input)
-2. Add route handler in `server.js` with `requireAuth` (and `requireAdmin` if needed)
+1. Add Zod validation schema in `server.js` (if endpoint accepts input) — all schemas live there and are injected into routers as `schemas`
+2. Add the route handler to the relevant `routes/*.js` module, not to `server.js`. Each module exports a `create<Name>Router({ db, logger, schemas, requireAuth, eventBus })` factory; `server.js` builds it and mounts it once per prefix in `API_BASE_PATHS` (`/api` and `/api/v1`)
 3. Add database function in `database.js` (if needed), ensuring user-scoped queries
 4. Add API client method in `public/js/api-client.js`
 5. Update relevant frontend module in `public/js/` to call new endpoint
+6. If the module is new, register it in the right bundle in `scripts/build-frontend.js` — it is not picked up automatically
 
 ### Adding a Database Column
 
