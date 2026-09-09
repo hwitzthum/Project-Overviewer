@@ -115,7 +115,7 @@ module.exports = function createTeamsRouter({ db, logger, schemas, requireAuth }
       }
 
       if (team.createdBy === req.user.userId) {
-        return res.status(400).json({ error: 'Team owner cannot leave. Delete the team or transfer ownership first.' });
+        return res.status(400).json({ error: 'Team owner cannot leave. Delete the team instead.' });
       }
 
       await db.removeTeamMember(teamId, req.user.userId);
