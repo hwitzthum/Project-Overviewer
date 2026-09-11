@@ -17,7 +17,7 @@ Project Overviewer is a multi-user project and task management application with 
 - **Validation**: Zod schemas on all API inputs
 - **Security**: Helmet (security headers), express-rate-limit, compression, structured security event logging
 - **Logging**: Pino (structured logging, pino-pretty in dev)
-- **Testing**: Playwright E2E tests (231 tests across 16 spec files)
+- **Testing**: Playwright E2E tests (212 tests across 16 spec files)
 - **API**: REST API with JSON responses
 - **Deployment**: Vercel-ready (`vercel.json`, serverless export in `api/index.js`)
 
@@ -316,7 +316,7 @@ npx playwright test tests/e2e/auth.spec.js
 npx playwright test --headed
 ```
 
-Test files in `tests/e2e/` (231 tests across 16 spec files):
+Test files in `tests/e2e/` (212 tests across 16 spec files):
 
 - `auth.spec.js` — Authentication flows (register, login, logout, password change)
 - `projects-tasks.spec.js` — Project and task CRUD
