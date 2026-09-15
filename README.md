@@ -9,7 +9,7 @@ No subscriptions. No cloud lock-in. No framework overhead. Just Node.js, SQLite,
 ![Version](https://img.shields.io/badge/version-1.0-blue)
 ![Node.js](https://img.shields.io/badge/Node.js-v24-green)
 ![License](https://img.shields.io/badge/license-MIT-blue)
-![Tests](https://img.shields.io/badge/tests-212%20E2E-brightgreen)
+![Tests](https://img.shields.io/badge/tests-231%20E2E-brightgreen)
 
 [**Get Started in 2 Minutes**](#quick-start) • [**See Features**](#what-you-get) • [**View Docs**](#user-guide) • [**GitHub**](https://github.com/hwitzthum/Project-Overviewer)
 
@@ -96,7 +96,7 @@ If you're tired of subscription-based project management tools that:
 - Role-based access control (admin, user)
 - Team creation with independent workspace toggle
 - Per-user Personal/Team mode
-- Session-based auth (24-hour expiry, Bearer tokens + HttpOnly cookies)
+- Session-based auth (24-hour absolute expiry, 30-minute idle timeout, Bearer tokens + HttpOnly cookies)
 - Bcrypt password hashing, rate limiting, CSRF protection
 
 💾 **Data Portability**
@@ -177,7 +177,7 @@ Open **http://localhost:3001** and log in with your admin credentials.
 - 🔌 **Backend**: `server.js` entry point with 11 route modules in `routes/`
 - 💾 **Database**: SQLite with WAL mode (concurrent reads + reliable writes)
 - 🔒 **Security**: Helmet, rate limiting, Zod validation, bcrypt hashing
-- ✅ **Tests**: 212 Playwright E2E tests (auth, CRUD, RBAC, security) plus 4 `node:test` migration suites
+- ✅ **Tests**: 231 Playwright E2E tests (auth, CRUD, RBAC, security) plus 4 `node:test` migration suites
 - 📖 **Documentation**: Fully documented codebase + architecture guide
 
 **Total lines of code:** ~14,300 JavaScript — roughly 7,300 backend (`server.js`, `routes/`, utilities) and 6,800 frontend modules. Still understand it in a day or two.
@@ -860,7 +860,7 @@ Each module exports a `create<Name>Router({ db, logger, schemas, requireAuth, ev
 | **Rate Limiting** | Per IP: 200 req/15 min general; 20/15 min auth; 30/15 min admin; 10/15 min webhooks; 5/hr import |
 | **Brute force**   | Separate DB-backed throttle per username+IP pair: exponential delay from the 4th failed login, hard block from the 8th, 15-minute window |
 | **Passwords**     | bcrypt with 12 salt rounds; 12-char minimum (14 for admins), common-password and identity-substring rejection |
-| **Sessions**      | 32-byte token; 24-hour expiry; invalidated on password change |
+| **Sessions**      | 32-byte token; 24-hour absolute expiry; 30-min idle timeout; invalidated on password change |
 | **Authorization** | Every endpoint verifies user ownership or team membership     |
 | **Input**         | Zod schemas on all inputs; allowlisted settings keys          |
 | **Files**         | MIME type allowlisting; filename sanitization                 |
