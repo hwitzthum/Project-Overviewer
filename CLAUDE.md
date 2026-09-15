@@ -17,7 +17,7 @@ Project Overviewer is a multi-user project and task management application with 
 - **Validation**: Zod schemas on all API inputs
 - **Security**: Helmet (security headers), express-rate-limit, compression, structured security event logging
 - **Logging**: Pino (structured logging, pino-pretty in dev)
-- **Testing**: Playwright E2E tests (212 tests across 16 spec files)
+- **Testing**: Playwright E2E tests (231 tests across 16 spec files)
 - **API**: REST API with JSON responses
 - **Deployment**: Vercel-ready (`vercel.json`, serverless export in `api/index.js`)
 
@@ -138,12 +138,12 @@ Project Overviewer is intentionally simple. The goal is a tool you can run, unde
    - `requireAuth` middleware — validates session tokens (Bearer header or cookie)
    - `requireAdmin` middleware — checks admin role
    - Zod input validation schemas
-   - Rate limiting (general, auth, import — disabled when `DISABLE_RATE_LIMIT=1`)
+   - Rate limiting (general, auth, admin, webhook, import — disabled when `DISABLE_RATE_LIMIT=1`)
    - Helmet security headers, compression, body size limits
 
 3. **API Layer** (`server.js` + `routes/`)
    - Express.js REST API with route handlers organized in `routes/` directory
-   - 12 route modules: admin, auth, documents, export-import, notes, projects, settings, shared, tasks, teams, templates, webhooks
+   - 11 route modules: admin, auth, documents, export-import, notes, projects, settings, tasks, teams, templates, webhooks — plus `shared.js` (helpers such as `resolveTeamScope`; not itself a router)
    - All data endpoints require authentication
    - User-scoped data isolation (all queries include `user_id`)
    - Team-aware reads via `workspaceMode` setting
@@ -167,7 +167,7 @@ Project Overviewer is intentionally simple. The goal is a tool you can run, unde
 **Authentication Pattern:**
 
 - Registration requires admin approval before login is allowed
-- Sessions stored in database with 24-hour expiry
+- Sessions stored in database with 24-hour absolute expiry and 30-minute idle timeout
 - Token passed via `Authorization: Bearer <token>` header or `session_token` HttpOnly cookie
 - Admin user seeded from `ADMIN_USER` / `ADMIN_PASS` env vars on first startup
 - Expired sessions cleaned on startup
@@ -271,6 +271,11 @@ Key variables:
 - `ADMIN_USER` / `ADMIN_PASS` — Admin account created on first startup
 - `PORT` — Server port (default: 3001)
 - `NODE_ENV` — `development` or `production` (controls Secure cookie flag, rate limiting)
+- `APP_ORIGIN` — Canonical app origin for same-origin checks and secure cookies
+- `TRUST_PROXY` — `false` locally, `1` behind a single trusted reverse proxy
+- `TURSO_DATABASE_URL` / `TURSO_AUTH_TOKEN` — Remote Turso database (required on Vercel; unset locally to use `file:projects.db`)
+
+See `.env.example` for the full list (logging, session timeouts, `DISABLE_WEBSOCKET`, `DISABLE_RATE_LIMIT`).
 
 ### Installing Dependencies
 
@@ -291,6 +296,7 @@ Required dependencies:
 - `ws` — WebSocket server for real-time sync
 - `dotenv` — Environment variable loading
 - `mammoth` — DOCX document parsing
+- `jszip` — ZIP inspection of uploaded DOCX files before preview (decompression-bomb guard)
 
 Dev dependencies:
 
@@ -314,9 +320,12 @@ npx playwright test tests/e2e/auth.spec.js
 
 # Run tests in headed mode
 npx playwright test --headed
+
+# Run migration/boot guards (node:test, no browser)
+npm run test:migrations
 ```
 
-Test files in `tests/e2e/` (212 tests across 16 spec files):
+Test files in `tests/e2e/` (231 tests across 16 spec files):
 
 - `auth.spec.js` — Authentication flows (register, login, logout, password change)
 - `projects-tasks.spec.js` — Project and task CRUD
@@ -326,6 +335,7 @@ Test files in `tests/e2e/` (212 tests across 16 spec files):
 - `teams.spec.js` — Team collaboration
 - `ui-auth.spec.js` — UI authentication flows
 - `subtasks.spec.js` — Subtask creation, completion, hierarchy
+- `trash.spec.js` — Trash view: soft-deleted projects leave the list, restore with tasks intact, delete forever
 - `webhooks.spec.js` — Webhook CRUD and delivery
 - `websocket.spec.js` — WebSocket real-time sync
 - `caching.spec.js` — Cache headers and ETag behavior
@@ -335,8 +345,11 @@ Test files in `tests/e2e/` (212 tests across 16 spec files):
 - `red-team-fixes.spec.js` — Regression tests for security fixes
 - `helpers.js` — Shared test utilities
 
-Additional test files:
+Additional test files (`node:test` migration/boot guards — run with `npm run test:migrations`; CI job `migration-tests`):
 
+- `tests/db-init-retry.test.js` — Cold-start DB init failure neither crashes the process nor caches the rejection; next request retries
+- `tests/login-attempts-migration.test.js` — Behind-version DB migrates without deadlock; `login_attempts` recreated even when schema version is current
+- `tests/project-soft-delete-migration.test.js` — Pre-v3 DB gets `deleted_at`/`status_changed_at` back-filled; delete/restore/purge keep their guarantees
 - `tests/team-membership-migration.test.js` — Team membership data migration
 
 ### Database Operations
@@ -367,13 +380,13 @@ sqlite> .quit
 **`server.js`** — Express application entry point. Mounts middleware and route modules from `routes/`. Every request passes through the same middleware stack:
 
 1. **Helmet** — security headers (CSP, X-Frame-Options, HSTS in production)
-2. **Rate limiting** — 200 req/15 min general, 20 req/15 min auth, 5/hr imports
+2. **Rate limiting** — 200 req/15 min general, 20 req/15 min auth, 30 req/15 min admin, 10 req/15 min webhooks, 5/hr imports
 3. **Compression + body limits** — 2 MB general, 10 MB for uploads and imports
 4. **`requireAuth`** — validates session token from Bearer header or HttpOnly cookie
 5. **`requireAdmin`** — checks `admin` role (applied only to admin routes)
 6. **Zod validation** — every endpoint that accepts input has a schema; invalid input returns 400 before business logic runs
 
-**`routes/`** — Modular route handlers (12 files):
+**`routes/`** — Modular route handlers (11 routers + `shared.js` helpers):
 
 - `auth.js` — Registration, login, logout, password change, `/me`
 - `admin.js` — User management, approvals, global settings
@@ -386,7 +399,7 @@ sqlite> .quit
 - `templates.js` — Project templates
 - `export-import.js` — Data export/import
 - `webhooks.js` — Webhook CRUD
-- `shared.js` — Shared middleware (`resolveTeamScope`)
+- `shared.js` — Helpers shared across routers (e.g. `resolveTeamScope`); not itself a router
 
 The SPA fallback at the bottom of `server.js` serves `public/index.html` for any non-API, non-static route.
 
@@ -452,6 +465,7 @@ SQLite performance configuration:
 **`vercel.json`** — Vercel deployment configuration (routes, serverless functions)
 **`.nvmrc`** — Node.js version pin
 **`.github/workflows/security.yml`** — CI security workflow (dependency review, npm audit)
+**`.github/workflows/tests.yml`** — CI tests: `node:test` migration guards + Playwright E2E (Chromium)
 **`.github/dependabot.yml`** — Dependabot config for npm and GitHub Actions
 **`scripts/build-frontend.js`** — esbuild bundler: compiles `public/js/` → `public/dist/` with content hashes
 
@@ -507,7 +521,8 @@ updated_at TEXT DEFAULT CURRENT_TIMESTAMP
 id TEXT PRIMARY KEY
 user_id TEXT NOT NULL             -- Foreign key to users(id)
 token TEXT UNIQUE NOT NULL        -- 32-byte hex token
-expires_at TEXT NOT NULL          -- 24-hour expiry
+expires_at TEXT NOT NULL          -- 24-hour absolute expiry
+last_seen_at TEXT DEFAULT CURRENT_TIMESTAMP  -- Last activity; drives idle timeout (SESSION_IDLE_TIMEOUT_MS)
 created_at TEXT DEFAULT CURRENT_TIMESTAMP
 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ```
@@ -546,6 +561,7 @@ notes TEXT DEFAULT ''
 priority TEXT DEFAULT 'none'
 recurring TEXT                    -- For future recurring tasks feature
 blocked_by TEXT                   -- Task dependency reference
+parent_task_id TEXT               -- Subtask parent (tasks.id); added via ALTER, FK not enforced
 task_order INTEGER DEFAULT 0      -- For manual sorting
 created_at TEXT DEFAULT CURRENT_TIMESTAMP
 FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
@@ -588,6 +604,8 @@ FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE
 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ```
 
+`UNIQUE INDEX` on `(user_id)` — enforces one team per user.
+
 ### global_settings table
 
 ```sql
@@ -621,6 +639,8 @@ created_at TEXT DEFAULT CURRENT_TIMESTAMP
 updated_at TEXT DEFAULT CURRENT_TIMESTAMP
 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ```
+
+`UNIQUE INDEX` on `(user_id)` — one notes row per user.
 
 ### templates table
 
@@ -770,7 +790,7 @@ Every router below is mounted once per prefix in `API_BASE_PATHS` (`server.js`),
 
 1. Create `public/js/module-name.js`
 2. Attach exports to `window` (e.g., `window.ModuleName = { ... }`)
-3. Add `<script src="/js/module-name.js"></script>` to `public/index.html` in correct load order
+3. Register it in the correct bundle in `scripts/build-frontend.js` (in dependency order) — it is not picked up automatically
 4. Reference from other modules via `window.ModuleName`
 
 ### Testing
@@ -852,7 +872,7 @@ curl http://localhost:3001/api/health
 **Auth issues:**
 
 - Check that user is approved (`approved = 1` in users table)
-- Check session hasn't expired (24-hour expiry)
+- Check session hasn't expired (24-hour absolute expiry, 30-minute idle timeout)
 - Token must be in `Authorization: Bearer <token>` header or `session_token` cookie
 
 ## Important Notes
@@ -877,9 +897,9 @@ curl http://localhost:3001/api/health
 | -------------- | ----------------------------------------------------------------------------------------- |
 | Transport      | HSTS header in production; `Secure` cookie flag requires HTTPS                            |
 | Headers        | Helmet: CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy                     |
-| Rate limiting  | 200 req/15 min general; 20 req/15 min auth; 5/hr import (disabled when `DISABLE_RATE_LIMIT=1`)     |
+| Rate limiting  | Per IP: 200 req/15 min general; 20/15 min auth; 30/15 min admin; 10/15 min webhooks; 5/hr import (disabled when `DISABLE_RATE_LIMIT=1`) |
 | Passwords      | bcrypt with 12 salt rounds                                                                |
-| Sessions       | 32-byte hex token; 24-hour expiry; invalidated on password change                         |
+| Sessions       | 32-byte hex token; 24-hour absolute expiry; 30-min idle timeout (`SESSION_IDLE_TIMEOUT_MS`); invalidated on password change |
 | Authorization  | Every data endpoint verifies `user_id` ownership or team membership before returning data |
 | Input          | Zod schemas on all inputs; settings keys allowlisted server-side                          |
 | File downloads | MIME type allowlisting; filename sanitization                                             |
@@ -887,9 +907,9 @@ curl http://localhost:3001/api/health
 
 ### Frontend Architecture
 
-- Modular vanilla JavaScript — 24 modules in `public/js/`, no build step required
+- Modular vanilla JavaScript — 24 modules in `public/js/`, bundled by esbuild into `public/dist/` (automatic via `npm start`/`npm test`)
 - Modules communicate via `window` globals (no import/export)
-- Load order matters — dependencies must be loaded before dependents
+- Bundle membership and order are defined in `scripts/build-frontend.js` — dependencies must come before dependents
 - Global `API` object available for all fetch calls (includes auth token automatically)
 - No state management library; state managed in `state.js`
 
