@@ -972,7 +972,7 @@ GET /api/documents/:id/download               Download document file
 ### Webhooks
 
 ```
-GET /api/webhooks                             List all webhooks (auth required)
+GET /api/webhooks                             List the current user's webhooks (auth required)
 POST /api/webhooks                            Create webhook (auth required)
 PUT /api/webhooks/:id                         Update webhook
 DELETE /api/webhooks/:id                      Delete webhook
