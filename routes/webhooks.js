@@ -5,6 +5,31 @@ const { URL } = require('url');
 const dns = require('dns');
 const net = require('net');
 
+// Expand an IPv6 literal to 16 bytes (handles "::" compression and a trailing
+// dotted IPv4 part). Returns null when the address cannot be parsed.
+function ipv6ToBytes(ip) {
+  let addr = ip.toLowerCase().split('%')[0];
+  const dotted = addr.match(/^(.*:)(\d+\.\d+\.\d+\.\d+)$/);
+  if (dotted) {
+    const o = dotted[2].split('.').map(Number);
+    addr = dotted[1] + ((o[0] << 8) | o[1]).toString(16) + ':' + ((o[2] << 8) | o[3]).toString(16);
+  }
+  const halves = addr.split('::');
+  if (halves.length > 2) return null;
+  const head = halves[0] ? halves[0].split(':') : [];
+  const tail = halves.length === 2 && halves[1] ? halves[1].split(':') : [];
+  const missing = 8 - head.length - tail.length;
+  if (halves.length === 1 ? missing !== 0 : missing < 1) return null;
+  const groups = [...head, ...Array(halves.length === 2 ? missing : 0).fill('0'), ...tail];
+  const bytes = [];
+  for (const g of groups) {
+    const v = parseInt(g, 16);
+    if (Number.isNaN(v)) return null;
+    bytes.push(v >> 8, v & 0xff);
+  }
+  return bytes.length === 16 ? bytes : null;
+}
+
 function isPrivateIP(ip) {
   // IPv4 private/reserved ranges
   if (net.isIPv4(ip)) {
@@ -29,7 +54,17 @@ function isPrivateIP(ip) {
   if (net.isIPv6(ip)) {
     const normalized = ip.toLowerCase();
     if (normalized === '::' || normalized === '::1') return true;  // unspecified + loopback
-    if (normalized.startsWith('fe80:')) return true;               // link-local
+    const bytes = ipv6ToBytes(normalized);
+    if (!bytes) return true;                                       // unparseable — block
+    if (bytes[0] === 0xfe && (bytes[1] & 0xc0) === 0x80) return true; // fe80::/10 link-local
+    // Embedded IPv4 in any hex/dotted form: IPv4-mapped (::ffff:0:0/96),
+    // IPv4-compatible (::/96) and NAT64 (64:ff9b::/96) — re-check the IPv4.
+    const head10 = bytes.slice(0, 10).every((b) => b === 0);
+    const embedded = bytes.slice(12).join('.');
+    if (head10 && bytes[10] === 0xff && bytes[11] === 0xff && isPrivateIP(embedded)) return true;
+    if (bytes.slice(0, 12).every((b) => b === 0) && isPrivateIP(embedded)) return true;
+    if (bytes[0] === 0x00 && bytes[1] === 0x64 && bytes[2] === 0xff && bytes[3] === 0x9b &&
+        bytes.slice(4, 12).every((b) => b === 0) && isPrivateIP(embedded)) return true;
     if (normalized.startsWith('fc') || normalized.startsWith('fd')) return true; // ULA (fc00::/7)
     if (normalized.startsWith('ff')) return true;                  // multicast (ff00::/8)
     // IPv6-mapped IPv4 (::ffff:a.b.c.d) and IPv4-translated (::ffff:0:a.b.c.d)
