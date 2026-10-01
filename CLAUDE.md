@@ -275,7 +275,7 @@ Key variables:
 - `TRUST_PROXY` — `false` locally, `1` behind a single trusted reverse proxy
 - `TURSO_DATABASE_URL` / `TURSO_AUTH_TOKEN` — Remote Turso database (required on Vercel; unset locally to use `file:projects.db`)
 
-See `.env.example` for the full list (logging, session timeouts, `DISABLE_WEBSOCKET`, `DISABLE_RATE_LIMIT`).
+See `.env.example` for the full list (logging, session timeouts, `DISABLE_WEBSOCKET`).
 
 ### Installing Dependencies
 
