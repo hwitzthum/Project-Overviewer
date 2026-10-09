@@ -1,3 +1,65 @@
+const JSZip = require('jszip');
+
+// docx previewing decompresses the uploaded zip via mammoth/jszip. A crafted
+// docx can pass the (compressed, ~10MB-capped) upload signature check yet
+// inflate to gigabytes, exhausting memory when mammoth extracts it.
+const MAX_DOCX_UNCOMPRESSED_BYTES = 100 * 1024 * 1024; // 100 MB
+const MAX_DOCX_ZIP_ENTRIES = 5000;
+
+// Inflate one entry, counting real output bytes, and stop as soon as the
+// shared budget is exhausted. Resolves with the bytes produced by this entry.
+function measureEntry(entry, remainingBudget) {
+  return new Promise((resolve, reject) => {
+    let produced = 0;
+    let settled = false;
+    const helper = entry.internalStream('uint8array');
+    helper
+      .on('data', (chunk) => {
+        if (settled) return;
+        produced += chunk.length;
+        if (produced > remainingBudget) {
+          settled = true;
+          helper.pause();
+          reject(new Error('docx_uncompressed_too_large'));
+        }
+      })
+      .on('error', (err) => {
+        if (settled) return;
+        settled = true;
+        reject(err);
+      })
+      .on('end', () => {
+        if (settled) return;
+        settled = true;
+        resolve(produced);
+      })
+      .resume();
+  });
+}
+
+// The size fields in a zip's central directory are attacker-controlled and
+// are NOT verified until an entry has been fully inflated, so they cannot be
+// trusted to bound memory. Reject on the declared figures first (cheap), then
+// enforce the cap on bytes actually produced by inflation.
+async function assertSafeDocxForPreview(buffer) {
+  const zip = await JSZip.loadAsync(buffer);
+  const entries = Object.values(zip.files).filter((entry) => !entry.dir);
+  if (Object.keys(zip.files).length > MAX_DOCX_ZIP_ENTRIES) {
+    throw new Error('docx_too_many_entries');
+  }
+  let declared = 0;
+  for (const entry of entries) {
+    declared += entry._data?.uncompressedSize || 0;
+    if (declared > MAX_DOCX_UNCOMPRESSED_BYTES) {
+      throw new Error('docx_uncompressed_too_large');
+    }
+  }
+  let total = 0;
+  for (const entry of entries) {
+    total += await measureEntry(entry, MAX_DOCX_UNCOMPRESSED_BYTES - total);
+  }
+}
+
 function decodeBase64Payload(contentBase64) {
   if (typeof contentBase64 !== 'string' || !contentBase64.trim()) return null;
   const normalized = contentBase64.replace(/\s+/g, '');
@@ -87,5 +149,7 @@ function inspectDocumentPayload(document, options = {}) {
 }
 
 module.exports = {
-  inspectDocumentPayload
+  inspectDocumentPayload,
+  assertSafeDocxForPreview,
+  MAX_DOCX_UNCOMPRESSED_BYTES
 };
