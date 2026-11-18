@@ -9,6 +9,7 @@ const {
   authHeaders,
   createProjectAPI,
   extractSessionTokenFromHeaders,
+  inviteAndAcceptAPI,
 } = require("./helpers");
 
 // Helper: create and approve a user, return their token
@@ -134,6 +135,18 @@ test.describe("Team Member Management", () => {
     );
     expect(addRes.status()).toBe(200);
 
+    // Membership is opt-in: the invitee is not a member until they accept
+    const beforeRes = await request.get(`${BASE_URL}/api/teams/mine`, {
+      headers: authHeaders(member.token),
+    });
+    expect((await beforeRes.json()).team).toBeNull();
+
+    const acceptRes = await request.post(
+      `${BASE_URL}/api/teams/invites/${teamId}/accept`,
+      { headers: authHeaders(member.token) },
+    );
+    expect(acceptRes.status()).toBe(200);
+
     // Verify member can see team
     const mineRes = await request.get(`${BASE_URL}/api/teams/mine`, {
       headers: authHeaders(member.token),
@@ -183,9 +196,11 @@ test.describe("Team Member Management", () => {
     });
     const { id: teamId } = await createRes.json();
 
-    await request.post(`${BASE_URL}/api/teams/${teamId}/members`, {
-      headers: authHeaders(owner.token),
-      data: { username: member.username },
+    await inviteAndAcceptAPI(request, {
+      ownerToken: owner.token,
+      teamId: teamId,
+      username: member.username,
+      memberToken: member.token,
     });
 
     // Member tries to add someone
@@ -210,9 +225,11 @@ test.describe("Team Member Management", () => {
     });
     const { id: teamId } = await createRes.json();
 
-    await request.post(`${BASE_URL}/api/teams/${teamId}/members`, {
-      headers: authHeaders(owner.token),
-      data: { username: member.username },
+    await inviteAndAcceptAPI(request, {
+      ownerToken: owner.token,
+      teamId: teamId,
+      username: member.username,
+      memberToken: member.token,
     });
 
     const removeRes = await request.delete(
@@ -242,9 +259,11 @@ test.describe("Team Member Management", () => {
     });
     const { id: teamId } = await createRes.json();
 
-    await request.post(`${BASE_URL}/api/teams/${teamId}/members`, {
-      headers: authHeaders(owner.token),
-      data: { username: member.username },
+    await inviteAndAcceptAPI(request, {
+      ownerToken: owner.token,
+      teamId: teamId,
+      username: member.username,
+      memberToken: member.token,
     });
 
     const leaveRes = await request.post(
@@ -286,9 +305,11 @@ test.describe("Team Member Management", () => {
     });
     const { id: teamId } = await createRes.json();
 
-    await request.post(`${BASE_URL}/api/teams/${teamId}/members`, {
-      headers: authHeaders(owner.token),
-      data: { username: member.username },
+    await inviteAndAcceptAPI(request, {
+      ownerToken: owner.token,
+      teamId: teamId,
+      username: member.username,
+      memberToken: member.token,
     });
 
     // Even if we could call it, removing owner should fail
@@ -319,6 +340,144 @@ test.describe("Team Member Management", () => {
   });
 });
 
+test.describe("Team Invites (consent)", () => {
+  async function setupInvite(request, prefix) {
+    const { token: adminToken } = await loginAPI(request);
+    const owner = await createApprovedUser(request, adminToken, `${prefix}o`);
+    const invitee = await createApprovedUser(request, adminToken, `${prefix}i`);
+    const createRes = await request.post(`${BASE_URL}/api/teams`, {
+      headers: authHeaders(owner.token),
+      data: { name: `Invite Team ${prefix}` },
+    });
+    const { id: teamId } = await createRes.json();
+    const inviteRes = await request.post(
+      `${BASE_URL}/api/teams/${teamId}/members`,
+      {
+        headers: authHeaders(owner.token),
+        data: { username: invitee.username },
+      },
+    );
+    expect(inviteRes.status()).toBe(200);
+    return { adminToken, owner, invitee, teamId };
+  }
+
+  test("pending invite does not expose the invitee's projects", async ({
+    request,
+  }) => {
+    const { owner, invitee } = await setupInvite(request, "leak");
+    await createProjectAPI(request, invitee.token, {
+      title: "Invitee Private Work",
+    });
+    await request.post(`${BASE_URL}/api/settings/workspaceMode`, {
+      headers: authHeaders(owner.token),
+      data: { value: "team" },
+    });
+
+    const listRes = await request.get(`${BASE_URL}/api/projects`, {
+      headers: authHeaders(owner.token),
+    });
+    const projects = await listRes.json();
+    expect(
+      projects.find((p) => p.title === "Invitee Private Work"),
+    ).toBeUndefined();
+
+    const mineRes = await request.get(`${BASE_URL}/api/teams/mine`, {
+      headers: authHeaders(owner.token),
+    });
+    const team = await mineRes.json();
+    expect(team.members.map((m) => m.userId)).not.toContain(invitee.userId);
+  });
+
+  test("invitee sees the invite and can decline it", async ({ request }) => {
+    const { invitee, teamId } = await setupInvite(request, "dec");
+
+    const listRes = await request.get(`${BASE_URL}/api/teams/invites`, {
+      headers: authHeaders(invitee.token),
+    });
+    expect(listRes.status()).toBe(200);
+    const { invites } = await listRes.json();
+    expect(invites).toHaveLength(1);
+    expect(invites[0].teamId).toBe(teamId);
+
+    const declineRes = await request.post(
+      `${BASE_URL}/api/teams/invites/${teamId}/decline`,
+      { headers: authHeaders(invitee.token) },
+    );
+    expect(declineRes.status()).toBe(200);
+
+    const acceptRes = await request.post(
+      `${BASE_URL}/api/teams/invites/${teamId}/accept`,
+      { headers: authHeaders(invitee.token) },
+    );
+    expect(acceptRes.status()).toBe(404);
+
+    const mineRes = await request.get(`${BASE_URL}/api/teams/mine`, {
+      headers: authHeaders(invitee.token),
+    });
+    expect((await mineRes.json()).team).toBeNull();
+  });
+
+  test("cannot accept an invite addressed to someone else", async ({
+    request,
+  }) => {
+    const { adminToken, teamId } = await setupInvite(request, "oth");
+    const stranger = await createApprovedUser(request, adminToken, "strgr");
+
+    const acceptRes = await request.post(
+      `${BASE_URL}/api/teams/invites/${teamId}/accept`,
+      { headers: authHeaders(stranger.token) },
+    );
+    expect(acceptRes.status()).toBe(404);
+  });
+
+  test("accepting clears other pending invites", async ({ request }) => {
+    const { adminToken, invitee, teamId } = await setupInvite(request, "clr");
+    const owner2 = await createApprovedUser(request, adminToken, "clro2");
+    const res2 = await request.post(`${BASE_URL}/api/teams`, {
+      headers: authHeaders(owner2.token),
+      data: { name: "Second Inviter" },
+    });
+    const { id: teamId2 } = await res2.json();
+    await request.post(`${BASE_URL}/api/teams/${teamId2}/members`, {
+      headers: authHeaders(owner2.token),
+      data: { username: invitee.username },
+    });
+
+    const acceptRes = await request.post(
+      `${BASE_URL}/api/teams/invites/${teamId}/accept`,
+      { headers: authHeaders(invitee.token) },
+    );
+    expect(acceptRes.status()).toBe(200);
+
+    const listRes = await request.get(`${BASE_URL}/api/teams/invites`, {
+      headers: authHeaders(invitee.token),
+    });
+    expect((await listRes.json()).invites).toHaveLength(0);
+
+    const accept2 = await request.post(
+      `${BASE_URL}/api/teams/invites/${teamId2}/accept`,
+      { headers: authHeaders(invitee.token) },
+    );
+    expect(accept2.status()).toBe(404);
+  });
+
+  test("invitee can accept from the settings UI", async ({ page, request }) => {
+    const { invitee } = await setupInvite(request, "ui");
+    await loginUI(page, { username: invitee.username, password: "SecurePass123" });
+
+    await page.click("#userMenuTrigger");
+    await page.click("#menuTeam");
+    const item = page.locator(".team-invite-item");
+    await expect(item).toHaveCount(1);
+    await expect(item).toContainText("Invite Team ui");
+
+    page.once("dialog", (dialog) => dialog.accept());
+    await item.locator(".team-invite-accept").click();
+    await expect(page.locator("#teamContent")).toContainText("Invite Team ui");
+    await expect(page.locator(".team-invite-item")).toHaveCount(0);
+  });
+});
+
 test.describe("Team Workspace Visibility", () => {
   test("team members see each other projects in team mode", async ({
     request,
@@ -334,9 +493,11 @@ test.describe("Team Workspace Visibility", () => {
     });
     const { id: teamId } = await createRes.json();
 
-    await request.post(`${BASE_URL}/api/teams/${teamId}/members`, {
-      headers: authHeaders(owner.token),
-      data: { username: member.username },
+    await inviteAndAcceptAPI(request, {
+      ownerToken: owner.token,
+      teamId: teamId,
+      username: member.username,
+      memberToken: member.token,
     });
 
     // Owner creates a project
@@ -372,9 +533,11 @@ test.describe("Team Workspace Visibility", () => {
     });
     const { id: teamId } = await createRes.json();
 
-    await request.post(`${BASE_URL}/api/teams/${teamId}/members`, {
-      headers: authHeaders(owner.token),
-      data: { username: member.username },
+    await inviteAndAcceptAPI(request, {
+      ownerToken: owner.token,
+      teamId: teamId,
+      username: member.username,
+      memberToken: member.token,
     });
 
     // Owner creates a project
@@ -408,9 +571,11 @@ test.describe("Team Workspace Visibility", () => {
     });
     const { id: teamId } = await createRes.json();
 
-    await request.post(`${BASE_URL}/api/teams/${teamId}/members`, {
-      headers: authHeaders(owner.token),
-      data: { username: member.username },
+    await inviteAndAcceptAPI(request, {
+      ownerToken: owner.token,
+      teamId: teamId,
+      username: member.username,
+      memberToken: member.token,
     });
 
     // Owner creates a project
@@ -501,9 +666,11 @@ test.describe("UI: Workspace Toggle", () => {
     });
     const { id: teamId } = await createRes.json();
 
-    await request.post(`${BASE_URL}/api/teams/${teamId}/members`, {
-      headers: authHeaders(owner.token),
-      data: { username: member.username },
+    await inviteAndAcceptAPI(request, {
+      ownerToken: owner.token,
+      teamId: teamId,
+      username: member.username,
+      memberToken: member.token,
     });
 
     await createProjectAPI(request, owner.token, {

@@ -42,6 +42,45 @@ module.exports = function createTeamsRouter({ db, logger, schemas, requireAuth }
     }
   });
 
+  router.get('/invites', requireAuth, async (req, res) => {
+    try {
+      const invites = await db.getTeamInvitesForUser(req.user.userId);
+      res.json({ invites });
+    } catch (error) {
+      logger.error({ err: error }, 'Error fetching team invites');
+      res.status(500).json({ error: 'Failed to fetch team invites' });
+    }
+  });
+
+  router.post('/invites/:teamId/accept', requireAuth, async (req, res) => {
+    try {
+      const accepted = await db.acceptTeamInvite(req.params.teamId, req.user.userId);
+      if (!accepted) {
+        return res.status(404).json({ error: 'Invite not found' });
+      }
+      res.json({ success: true });
+    } catch (error) {
+      if (isTeamMembershipConflict(error)) {
+        return res.status(409).json({ error: error.message });
+      }
+      logger.error({ err: error }, 'Error accepting team invite');
+      res.status(500).json({ error: 'Failed to accept team invite' });
+    }
+  });
+
+  router.post('/invites/:teamId/decline', requireAuth, async (req, res) => {
+    try {
+      const declined = await db.declineTeamInvite(req.params.teamId, req.user.userId);
+      if (!declined) {
+        return res.status(404).json({ error: 'Invite not found' });
+      }
+      res.json({ success: true });
+    } catch (error) {
+      logger.error({ err: error }, 'Error declining team invite');
+      res.status(500).json({ error: 'Failed to decline team invite' });
+    }
+  });
+
   router.post('/:id/members', requireAuth, async (req, res) => {
     try {
       const teamId = req.params.id;
@@ -66,8 +105,10 @@ module.exports = function createTeamsRouter({ db, logger, schemas, requireAuth }
         return res.status(404).json({ error: 'User not found or not eligible to join a team' });
       }
 
-      await db.addTeamMember(teamId, user.id);
-      res.json({ success: true });
+      // Invite only — the target must accept before they join the team and
+      // their projects become visible to it.
+      await db.createTeamInvite(teamId, user.id, req.user.userId);
+      res.json({ success: true, invited: true });
     } catch (error) {
       if (isTeamMembershipConflict(error)) {
         return res.status(409).json({ error: error.message });

@@ -86,7 +86,7 @@ Project Overviewer is a multi-user project and task management application with 
 ### Team Use Workflow
 
 1. Have teammates register at `/register` — approve them from `/admin.html`
-2. Go to Settings → Team → **Create Team**, then **Add Member** with each teammate's username
+2. Go to Settings → Team → **Create Team**, then **Invite** each teammate by username; they accept the invite under Settings → Team
 3. Each user toggles **Personal / Team** in the top nav bar independently
 4. **Team mode**: shows all team members' projects — for stand-ups and shared visibility
 5. **Personal mode**: shows only your own projects — for focused individual work
@@ -153,7 +153,7 @@ Project Overviewer is intentionally simple. The goal is a tool you can run, unde
    - LibSQL (`@libsql/client`) database abstraction with WAL mode
    - Promise-based query wrappers (`run`, `get`, `all`)
    - Database initialization and schema setup
-   - Thirteen tables: `users`, `sessions`, `login_attempts`, `projects`, `tasks`, `documents`, `global_settings`, `user_settings`, `quick_notes`, `templates`, `teams`, `team_members`, `webhooks`
+   - Fourteen tables: `users`, `sessions`, `login_attempts`, `projects`, `tasks`, `documents`, `global_settings`, `user_settings`, `quick_notes`, `templates`, `teams`, `team_members`, `team_invites`, `webhooks`
 
 ### Key Design Patterns
 
@@ -483,13 +483,13 @@ SQLite performance configuration:
 
 ## Database Schema
 
-Thirteen tables in five logical groups:
+Fourteen tables in five logical groups:
 
 | Group         | Tables                                                         | Purpose                          |
 | ------------- | -------------------------------------------------------------- | -------------------------------- |
 | Auth          | `users`, `sessions`, `login_attempts`                          | Accounts, session tokens, throttle |
 | Content       | `projects`, `tasks`, `documents`                               | The actual work                  |
-| Collaboration | `teams`, `team_members`                                        | Team and membership              |
+| Collaboration | `teams`, `team_members`, `team_invites`                        | Team, membership, pending invites |
 | Configuration | `global_settings`, `user_settings`, `quick_notes`, `templates` | Per-user and global config       |
 | Integration   | `webhooks`                                                     | Outbound event delivery          |
 
@@ -606,6 +606,19 @@ FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 
 `UNIQUE INDEX` on `(user_id)` — enforces one team per user.
 
+### team_invites table
+
+```sql
+team_id TEXT NOT NULL
+user_id TEXT NOT NULL             -- Invitee
+invited_by TEXT NOT NULL
+created_at TEXT DEFAULT CURRENT_TIMESTAMP
+PRIMARY KEY (team_id, user_id)
+FOREIGN KEYs to teams/users ON DELETE CASCADE
+```
+
+Membership is opt-in: owners can only invite. Team-scoped reads join `team_members` only, so a pending invitee's projects are never visible to the team. Created in the unconditional (ungated) CREATE batch.
+
 ### global_settings table
 
 ```sql
@@ -706,7 +719,10 @@ Every router below is mounted once per prefix in `API_BASE_PATHS` (`server.js`),
 
 - `POST /api/teams` — Create team (user becomes owner)
 - `GET /api/teams/mine` — Get current user's team
-- `POST /api/teams/:id/members` — Add member by username (owner/admin only)
+- `POST /api/teams/:id/members` — Invite a user by username (owner/admin only). Creates a pending invite; the user is **not** a member until they accept
+- `GET /api/teams/invites` — List the current user's pending team invites
+- `POST /api/teams/invites/:teamId/accept` — Accept an invite (joins the team; clears other pending invites)
+- `POST /api/teams/invites/:teamId/decline` — Decline an invite
 - `DELETE /api/teams/:id/members/:userId` — Remove member (owner/admin/self)
 - `POST /api/teams/:id/leave` — Leave team (non-owners only)
 - `DELETE /api/teams/:id` — Delete team (owner/admin only)

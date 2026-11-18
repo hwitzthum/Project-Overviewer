@@ -199,8 +199,15 @@ async function loadTeamInfo() {
     if (!currentTeam || currentTeam.team === null) {
       currentTeam = null;
       // Clear container safely using textContent first, then build DOM
+      let invites = [];
+      try {
+        const inviteResult = await API.getTeamInvites();
+        invites = Array.isArray(inviteResult?.invites) ? inviteResult.invites : [];
+      } catch (inviteErr) {
+        console.error('Failed to load team invites:', inviteErr);
+      }
       container.textContent = '';
-      renderNoTeam(container);
+      renderNoTeam(container, invites);
     } else {
       container.textContent = '';
       renderTeamPanel(container, currentTeam);
@@ -211,9 +218,84 @@ async function loadTeamInfo() {
   }
 }
 
-function renderNoTeam(container) {
+function renderTeamInvites(parent, invites) {
+  if (!invites.length) return;
+
+  const label = document.createElement('div');
+  label.style.cssText = 'font-size:12px;color:var(--text-tertiary);';
+  label.textContent = `Pending invitations (${invites.length})`;
+  parent.appendChild(label);
+
+  const list = document.createElement('div');
+  list.className = 'team-member-list team-invite-list';
+
+  for (const invite of invites) {
+    const row = document.createElement('div');
+    row.className = 'team-member-row team-invite-item';
+
+    const info = document.createElement('div');
+    info.className = 'team-member-info';
+    const nm = document.createElement('div');
+    nm.className = 'team-member-name';
+    nm.textContent = invite.teamName;
+    info.appendChild(nm);
+    if (invite.invitedBy) {
+      const by = document.createElement('div');
+      by.className = 'team-member-role';
+      by.textContent = 'Invited by ' + invite.invitedBy;
+      info.appendChild(by);
+    }
+    row.appendChild(info);
+
+    const acceptBtn = document.createElement('button');
+    acceptBtn.textContent = 'Accept';
+    acceptBtn.className = 'team-invite-accept';
+    acceptBtn.style.cssText = 'padding:4px 10px;border:none;border-radius:var(--radius-sm);background:var(--accent);color:var(--text-on-accent);font-size:12px;cursor:pointer;';
+
+    const declineBtn = document.createElement('button');
+    declineBtn.textContent = 'Decline';
+    declineBtn.className = 'team-member-remove team-invite-decline';
+
+    acceptBtn.addEventListener('click', async () => {
+      if (!confirm('Join team "' + invite.teamName + '"? Team members will be able to see your projects in team mode.')) return;
+      await withPendingState(`accept-invite:${invite.teamId}`, acceptBtn, async () => {
+        try {
+          await API.acceptTeamInvite(invite.teamId);
+          showToast('Joined ' + invite.teamName);
+          await loadTeamInfo();
+          await loadFromStorage();
+          render();
+        } catch (err) {
+          showToast(err.message || 'Failed to accept invitation');
+          await loadTeamInfo();
+        }
+      }, [declineBtn]);
+    });
+
+    declineBtn.addEventListener('click', async () => {
+      await withPendingState(`decline-invite:${invite.teamId}`, declineBtn, async () => {
+        try {
+          await API.declineTeamInvite(invite.teamId);
+          showToast('Invitation declined');
+          await loadTeamInfo();
+        } catch (err) {
+          showToast(err.message || 'Failed to decline invitation');
+        }
+      }, [acceptBtn]);
+    });
+
+    row.appendChild(acceptBtn);
+    row.appendChild(declineBtn);
+    list.appendChild(row);
+  }
+  parent.appendChild(list);
+}
+
+function renderNoTeam(container, invites = []) {
   const div = document.createElement('div');
   div.style.cssText = 'display:flex;flex-direction:column;gap:12px;';
+
+  renderTeamInvites(div, invites);
 
   const msg = document.createElement('p');
   msg.style.cssText = 'color:var(--text-tertiary);font-size:13px;margin:0;';
@@ -340,7 +422,7 @@ function renderTeamPanel(container, team) {
         try {
           await API.addTeamMember(team.id, username);
           inviteInput.value = '';
-          showToast(username + ' added to team!');
+          showToast('Invitation sent to ' + username);
           await loadTeamInfo();
         } catch (err) {
           showToast(err.message || 'Failed to invite user');

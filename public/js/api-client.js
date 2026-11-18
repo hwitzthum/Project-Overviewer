@@ -201,6 +201,22 @@ class API {
     });
   }
 
+  static async getTeamInvites() {
+    return await this.request("/api/teams/invites");
+  }
+
+  static async acceptTeamInvite(teamId) {
+    return await this.request(`/api/teams/invites/${encodeURIComponent(teamId)}/accept`, {
+      method: "POST",
+    });
+  }
+
+  static async declineTeamInvite(teamId) {
+    return await this.request(`/api/teams/invites/${encodeURIComponent(teamId)}/decline`, {
+      method: "POST",
+    });
+  }
+
   static async removeTeamMember(teamId, userId) {
     return await this.request(`/api/teams/${teamId}/members/${userId}`, {
       method: "DELETE",

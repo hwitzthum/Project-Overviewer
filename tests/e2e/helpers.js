@@ -124,6 +124,26 @@ async function loginUI(page, { username, password } = ADMIN) {
 }
 
 /**
+ * Invite a user to a team and accept the invite as that user. Team membership
+ * is opt-in, so both steps are needed before the user is actually a member.
+ */
+async function inviteAndAcceptAPI(request, { ownerToken, teamId, username, memberToken }) {
+  const inviteRes = await request.post(`${BASE_URL}/api/teams/${teamId}/members`, {
+    headers: authHeaders(ownerToken),
+    data: { username },
+  });
+  if (inviteRes.status() !== 200) {
+    throw new Error(`Invite failed with ${inviteRes.status()}: ${await inviteRes.text()}`);
+  }
+  const acceptRes = await request.post(`${BASE_URL}/api/teams/invites/${teamId}/accept`, {
+    headers: authHeaders(memberToken),
+  });
+  if (acceptRes.status() !== 200) {
+    throw new Error(`Accept failed with ${acceptRes.status()}: ${await acceptRes.text()}`);
+  }
+}
+
+/**
  * Generate a unique username for test isolation
  */
 function uniqueUser(prefix = "testuser") {
@@ -144,4 +164,5 @@ module.exports = {
   uniqueUser,
   adminStepUpPayload,
   extractSessionTokenFromHeaders,
+  inviteAndAcceptAPI,
 };
