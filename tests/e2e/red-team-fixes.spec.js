@@ -9,6 +9,7 @@ const {
   createProjectAPI,
   uniqueUser,
   extractSessionTokenFromHeaders,
+  inviteAndAcceptAPI,
 } = require("./helpers");
 
 const USER_PASSWORD = "SecurePass123";
@@ -112,9 +113,11 @@ test.describe("Red-Team Fixes", () => {
     });
     const { id: teamId } = await teamRes.json();
 
-    await request.post(`${BASE_URL}/api/teams/${teamId}/members`, {
-      headers: authHeaders(owner.token),
-      data: { username: member.username },
+    await inviteAndAcceptAPI(request, {
+      ownerToken: owner.token,
+      teamId: teamId,
+      username: member.username,
+      memberToken: member.token,
     });
 
     await createProjectAPI(request, owner.token, {
@@ -272,10 +275,26 @@ test.describe("Red-Team Fixes", () => {
       }),
     ]);
 
-    const statuses = inviteResponses
+    // Invites are opt-in, so both invitations are created...
+    expect(inviteResponses.map((response) => response.status())).toEqual([
+      200, 200,
+    ]);
+
+    // ...but accepting both concurrently must still land the victim in
+    // exactly one team.
+    const acceptResponses = await Promise.all([
+      request.post(`${BASE_URL}/api/teams/invites/${teamA.id}/accept`, {
+        headers: authHeaders(victim.token),
+      }),
+      request.post(`${BASE_URL}/api/teams/invites/${teamB.id}/accept`, {
+        headers: authHeaders(victim.token),
+      }),
+    ]);
+
+    const statuses = acceptResponses
       .map((response) => response.status())
       .sort((a, b) => a - b);
     expect(statuses.filter((status) => status === 200)).toHaveLength(1);
-    expect(statuses.filter((status) => status === 409)).toHaveLength(1);
+    expect(statuses.filter((status) => [404, 409].includes(status))).toHaveLength(1);
   });
 });

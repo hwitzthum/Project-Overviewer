@@ -18,6 +18,7 @@ const {
   authHeaders,
   loginUI,
   uniqueUser,
+  inviteAndAcceptAPI,
 } = require('./helpers');
 
 // Helper: set a global admin setting
@@ -254,9 +255,11 @@ test.describe('Team Document Access', () => {
     });
     const { id: teamId } = await teamRes.json();
 
-    await request.post(`${BASE_URL}/api/teams/${teamId}/members`, {
-      headers: authHeaders(owner.token),
-      data: { username: member.username },
+    await inviteAndAcceptAPI(request, {
+      ownerToken: owner.token,
+      teamId: teamId,
+      username: member.username,
+      memberToken: member.token,
     });
 
     // Owner creates a project with an email document

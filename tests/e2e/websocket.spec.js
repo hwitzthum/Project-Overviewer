@@ -9,6 +9,7 @@ const {
   registerAPI,
   approveUserAPI,
   createProjectAPI,
+  inviteAndAcceptAPI,
 } = require("./helpers");
 const WebSocket = require("ws");
 
@@ -379,9 +380,11 @@ test.describe("WebSocket — Scoped broadcasts", () => {
         headers: authHeaders(adminLogin.token),
       })
     ).json();
-    await request.post(`${BASE_URL}/api/teams/${team.id}/members`, {
-      headers: authHeaders(adminLogin.token),
-      data: { username: memberName },
+    await inviteAndAcceptAPI(request, {
+      ownerToken: adminLogin.token,
+      teamId: team.id,
+      username: memberName,
+      memberToken: memberLogin.token,
     });
 
     // Connect all three to WebSocket

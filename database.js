@@ -709,6 +709,26 @@ async function initDatabase() {
       )`,
         args: [],
       },
+      // Team invites — pending, not-yet-accepted memberships. Kept separate
+      // from team_members so every team-scoped read (which joins
+      // team_members) only ever sees users who consented to join.
+      {
+        sql: `CREATE TABLE IF NOT EXISTS team_invites (
+        team_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        invited_by TEXT NOT NULL,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (team_id, user_id),
+        FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY (invited_by) REFERENCES users(id) ON DELETE CASCADE
+      )`,
+        args: [],
+      },
+      {
+        sql: "CREATE INDEX IF NOT EXISTS idx_team_invites_user_id ON team_invites(user_id)",
+        args: [],
+      },
       // Webhooks table
       {
         sql: `CREATE TABLE IF NOT EXISTS webhooks (
@@ -2226,11 +2246,62 @@ async function getTeamByUserId(userId) {
   };
 }
 
-async function addTeamMember(teamId, userId) {
+// Membership is opt-in: an owner can only *invite* a user. The user joins
+// (and their projects become visible to the team) only after they accept.
+async function createTeamInvite(teamId, userId, invitedBy) {
+  await waitForDb();
+  const existing = await get(
+    "SELECT team_id FROM team_members WHERE user_id = ? LIMIT 1",
+    [userId],
+  );
+  if (existing) {
+    throw createTeamMembershipConflict();
+  }
+  await run(
+    `INSERT INTO team_invites (team_id, user_id, invited_by) VALUES (?, ?, ?)
+     ON CONFLICT(team_id, user_id) DO UPDATE SET
+       invited_by = excluded.invited_by,
+       created_at = CURRENT_TIMESTAMP`,
+    [teamId, userId, invitedBy],
+  );
+}
+
+async function getTeamInvitesForUser(userId) {
+  await waitForDb();
+  const rows = await all(
+    `SELECT ti.team_id, ti.created_at, t.name AS team_name, u.username AS invited_by_username
+     FROM team_invites ti
+     JOIN teams t ON t.id = ti.team_id
+     LEFT JOIN users u ON u.id = ti.invited_by
+     WHERE ti.user_id = ?
+     ORDER BY ti.created_at DESC`,
+    [userId],
+  );
+  return rows.map((r) => ({
+    teamId: r.team_id,
+    teamName: r.team_name,
+    invitedBy: r.invited_by_username || null,
+    createdAt: r.created_at,
+  }));
+}
+
+// Returns false when no invite exists for (teamId, userId).
+async function acceptTeamInvite(teamId, userId) {
   await waitForDb();
   const tx = await client.transaction("write");
 
   try {
+    const invite = await tx.execute({
+      sql: `SELECT ti.team_id FROM team_invites ti
+            JOIN teams t ON t.id = ti.team_id
+            WHERE ti.team_id = ? AND ti.user_id = ?`,
+      args: [teamId, userId],
+    });
+    if (invite.rows.length === 0) {
+      await tx.rollback().catch(() => {});
+      return false;
+    }
+
     const existing = await tx.execute({
       sql: "SELECT team_id FROM team_members WHERE user_id = ? LIMIT 1",
       args: [userId],
@@ -2243,8 +2314,14 @@ async function addTeamMember(teamId, userId) {
       sql: "INSERT INTO team_members (team_id, user_id, role) VALUES (?, ?, ?)",
       args: [teamId, userId, "member"],
     });
+    // A user belongs to at most one team, so any other invites are moot.
+    await tx.execute({
+      sql: "DELETE FROM team_invites WHERE user_id = ?",
+      args: [userId],
+    });
     await tx.commit();
     cacheInvalidateSessionsForUser(userId);
+    return true;
   } catch (error) {
     await tx.rollback().catch(() => {});
     if (isSingleTeamConstraintError(error)) {
@@ -2252,6 +2329,15 @@ async function addTeamMember(teamId, userId) {
     }
     throw error;
   }
+}
+
+async function declineTeamInvite(teamId, userId) {
+  await waitForDb();
+  const result = await run(
+    "DELETE FROM team_invites WHERE team_id = ? AND user_id = ?",
+    [teamId, userId],
+  );
+  return result.changes > 0;
 }
 
 async function removeTeamMember(teamId, userId) {
@@ -2268,6 +2354,7 @@ async function removeTeamMember(teamId, userId) {
 
 async function deleteTeam(teamId) {
   await waitForDb();
+  await run("DELETE FROM team_invites WHERE team_id = ?", [teamId]);
   const result = await run("DELETE FROM teams WHERE id = ?", [teamId]);
   // Multiple members may have had this team cached on their sessions; we
   // don't have the membership list here so clear all session cache entries.
@@ -2828,7 +2915,10 @@ module.exports = {
   // Teams
   createTeam,
   getTeamByUserId,
-  addTeamMember,
+  createTeamInvite,
+  getTeamInvitesForUser,
+  acceptTeamInvite,
+  declineTeamInvite,
   removeTeamMember,
   deleteTeam,
   getTeamUserIds,
