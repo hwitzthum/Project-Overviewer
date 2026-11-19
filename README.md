@@ -398,6 +398,29 @@ Open settings with `Cmd+,` (Mac) or `Ctrl+,` (Windows/Linux).
 | `?`                | Show all shortcuts                        |
 | `Esc`              | Close modal                               |
 
+### Views and Navigation
+
+| View           | What It Shows                                                                 |
+| -------------- | ----------------------------------------------------------------------------- |
+| All Projects   | Every project, sorted and filtered to your preferences                        |
+| Kanban         | Four drag-and-drop lanes (`backlog → completed`) with configurable WIP limits |
+| Focus          | Your highest-priority in-progress work                                        |
+| Status filters | Jump directly to any status bucket                                            |
+
+**Filters available:** status, priority, stakeholder, tag, smart filters (Overdue, Due Today, Due This Week)
+
+**Sort options:** manual order, due date, priority, title, stakeholder, recently updated
+
+### Solo Use Workflow
+
+1. Log in at `http://localhost:3001` with admin credentials
+2. Press `N` or click **+ New Project** to create a project
+3. Fill in: status, priority, due date, description, tags
+4. Add tasks at the bottom of the project modal — press Enter after each one
+5. Use **Overdue** and **Due Today** sidebar filters each morning
+6. Archive projects when done to keep the active list clean
+7. Open Settings → **Export Data** for JSON backups
+
 ---
 
 ## Team Collaboration

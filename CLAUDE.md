@@ -17,7 +17,7 @@ Project Overviewer is a multi-user project and task management application with 
 - **Validation**: Zod schemas on all API inputs
 - **Security**: Helmet (security headers), express-rate-limit, compression, structured security event logging
 - **Logging**: Pino (structured logging, pino-pretty in dev)
-- **Testing**: Playwright E2E tests (231 tests across 16 spec files)
+- **Testing**: Playwright E2E tests
 - **API**: REST API with JSON responses
 - **Deployment**: Vercel-ready (`vercel.json`, serverless export in `api/index.js`)
 
@@ -48,56 +48,13 @@ Project Overviewer is a multi-user project and task management application with 
 
 ## User Guide
 
-### Views and Navigation
-
-| View           | What It Shows                                                                 |
-| -------------- | ----------------------------------------------------------------------------- |
-| All Projects   | Every project, sorted and filtered to your preferences                        |
-| Kanban         | Four drag-and-drop lanes (`backlog → completed`) with configurable WIP limits |
-| Focus          | Your highest-priority in-progress work                                        |
-| Status filters | Jump directly to any status bucket                                            |
-
-**Filters available:** status, priority, stakeholder, tag, smart filters (Overdue, Due Today, Due This Week)
-
-**Sort options:** manual order, due date, priority, title, stakeholder, recently updated
-
-### Keyboard Shortcuts
-
-| Shortcut           | Action             |
-| ------------------ | ------------------ |
-| `N`                | New project        |
-| `Cmd+K` / `Ctrl+K` | Command palette    |
-| `/`                | Focus search       |
-| `Cmd+I` / `Ctrl+I` | Statistics         |
-| `Cmd+,` / `Ctrl+,` | Settings           |
-| `Esc`              | Close modal        |
-| `?`                | Show all shortcuts |
-
-### Solo Use Workflow
-
-1. Log in at `http://localhost:3001` with admin credentials
-2. Press `N` or click **+ New Project** to create a project
-3. Fill in: status, priority, due date, description, tags
-4. Add tasks at the bottom of the project modal — press Enter after each one
-5. Use **Overdue** and **Due Today** sidebar filters each morning
-6. Archive projects when done to keep the active list clean
-7. Open Settings → **Export Data** for JSON backups
-
-### Team Use Workflow
-
-1. Have teammates register at `/register` — approve them from `/admin.html`
-2. Go to Settings → Team → **Create Team**, then **Invite** each teammate by username; they accept the invite under Settings → Team
-3. Each user toggles **Personal / Team** in the top nav bar independently
-4. **Team mode**: shows all team members' projects — for stand-ups and shared visibility
-5. **Personal mode**: shows only your own projects — for focused individual work
-6. Use tag + stakeholder filters to slice the team view (e.g., `backend` tag + specific owner)
-7. Admin configures global limits in Admin Panel (max projects per user, registration on/off)
+Views, keyboard shortcuts and the solo and team workflows are documented in `README.md` ("User Guide" and "Team Collaboration").
 
 ## Architecture
 
 ### Design Philosophy
 
-Project Overviewer is intentionally simple. The goal is a tool you can run, understand, and modify without fighting complex abstraction layers. There is no framework on the frontend, no ORM on the backend, and no external services — just Node.js, SQLite, and plain JavaScript files. The build step (esbuild) is minimal and automatic via `npm start`.
+Project Overviewer is intentionally simple. The goal is a tool you can run, understand, and modify without fighting complex abstraction layers. There is no framework on the frontend, no ORM on the backend, and no external services required (a remote Turso database is optional). The build step (esbuild) is minimal and automatic via `npm start`.
 
 ### System Overview
 
@@ -283,26 +240,7 @@ See `.env.example` for the full list (logging, session timeouts, `DISABLE_WEBSOC
 npm install
 ```
 
-Required dependencies:
-
-- `express` — Web server framework
-- `@libsql/client` — LibSQL/Turso database driver (SQLite-compatible, supports remote Turso or local file)
-- `bcryptjs` — Password hashing (pure JS, no native binaries)
-- `helmet` — Security headers
-- `compression` — Response compression
-- `express-rate-limit` — Rate limiting
-- `zod` — Input validation
-- `pino` — Structured logging
-- `ws` — WebSocket server for real-time sync
-- `dotenv` — Environment variable loading
-- `mammoth` — DOCX document parsing
-- `jszip` — ZIP inspection of uploaded DOCX files before preview (decompression-bomb guard)
-
-Dev dependencies:
-
-- `@playwright/test` — E2E testing framework
-- `esbuild` — Frontend bundler
-- `pino-pretty` — Dev-friendly log formatting
+Dependencies are in `package.json`.
 
 ### Running Tests
 
@@ -321,36 +259,17 @@ npx playwright test tests/e2e/auth.spec.js
 # Run tests in headed mode
 npx playwright test --headed
 
-# Run migration/boot guards (node:test, no browser)
-npm run test:migrations
+# Debug a test
+npx playwright test --debug
 ```
 
-Test files in `tests/e2e/` (231 tests across 16 spec files):
+E2E specs live in `tests/e2e/` (one file per area; shared helpers in `tests/e2e/helpers.js`). Node migration and boot guards are `tests/*.test.js`, run by `npm run test:migrations`.
 
-- `auth.spec.js` — Authentication flows (register, login, logout, password change)
-- `projects-tasks.spec.js` — Project and task CRUD
-- `rbac.spec.js` — Role-based access control
-- `security.spec.js` — Security hardening (headers, rate limits, validation)
-- `security-hardening.spec.js` — Advanced security tests (CSP, HSTS, input sanitization)
-- `teams.spec.js` — Team collaboration
-- `ui-auth.spec.js` — UI authentication flows
-- `subtasks.spec.js` — Subtask creation, completion, hierarchy
-- `trash.spec.js` — Trash view: soft-deleted projects leave the list, restore with tasks intact, delete forever
-- `webhooks.spec.js` — Webhook CRUD and delivery
-- `websocket.spec.js` — WebSocket real-time sync
-- `caching.spec.js` — Cache headers and ETag behavior
-- `versioning.spec.js` — Optimistic concurrency / version checks
-- `theme-consistency.spec.js` — Theme switching and persistence
-- `audit-fixes.spec.js` — Regression tests for audit findings
-- `red-team-fixes.spec.js` — Regression tests for security fixes
-- `helpers.js` — Shared test utilities
+Test notes:
 
-Additional test files (`node:test` migration/boot guards — run with `npm run test:migrations`; CI job `migration-tests`):
-
-- `tests/db-init-retry.test.js` — Cold-start DB init failure neither crashes the process nor caches the rejection; next request retries
-- `tests/login-attempts-migration.test.js` — Behind-version DB migrates without deadlock; `login_attempts` recreated even when schema version is current
-- `tests/project-soft-delete-migration.test.js` — Pre-v3 DB gets `deleted_at`/`status_changed_at` back-filled; delete/restore/purge keep their guarantees
-- `tests/team-membership-migration.test.js` — Team membership data migration
+- Rate limiting is disabled when `DISABLE_RATE_LIMIT=1`
+- `beforeAll` in Playwright does not receive the `request` fixture — use per-test login or helper functions
+- Avoid `!` and special bash chars in password test strings
 
 ### Database Operations
 
@@ -809,32 +728,6 @@ Every router below is mounted once per prefix in `API_BASE_PATHS` (`server.js`),
 3. Register it in the correct bundle in `scripts/build-frontend.js` (in dependency order) — it is not picked up automatically
 4. Reference from other modules via `window.ModuleName`
 
-### Testing
-
-```bash
-# Run all tests
-npm test
-
-# Run specific test file
-npx playwright test tests/e2e/auth.spec.js
-
-# Run with browser visible
-npx playwright test --headed
-
-# Run with UI mode
-npm run test:ui
-
-# Debug a test
-npx playwright test --debug
-```
-
-**Test notes:**
-
-- Rate limiting is disabled when `DISABLE_RATE_LIMIT=1`
-- `beforeAll` in Playwright does not receive the `request` fixture — use per-test login or helper functions
-- Avoid `!` and special bash chars in password test strings
-- Test helpers in `tests/e2e/helpers.js`
-
 ### Testing the API
 
 Test manually with curl (auth required for most endpoints):
@@ -862,34 +755,6 @@ curl -X POST http://localhost:3001/api/projects \
 # Health check (no auth needed)
 curl http://localhost:3001/api/health
 ```
-
-### Debugging
-
-**Server-side errors:**
-
-- Check terminal output where `node server.js` is running
-- Pino structured logs (pretty-printed in dev)
-- Set `LOG_LEVEL=debug` for verbose logging
-
-**Database issues:**
-
-- Delete `projects.db` and restart to recreate schema
-- Use `sqlite3 projects.db` to inspect data directly
-- Check for foreign key violations or constraint errors
-- Database uses WAL mode — may have `-wal` and `-shm` files alongside `projects.db`
-
-**Frontend issues:**
-
-- Open browser DevTools (F12)
-- Check Console tab for JavaScript errors
-- Check Network tab for failed API calls (look for 401/403 for auth issues)
-- API errors logged via `console.error()` in `public/js/api-client.js`
-
-**Auth issues:**
-
-- Check that user is approved (`approved = 1` in users table)
-- Check session hasn't expired (24-hour absolute expiry, 30-minute idle timeout)
-- Token must be in `Authorization: Bearer <token>` header or `session_token` cookie
 
 ## Important Notes
 
@@ -921,14 +786,6 @@ curl http://localhost:3001/api/health
 | File downloads | MIME type allowlisting; filename sanitization                                             |
 | Body limits    | 2 MB general; 10 MB upload/import                                                         |
 
-### Frontend Architecture
-
-- Modular vanilla JavaScript — 24 modules in `public/js/`, bundled by esbuild into `public/dist/` (automatic via `npm start`/`npm test`)
-- Modules communicate via `window` globals (no import/export)
-- Bundle membership and order are defined in `scripts/build-frontend.js` — dependencies must come before dependents
-- Global `API` object available for all fetch calls (includes auth token automatically)
-- No state management library; state managed in `state.js`
-
 ### Team Collaboration
 
 - Users can belong to one team at a time
@@ -943,8 +800,3 @@ curl http://localhost:3001/api/health
 - Database connection closed cleanly on shutdown
 - Force shutdown after 10-second timeout
 - Safe to stop server without data loss
-
-### Port Configuration
-
-- Default port: 3001
-- Override with environment variable: `PORT=4000 npm start`
