@@ -429,7 +429,7 @@ Open settings with `Cmd+,` (Mac) or `Ctrl+,` (Windows/Linux).
 
 **Step 1: Register teammates**
 
-- Each person visits `/register` and creates an account
+- Each person visits `/register.html` and creates an account
 - You approve them in Admin Panel (`/admin.html`)
 - Optionally promote trusted people to admin
 
@@ -857,13 +857,13 @@ Each module exports a `create<Name>Router({ db, logger, schemas, requireAuth, ev
 
 **Why modular routes?** Easier to navigate, extend, and test. Each domain is self-contained.
 
-### Database: 13 Tables, User-Scoped Queries
+### Database: 14 Tables, User-Scoped Queries
 
-**Schema** (13 tables across 5 groups):
+**Schema** (14 tables across 5 groups):
 
 - **Auth**: users, sessions, login_attempts
 - **Content**: projects, tasks, documents
-- **Collaboration**: teams, team_members
+- **Collaboration**: teams, team_members, team_invites
 - **Configuration**: global_settings, user_settings, quick_notes, templates
 - **Integration**: webhooks
 
